@@ -1,0 +1,4 @@
+*.tmproj
+coverage
+doc
+pkg
