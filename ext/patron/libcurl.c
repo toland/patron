@@ -21,6 +21,11 @@ VALUE libcurl_alloc(VALUE klass) {
   return obj;
 }
 
+VALUE libcurl_version(VALUE klass) {
+  char* value = curl_version();
+  return rb_str_new2(value);
+}
+
 VALUE libcurl_initialize(VALUE self) {
   struct curl_state *curl;
   Data_Get_Struct(self, struct curl_state, curl);
@@ -28,6 +33,37 @@ VALUE libcurl_initialize(VALUE self) {
   curl->handle = curl_easy_init();
 
   return self;
+}
+
+VALUE libcurl_escape(VALUE self, VALUE value) {
+  struct curl_state *curl;
+  Data_Get_Struct(self, struct curl_state, curl);
+
+  VALUE string = StringValue(value);
+  char* escaped = curl_easy_escape(curl->handle,
+                                   RSTRING(string)->ptr,
+                                   RSTRING(string)->len);
+
+  VALUE retval = rb_str_new2(escaped);
+  curl_free(escaped);
+
+  return retval;
+}
+
+VALUE libcurl_unescape(VALUE self, VALUE value) {
+  struct curl_state *curl;
+  Data_Get_Struct(self, struct curl_state, curl);
+
+  VALUE string = StringValue(value);
+  char* unescaped = curl_easy_unescape(curl->handle,
+                                       RSTRING(string)->ptr,
+                                       RSTRING(string)->len,
+                                       NULL);
+
+  VALUE retval = rb_str_new2(unescaped);
+  curl_free(unescaped);
+
+  return retval;
 }
 
 VALUE libcurl_setopt(VALUE self, VALUE option, VALUE parameter) {
@@ -61,7 +97,11 @@ void Init_libcurl() {
 
   rb_define_alloc_func(cLibcurl, libcurl_alloc);
 
-  rb_define_method(cLibcurl, "initialize", libcurl_initialize, 0);
-  rb_define_method(cLibcurl, "setopt", libcurl_setopt, 2);
-  rb_define_method(cLibcurl, "getinfo", libcurl_getinfo, 1);
+  rb_define_singleton_method(cLibcurl, "version", libcurl_version, 0);
+
+  rb_define_method(cLibcurl, "initialize",  libcurl_initialize, 0);
+  rb_define_method(cLibcurl, "escape",      libcurl_escape,     1);
+  rb_define_method(cLibcurl, "unescape",    libcurl_unescape,   1);
+  rb_define_method(cLibcurl, "setopt",      libcurl_setopt,     2);
+  rb_define_method(cLibcurl, "getinfo",     libcurl_getinfo,    1);
 }
