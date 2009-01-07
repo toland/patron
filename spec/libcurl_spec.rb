@@ -3,9 +3,11 @@ require 'patron/libcurl'
 
 describe Patron::Libcurl, "SPI" do
 
-  it "should return 10 from the test1 method" do
+  it "should set and return the URL" do
     curl = Patron::Libcurl.new
-    curl.test1.should == 10
+    curl.setopt(Patron::Libcurl::OPT_URL, "http://thehive.com/")
+    url = curl.getinfo(Patron::Libcurl::INFO_URL)
+    url.should == "http://thehive.com/"
   end
 
 end
