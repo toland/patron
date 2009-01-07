@@ -10,6 +10,12 @@ struct curl_state {
 
 void Init_libcurl();
 
+static size_t libcurl_block_shim(char* stream, size_t size, size_t nmemb, VALUE proc) {
+  size_t result = size * nmemb;
+  rb_funcall(proc, rb_intern("call"), 1, rb_str_new(stream, result));
+  return result;
+}
+
 void libcurl_free(struct curl_state *curl) {
   curl_easy_cleanup(curl->handle);
   free(curl);
@@ -66,11 +72,20 @@ VALUE libcurl_unescape(VALUE self, VALUE value) {
   return retval;
 }
 
-VALUE libcurl_setopt(VALUE self, VALUE option, VALUE parameter) {
+VALUE libcurl_setopt(VALUE self, VALUE optval, VALUE parameter) {
   struct curl_state *curl;
   Data_Get_Struct(self, struct curl_state, curl);
 
-  curl_easy_setopt(curl->handle, FIX2INT(option), RSTRING(parameter)->ptr);
+  int option = FIX2INT(optval);
+  switch (option) {
+    case CURLOPT_WRITEFUNCTION:
+      curl_easy_setopt(curl->handle, CURLOPT_WRITEFUNCTION, &libcurl_block_shim);
+      curl_easy_setopt(curl->handle, CURLOPT_WRITEDATA, parameter);
+      break;
+
+    default:
+      curl_easy_setopt(curl->handle, option, RSTRING(parameter)->ptr);
+  }
 
   return Qnil;
 }
@@ -101,6 +116,8 @@ void Init_libcurl() {
   cLibcurl = rb_define_class_under(mPatron, "Libcurl", rb_cObject);
 
   rb_define_const(cLibcurl, "OPT_URL", INT2FIX(CURLOPT_URL));
+  rb_define_const(cLibcurl, "OPT_HTTPGET", INT2FIX(CURLOPT_HTTPGET));
+  rb_define_const(cLibcurl, "OPT_WRITE_HANDLER", INT2FIX(CURLOPT_WRITEFUNCTION));
 
   rb_define_const(cLibcurl, "INFO_URL", INT2FIX(CURLINFO_EFFECTIVE_URL));
 

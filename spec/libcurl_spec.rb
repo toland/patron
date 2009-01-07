@@ -25,4 +25,16 @@ describe Patron::Libcurl, "SPI" do
     url.should == "http://thehive.com/"
   end
 
+  it "should use proc to handle results" do
+    pending "until a test web server is available"
+
+    valid = false
+    p = Proc.new {|data| valid = true}
+
+    @curl.setopt(Patron::Libcurl::OPT_URL, "http://thehive.com/")
+    @curl.setopt(Patron::Libcurl::OPT_WRITE_HANDLER, p)
+    @curl.perform
+    valid.should be_true
+  end
+
 end
