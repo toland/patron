@@ -75,6 +75,11 @@ task :install => :gem do
   sh "sudo gem install pkg/patron-#{Patron::VERSION::STRING}.gem"
 end
 
+desc "Start an IRB shell"
+task :shell => :compile do
+  sh 'irb -I./lib -I./ext -r patron'
+end
+
 Rake::RDocTask.new do |rdoc|
   rdoc.rdoc_dir = 'doc'
   rdoc.title = RDOC_TITLE
