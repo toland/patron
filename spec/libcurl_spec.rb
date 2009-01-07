@@ -20,8 +20,8 @@ describe Patron::Libcurl, "SPI" do
   end
 
   it "should set and return the URL" do
-    @curl.setopt(Patron::Libcurl::OPT_URL, "http://thehive.com/")
-    url = @curl.getinfo(Patron::Libcurl::INFO_URL)
+    @curl.setopt(Patron::CurlOpts::URL, "http://thehive.com/")
+    url = @curl.getinfo(Patron::CurlInfo::EFFECTIVE_URL)
     url.should == "http://thehive.com/"
   end
 
@@ -31,8 +31,8 @@ describe Patron::Libcurl, "SPI" do
     valid = false
     p = Proc.new {|data| valid = true}
 
-    @curl.setopt(Patron::Libcurl::OPT_URL, "http://thehive.com/")
-    @curl.setopt(Patron::Libcurl::OPT_WRITE_HANDLER, p)
+    @curl.setopt(Patron::CurlOpts::URL, "http://thehive.com/")
+    @curl.setopt(Patron::CurlOpts::WRITE_HANDLER, p)
     @curl.perform
     valid.should be_true
   end
