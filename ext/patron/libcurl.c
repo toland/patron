@@ -85,6 +85,15 @@ VALUE libcurl_getinfo(VALUE self, VALUE info) {
   return rb_str_new2(value);
 }
 
+VALUE libcurl_perform(VALUE self) {
+  struct curl_state *curl;
+  Data_Get_Struct(self, struct curl_state, curl);
+
+  curl_easy_perform(curl->handle);
+
+  return Qnil;
+}
+
 void Init_libcurl() {
   curl_global_init(CURL_GLOBAL_NOTHING);
 
@@ -104,4 +113,5 @@ void Init_libcurl() {
   rb_define_method(cLibcurl, "unescape",    libcurl_unescape,   1);
   rb_define_method(cLibcurl, "setopt",      libcurl_setopt,     2);
   rb_define_method(cLibcurl, "getinfo",     libcurl_getinfo,    1);
+  rb_define_method(cLibcurl, "perform",     libcurl_perform,    0);
 }
