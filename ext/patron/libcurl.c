@@ -211,45 +211,94 @@ void Init_libcurl() {
   // Curl option constants
   mCurlOpts = rb_define_module_under(mPatron, "CurlOpts");
 
-  rb_define_const(mCurlOpts, "URL", INT2FIX(CURLOPT_URL));
-  rb_define_const(mCurlOpts, "HTTPGET", INT2FIX(CURLOPT_HTTPGET));
+#define define_curl_opt(X) rb_define_const(mCurlOpts, #X, INT2FIX(CURLOPT_##X))
 
-  rb_define_const(mCurlOpts, "READ_HANDLER", INT2FIX(CURLOPT_READFUNCTION));
-  rb_define_const(mCurlOpts, "WRITE_HANDLER", INT2FIX(CURLOPT_WRITEFUNCTION));
-  rb_define_const(mCurlOpts, "HEADER_HANDLER", INT2FIX(CURLOPT_HEADERFUNCTION));
+  define_curl_opt(VERBOSE);
+  define_curl_opt(HEADER);
+  define_curl_opt(STDERR);
+  define_curl_opt(FAILONERROR);
+  define_curl_opt(URL);
+  define_curl_opt(PROXY);
+  define_curl_opt(PROXYPORT);
+  define_curl_opt(PROXYTYPE);
+  define_curl_opt(HTTPPROXYTUNNEL);
+  define_curl_opt(INTERFACE);
+  define_curl_opt(LOCALPORT);
+  define_curl_opt(LOCALPORTRANGE);
+  define_curl_opt(DNS_CACHE_TIMEOUT);
+  define_curl_opt(BUFFERSIZE);
+  define_curl_opt(PORT);
+  define_curl_opt(TCP_NODELAY);
+  define_curl_opt(NETRC);
+  define_curl_opt(USERPWD);
+  define_curl_opt(PROXYUSERPWD);
+  define_curl_opt(HTTPAUTH);
+  define_curl_opt(PROXYAUTH);
+  define_curl_opt(AUTOREFERER);
+  define_curl_opt(ENCODING);
+  define_curl_opt(FOLLOWLOCATION);
+  define_curl_opt(UNRESTRICTED_AUTH);
+  define_curl_opt(MAXREDIRS);
+  define_curl_opt(PUT);
+  define_curl_opt(POST);
+  define_curl_opt(POSTFIELDS);
+  define_curl_opt(POSTFIELDSIZE);
+  define_curl_opt(HTTPPOST);
+  define_curl_opt(REFERER);
+  define_curl_opt(USERAGENT);
+  define_curl_opt(HTTPHEADER);
+  define_curl_opt(HTTP200ALIASES);
+  define_curl_opt(COOKIE);
+  define_curl_opt(COOKIEFILE);
+  define_curl_opt(COOKIEJAR);
+  define_curl_opt(COOKIESESSION);
+  define_curl_opt(COOKIELIST);
+  define_curl_opt(HTTPGET);
+  define_curl_opt(HTTP_VERSION);
+  define_curl_opt(IGNORE_CONTENT_LENGTH);
+  define_curl_opt(HTTP_CONTENT_DECODING);
+  define_curl_opt(HTTP_TRANSFER_DECODING);
+
+  define_curl_opt(READFUNCTION);
+  define_curl_opt(WRITEFUNCTION);
+  define_curl_opt(HEADERFUNCTION);
+  define_curl_opt(PROGRESSFUNCTION);
+  define_curl_opt(DEBUGFUNCTION);
 
 
   // Curl info constants
   mCurlInfo = rb_define_module_under(mPatron, "CurlInfo");
 
-  rb_define_const(mCurlInfo, "EFFECTIVE_URL",           INT2FIX(CURLINFO_EFFECTIVE_URL));
-  rb_define_const(mCurlInfo, "RESPONSE_CODE",           INT2FIX(CURLINFO_RESPONSE_CODE));
-  rb_define_const(mCurlInfo, "HTTP_CONNECTCODE",        INT2FIX(CURLINFO_HTTP_CONNECTCODE));
-  rb_define_const(mCurlInfo, "FILETIME",                INT2FIX(CURLINFO_FILETIME));
-  rb_define_const(mCurlInfo, "TOTAL_TIME",              INT2FIX(CURLINFO_TOTAL_TIME));
-  rb_define_const(mCurlInfo, "NAMELOOKUP_TIME",         INT2FIX(CURLINFO_NAMELOOKUP_TIME));
-  rb_define_const(mCurlInfo, "CONNECT_TIME",            INT2FIX(CURLINFO_CONNECT_TIME));
-  rb_define_const(mCurlInfo, "PRETRANSFER_TIME",        INT2FIX(CURLINFO_PRETRANSFER_TIME));
-  rb_define_const(mCurlInfo, "STARTTRANSFER_TIME",      INT2FIX(CURLINFO_STARTTRANSFER_TIME));
-  rb_define_const(mCurlInfo, "REDIRECT_TIME",           INT2FIX(CURLINFO_REDIRECT_TIME));
-  rb_define_const(mCurlInfo, "REDIRECT_COUNT",          INT2FIX(CURLINFO_REDIRECT_COUNT));
-  rb_define_const(mCurlInfo, "SIZE_UPLOAD",             INT2FIX(CURLINFO_SIZE_UPLOAD));
-  rb_define_const(mCurlInfo, "SIZE_DOWNLOAD",           INT2FIX(CURLINFO_SIZE_DOWNLOAD));
-  rb_define_const(mCurlInfo, "SPEED_DOWNLOAD",          INT2FIX(CURLINFO_SPEED_DOWNLOAD));
-  rb_define_const(mCurlInfo, "SPEED_UPLOAD",            INT2FIX(CURLINFO_SPEED_UPLOAD));
-  rb_define_const(mCurlInfo, "HEADER_SIZE",             INT2FIX(CURLINFO_HEADER_SIZE));
-  rb_define_const(mCurlInfo, "REQUEST_SIZE",            INT2FIX(CURLINFO_REQUEST_SIZE));
-  rb_define_const(mCurlInfo, "SSL_VERIFYRESULT",        INT2FIX(CURLINFO_SSL_VERIFYRESULT));
-  rb_define_const(mCurlInfo, "SSL_ENGINES",             INT2FIX(CURLINFO_SSL_ENGINES));
-  rb_define_const(mCurlInfo, "CONTENT_LENGTH_DOWNLOAD", INT2FIX(CURLINFO_CONTENT_LENGTH_DOWNLOAD));
-  rb_define_const(mCurlInfo, "CONTENT_LENGTH_UPLOAD",   INT2FIX(CURLINFO_CONTENT_LENGTH_UPLOAD));
-  rb_define_const(mCurlInfo, "CONTENT_TYPE",            INT2FIX(CURLINFO_CONTENT_TYPE));
-  rb_define_const(mCurlInfo, "HTTPAUTH_AVAIL",          INT2FIX(CURLINFO_HTTPAUTH_AVAIL));
-  rb_define_const(mCurlInfo, "PROXYAUTH_AVAIL",         INT2FIX(CURLINFO_PROXYAUTH_AVAIL));
-  rb_define_const(mCurlInfo, "OS_ERRNO",                INT2FIX(CURLINFO_OS_ERRNO));
-  rb_define_const(mCurlInfo, "NUM_CONNECTS",            INT2FIX(CURLINFO_NUM_CONNECTS));
-  rb_define_const(mCurlInfo, "COOKIELIST",              INT2FIX(CURLINFO_COOKIELIST));
-  rb_define_const(mCurlInfo, "FTP_ENTRY_PATH",          INT2FIX(CURLINFO_FTP_ENTRY_PATH));
+#define define_curl_info(X) rb_define_const(mCurlInfo, #X, INT2FIX(CURLINFO_##X))
+
+  define_curl_info(EFFECTIVE_URL);
+  define_curl_info(RESPONSE_CODE);
+  define_curl_info(HTTP_CONNECTCODE);
+  define_curl_info(FILETIME);
+  define_curl_info(TOTAL_TIME);
+  define_curl_info(NAMELOOKUP_TIME);
+  define_curl_info(CONNECT_TIME);
+  define_curl_info(PRETRANSFER_TIME);
+  define_curl_info(STARTTRANSFER_TIME);
+  define_curl_info(REDIRECT_TIME);
+  define_curl_info(REDIRECT_COUNT);
+  define_curl_info(SIZE_UPLOAD);
+  define_curl_info(SIZE_DOWNLOAD);
+  define_curl_info(SPEED_DOWNLOAD);
+  define_curl_info(SPEED_UPLOAD);
+  define_curl_info(HEADER_SIZE);
+  define_curl_info(REQUEST_SIZE);
+  define_curl_info(SSL_VERIFYRESULT);
+  define_curl_info(SSL_ENGINES);
+  define_curl_info(CONTENT_LENGTH_DOWNLOAD);
+  define_curl_info(CONTENT_LENGTH_UPLOAD);
+  define_curl_info(CONTENT_TYPE);
+  define_curl_info(HTTPAUTH_AVAIL);
+  define_curl_info(PROXYAUTH_AVAIL);
+  define_curl_info(OS_ERRNO);
+  define_curl_info(NUM_CONNECTS);
+  define_curl_info(COOKIELIST);
+  define_curl_info(FTP_ENTRY_PATH);
 
 
   // Libcurl class
