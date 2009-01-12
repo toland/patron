@@ -13,12 +13,11 @@ struct curl_state {
 // Callback support
 //
 
-// static size_t session_write_shim(char* stream, size_t size, size_t nmemb, VALUE proc) {
-//   size_t result = size * nmemb;
-//   rb_funcall(proc, rb_intern("call"), 1, rb_str_new(stream, result));
-//   return result;
-// }
-// 
+static size_t session_write_handler(char* stream, size_t size, size_t nmemb, VALUE out) {
+  rb_str_buf_cat(out, stream, size * nmemb);
+  return size * nmemb;
+}
+
 // static size_t session_read_shim(char* stream, size_t size, size_t nmemb, VALUE proc) {
 //   size_t result = size * nmemb;
 //   VALUE string = rb_funcall(proc, rb_intern("call"), 1, result);
@@ -54,20 +53,20 @@ VALUE libcurl_version(VALUE klass) {
 }
 
 VALUE session_ext_initialize(VALUE self) {
-  struct curl_state *curl;
-  Data_Get_Struct(self, struct curl_state, curl);
+  struct curl_state *state;
+  Data_Get_Struct(self, struct curl_state, state);
 
-  curl->handle = curl_easy_init();
+  state->handle = curl_easy_init();
 
   return self;
 }
 
 VALUE session_escape(VALUE self, VALUE value) {
-  struct curl_state *curl;
-  Data_Get_Struct(self, struct curl_state, curl);
+  struct curl_state *state;
+  Data_Get_Struct(self, struct curl_state, state);
 
   VALUE string = StringValue(value);
-  char* escaped = curl_easy_escape(curl->handle,
+  char* escaped = curl_easy_escape(state->handle,
                                    RSTRING(string)->ptr,
                                    RSTRING(string)->len);
 
@@ -78,11 +77,11 @@ VALUE session_escape(VALUE self, VALUE value) {
 }
 
 VALUE session_unescape(VALUE self, VALUE value) {
-  struct curl_state *curl;
-  Data_Get_Struct(self, struct curl_state, curl);
+  struct curl_state *state;
+  Data_Get_Struct(self, struct curl_state, state);
 
   VALUE string = StringValue(value);
-  char* unescaped = curl_easy_unescape(curl->handle,
+  char* unescaped = curl_easy_unescape(state->handle,
                                        RSTRING(string)->ptr,
                                        RSTRING(string)->len,
                                        NULL);
@@ -93,16 +92,47 @@ VALUE session_unescape(VALUE self, VALUE value) {
   return retval;
 }
 
-VALUE session_handle_request(VALUE self, VALUE request) {
-  struct curl_state *curl;
-  Data_Get_Struct(self, struct curl_state, curl);
-
+void set_options_from_request(CURL* curl, VALUE request) {
   VALUE url = rb_iv_get(request, "@url");
-  curl_easy_setopt(curl->handle, CURLOPT_URL, RSTRING(url)->ptr);
+  curl_easy_setopt(curl, CURLOPT_URL, StringValuePtr(url));
+}
 
-  curl_easy_perform(curl->handle);
+VALUE create_response(CURL* curl) {
+  VALUE response = rb_class_new_instance(0, 0,
+                      rb_const_get(mPatron, rb_intern("Response")));
 
-  return Qnil;
+  char* url = NULL;
+  curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &url);
+  rb_iv_set(response, "@url", rb_str_new2(url));
+
+  long code = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+  rb_iv_set(response, "@status", INT2NUM(code));
+
+  return response;
+}
+
+VALUE session_handle_request(VALUE self, VALUE request) {
+  struct curl_state *state;
+  Data_Get_Struct(self, struct curl_state, state);
+
+  CURL* curl = state->handle;
+
+  set_options_from_request(curl, request);
+
+  VALUE body_buffer = rb_str_buf_new(32768);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, (curl_write_callback) &session_write_handler);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, body_buffer);
+
+  CURLcode ret = curl_easy_perform(curl);
+  if (CURLE_OK == ret) {
+    VALUE response = create_response(curl);
+    rb_iv_set(response, "@body", body_buffer);
+    return response;
+  } else {
+    // TODO raise an error
+    return Qnil;
+  }
 }
 
 //------------------------------------------------------------------------------
