@@ -2,7 +2,7 @@
 #include <curl/curl.h>
 
 static VALUE mPatron = Qnil;
-static VALUE cRequest = Qnil;
+static VALUE cSession = Qnil;
 static VALUE mCurlOpts = Qnil;
 static VALUE mCurlInfo = Qnil;
 
@@ -15,13 +15,13 @@ struct curl_state {
 // Callback support
 //
 
-static size_t request_write_shim(char* stream, size_t size, size_t nmemb, VALUE proc) {
+static size_t session_write_shim(char* stream, size_t size, size_t nmemb, VALUE proc) {
   size_t result = size * nmemb;
   rb_funcall(proc, rb_intern("call"), 1, rb_str_new(stream, result));
   return result;
 }
 
-static size_t request_read_shim(char* stream, size_t size, size_t nmemb, VALUE proc) {
+static size_t session_read_shim(char* stream, size_t size, size_t nmemb, VALUE proc) {
   size_t result = size * nmemb;
   VALUE string = rb_funcall(proc, rb_intern("call"), 1, result);
   size_t len = RSTRING(string)->len;
@@ -34,14 +34,14 @@ static size_t request_read_shim(char* stream, size_t size, size_t nmemb, VALUE p
 // Object allocation
 //
 
-void request_free(struct curl_state *curl) {
+void session_free(struct curl_state *curl) {
   curl_easy_cleanup(curl->handle);
   free(curl);
 }
 
-VALUE request_alloc(VALUE klass) {
+VALUE session_alloc(VALUE klass) {
   struct curl_state* curl;
-  VALUE obj = Data_Make_Struct(klass, struct curl_state, NULL, request_free, curl);
+  VALUE obj = Data_Make_Struct(klass, struct curl_state, NULL, session_free, curl);
   return obj;
 }
 
@@ -50,12 +50,12 @@ VALUE request_alloc(VALUE klass) {
 // Method implementations
 //
 
-VALUE request_version(VALUE klass) {
+VALUE session_version(VALUE klass) {
   char* value = curl_version();
   return rb_str_new2(value);
 }
 
-VALUE request_initialize(VALUE self) {
+VALUE session_initialize(VALUE self) {
   struct curl_state *curl;
   Data_Get_Struct(self, struct curl_state, curl);
 
@@ -64,7 +64,7 @@ VALUE request_initialize(VALUE self) {
   return self;
 }
 
-VALUE request_escape(VALUE self, VALUE value) {
+VALUE session_escape(VALUE self, VALUE value) {
   struct curl_state *curl;
   Data_Get_Struct(self, struct curl_state, curl);
 
@@ -79,7 +79,7 @@ VALUE request_escape(VALUE self, VALUE value) {
   return retval;
 }
 
-VALUE request_unescape(VALUE self, VALUE value) {
+VALUE session_unescape(VALUE self, VALUE value) {
   struct curl_state *curl;
   Data_Get_Struct(self, struct curl_state, curl);
 
@@ -95,24 +95,24 @@ VALUE request_unescape(VALUE self, VALUE value) {
   return retval;
 }
 
-VALUE request_setopt(VALUE self, VALUE optval, VALUE parameter) {
+VALUE session_setopt(VALUE self, VALUE optval, VALUE parameter) {
   struct curl_state *curl;
   Data_Get_Struct(self, struct curl_state, curl);
 
   int option = FIX2INT(optval);
   switch (option) {
     case CURLOPT_READFUNCTION:
-      curl_easy_setopt(curl, CURLOPT_READFUNCTION, &request_read_shim);
+      curl_easy_setopt(curl, CURLOPT_READFUNCTION, &session_read_shim);
       curl_easy_setopt(curl, CURLOPT_READDATA, parameter);
       break;
 
     case CURLOPT_WRITEFUNCTION:
-      curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &request_write_shim);
+      curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &session_write_shim);
       curl_easy_setopt(curl, CURLOPT_WRITEDATA, parameter);
       break;
 
     case CURLOPT_HEADERFUNCTION:
-      curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &request_write_shim);
+      curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &session_write_shim);
       curl_easy_setopt(curl, CURLOPT_HEADERDATA, parameter);
       break;
 
@@ -134,7 +134,7 @@ VALUE request_setopt(VALUE self, VALUE optval, VALUE parameter) {
   return Qnil;
 }
 
-VALUE request_getinfo(VALUE self, VALUE infoval) {
+VALUE session_getinfo(VALUE self, VALUE infoval) {
   struct curl_state *curl;
   Data_Get_Struct(self, struct curl_state, curl);
 
@@ -189,7 +189,7 @@ VALUE request_getinfo(VALUE self, VALUE infoval) {
   }
 }
 
-VALUE request_perform(VALUE self) {
+VALUE session_perform(VALUE self) {
   struct curl_state *curl;
   Data_Get_Struct(self, struct curl_state, curl);
 
@@ -203,7 +203,7 @@ VALUE request_perform(VALUE self) {
 // Extension initialization
 //
 
-void Init_request() {
+void Init_session_ext() {
   curl_global_init(CURL_GLOBAL_NOTHING);
 
   mPatron = rb_define_module("Patron");
@@ -302,16 +302,16 @@ void Init_request() {
 
 
   // Request class
-  cRequest = rb_define_class_under(mPatron, "Request", rb_cObject);
+  cSession = rb_define_class_under(mPatron, "Session", rb_cObject);
 
-  rb_define_alloc_func(cRequest, request_alloc);
+  rb_define_alloc_func(cSession, session_alloc);
 
-  rb_define_singleton_method(cRequest, "version", request_version, 0);
+  rb_define_singleton_method(cSession, "version", session_version, 0);
 
-  rb_define_method(cRequest, "initialize",  request_initialize, 0);
-  rb_define_method(cRequest, "escape",      request_escape,     1);
-  rb_define_method(cRequest, "unescape",    request_unescape,   1);
-  rb_define_method(cRequest, "setopt",      request_setopt,     2);
-  rb_define_method(cRequest, "getinfo",     request_getinfo,    1);
-  rb_define_method(cRequest, "perform",     request_perform,    0);
+  rb_define_method(cSession, "initialize",  session_initialize, 0);
+  rb_define_method(cSession, "escape",      session_escape,     1);
+  rb_define_method(cSession, "unescape",    session_unescape,   1);
+  rb_define_method(cSession, "setopt",      session_setopt,     2);
+  rb_define_method(cSession, "getinfo",     session_getinfo,    1);
+  rb_define_method(cSession, "perform",     session_perform,    0);
 }

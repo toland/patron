@@ -12,16 +12,16 @@ require 'rbconfig'
 include Config
 
 EXT_DIR     = 'ext/patron'
-REQUEST_SO  = "#{EXT_DIR}/request.#{CONFIG['DLEXT']}"
-REQUEST_SRC = "#{EXT_DIR}/request.c"
+SESSION_SO  = "#{EXT_DIR}/session_ext.#{CONFIG['DLEXT']}"
+SESSION_SRC = "#{EXT_DIR}/session_ext.c"
 
 CLEAN.include FileList["#{EXT_DIR}/*"].exclude(/^.*\.(rb|c)$/)
 CLOBBER.include %w( doc coverage pkg )
 
 desc "Compile extension"
-task :compile => REQUEST_SO
+task :compile => SESSION_SO
 
-file REQUEST_SO => REQUEST_SRC do
+file SESSION_SO => SESSION_SRC do
   cd EXT_DIR do
     ruby 'extconf.rb'
     sh 'make'

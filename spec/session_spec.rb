@@ -1,14 +1,14 @@
 require File.dirname(__FILE__) + '/spec_helper.rb'
 require 'patron/request'
 
-describe Patron::Request do
+describe Patron::Session do
 
   before(:each) do
-    @curl = Patron::Request.new
+    @curl = Patron::Session.new
   end
 
   it "should return the version number of the request library" do
-    version = Patron::Request.version
+    version = Patron::Session.version
     version.should be_kind_of(String)
   end
 
