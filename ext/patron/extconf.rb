@@ -17,4 +17,4 @@ if CONFIG['CC'] =~ /gcc/
   $CFLAGS << ' -Wall'
 end
 
-create_makefile 'patron/libcurl'
+create_makefile 'patron/request'

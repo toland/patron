@@ -12,16 +12,16 @@ require 'rbconfig'
 include Config
 
 EXT_DIR     = 'ext/patron'
-LIBCURL_SO  = "#{EXT_DIR}/libcurl.#{CONFIG['DLEXT']}"
-LIBCURL_SRC = "#{EXT_DIR}/libcurl.c"
+REQUEST_SO  = "#{EXT_DIR}/request.#{CONFIG['DLEXT']}"
+REQUEST_SRC = "#{EXT_DIR}/request.c"
 
 CLEAN.include FileList["#{EXT_DIR}/*"].exclude(/^.*\.(rb|c)$/)
 CLOBBER.include %w( doc coverage pkg )
 
 desc "Compile extension"
-task :compile => LIBCURL_SO
+task :compile => REQUEST_SO
 
-file LIBCURL_SO => LIBCURL_SRC do
+file REQUEST_SO => REQUEST_SRC do
   cd EXT_DIR do
     ruby 'extconf.rb'
     sh 'make'

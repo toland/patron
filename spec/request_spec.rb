@@ -1,14 +1,14 @@
 require File.dirname(__FILE__) + '/spec_helper.rb'
-require 'patron/libcurl'
+require 'patron/request'
 
-describe Patron::Libcurl, "SPI" do
+describe Patron::Request do
 
   before(:each) do
-    @curl = Patron::Libcurl.new
+    @curl = Patron::Request.new
   end
 
-  it "should return the version number of the libcurl library" do
-    version = Patron::Libcurl.version
+  it "should return the version number of the request library" do
+    version = Patron::Request.version
     version.should be_kind_of(String)
   end
 
