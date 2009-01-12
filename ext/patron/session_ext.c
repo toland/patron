@@ -93,8 +93,34 @@ VALUE session_unescape(VALUE self, VALUE value) {
 }
 
 void set_options_from_request(CURL* curl, VALUE request) {
+  VALUE action = rb_iv_get(request, "@action");
+  char* action_name = StringValuePtr(action);
+  if (strcmp(action_name, "get")) {
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
+  } else if (strcmp(action_name, "post")) {
+    curl_easy_setopt(curl, CURLOPT_HTTPPOST, 1);
+  } else if (strcmp(action_name, "put")) {
+    curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
+  } else if (strcmp(action_name, "delete")) {
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+  } else if (strcmp(action_name, "head")) {
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "HEAD");
+  }
+
   VALUE url = rb_iv_get(request, "@url");
   curl_easy_setopt(curl, CURLOPT_URL, StringValuePtr(url));
+
+  VALUE timeout = rb_iv_get(request, "@timeout");
+  if (!NIL_P(timeout)) {
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, FIX2INT(timeout));
+  }
+
+  VALUE redirects = rb_iv_get(request, "@max_redirects");
+  if (!NIL_P(redirects)) {
+    int r = FIX2INT(redirects);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, r == 0 ? 0 : 1);
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, r);
+  }
 }
 
 VALUE create_response(CURL* curl) {
