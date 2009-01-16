@@ -10,7 +10,7 @@ struct curl_state {
 
 
 //------------------------------------------------------------------------------
-// Callback support
+// Callbacks
 //
 
 static size_t session_write_handler(char* stream, size_t size, size_t nmemb, VALUE out) {
@@ -26,6 +26,17 @@ static size_t session_write_handler(char* stream, size_t size, size_t nmemb, VAL
 //   return len;
 // }
  
+static VALUE each_http_header(VALUE header, struct curl_slist **list) {
+  VALUE name = rb_obj_as_string(rb_ary_entry(header, 0));
+  VALUE value = rb_obj_as_string(rb_ary_entry(header, 1));
+
+  VALUE header_str = Qnil;
+  header_str = rb_str_plus(name, rb_str_new2(": "));
+  header_str = rb_str_plus(header_str, value);
+
+  *list = curl_slist_append(*list, StringValuePtr(header_str));
+  return Qnil;
+}
 
 //------------------------------------------------------------------------------
 // Object allocation
@@ -93,21 +104,25 @@ VALUE session_unescape(VALUE self, VALUE value) {
 }
 
 void set_options_from_request(CURL* curl, VALUE request) {
-  VALUE action = rb_iv_get(request, "@action");
-  char* action_name = StringValuePtr(action);
-  if (strcmp(action_name, "get")) {
+  curl_easy_reset(curl);
+
+  ID action = SYM2ID(rb_iv_get(request, "@action"));
+  if (action == rb_intern("get")) {
     curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
-  } else if (strcmp(action_name, "post")) {
+  } else if (action == rb_intern("post")) {
     curl_easy_setopt(curl, CURLOPT_HTTPPOST, 1);
-  } else if (strcmp(action_name, "put")) {
+  } else if (action == rb_intern("put")) {
     curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
-  } else if (strcmp(action_name, "delete")) {
+  } else if (action == rb_intern("delete")) {
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
-  } else if (strcmp(action_name, "head")) {
+  } else if (action == rb_intern("head")) {
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "HEAD");
   }
 
   VALUE url = rb_iv_get(request, "@url");
+  if (NIL_P(url)) {
+    rb_raise(rb_eArgError, "Must provide a URL");
+  }
   curl_easy_setopt(curl, CURLOPT_URL, StringValuePtr(url));
 
   VALUE timeout = rb_iv_get(request, "@timeout");
@@ -121,6 +136,18 @@ void set_options_from_request(CURL* curl, VALUE request) {
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, r == 0 ? 0 : 1);
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, r);
   }
+
+  struct curl_slist* hdrs = NULL;
+  VALUE headers = rb_iv_get(request, "@headers");
+  if (!NIL_P(headers)) {
+    if (rb_type(headers) != T_HASH) {
+      rb_raise(rb_eArgError, "Headers must be passed in a hash.");
+    }
+
+    rb_iterate(rb_each, headers, each_http_header, (VALUE) &hdrs);
+  }
+
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, hdrs);
 }
 
 VALUE create_response(CURL* curl) {
@@ -156,8 +183,7 @@ VALUE session_handle_request(VALUE self, VALUE request) {
     rb_iv_set(response, "@body", body_buffer);
     return response;
   } else {
-    // TODO raise an error
-    return Qnil;
+    rb_raise(rb_eRuntimeError, "Curl failed");
   }
 }
 
