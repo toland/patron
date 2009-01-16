@@ -1,12 +1,8 @@
-require 'pathname'
-require 'rubygems'
-require 'rake'
+require 'yaml'
 require 'rake/clean'
 require 'rake/rdoctask'
-require 'rake/gempackagetask'
-require 'spec'
 require 'spec/rake/spectask'
-require Pathname('lib/patron/version')
+require 'jeweler'
 
 require 'rbconfig'
 include Config
@@ -18,22 +14,8 @@ SESSION_SRC = "#{EXT_DIR}/session_ext.c"
 CLEAN.include FileList["#{EXT_DIR}/*"].exclude(/^.*\.(rb|c)$/)
 CLOBBER.include %w( doc coverage pkg )
 
-desc "Compile extension"
-task :compile => SESSION_SO
-
-file SESSION_SO => SESSION_SRC do
-  cd EXT_DIR do
-    ruby 'extconf.rb'
-    sh 'make'
-  end
-end
-
-
-RDOC_TITLE = "Patron #{Patron::VERSION::STRING} documentation"
-
-spec = Gem::Specification.new do |s|
+Jeweler::Tasks.new do |s|
   s.name              = 'patron'
-  s.version           = Patron::VERSION::STRING
   s.platform          = Gem::Platform::RUBY
   s.author            = 'Phillip Toland'
   s.email             = 'ptoland@thehive.com'
@@ -55,25 +37,26 @@ spec = Gem::Specification.new do |s|
   # rdoc
   s.has_rdoc         = true
   s.extra_rdoc_files = ['README.txt', 'History.txt']
-  s.rdoc_options     = ['--quiet', 
-                        '--title', RDOC_TITLE,
+  s.rdoc_options     = ['--quiet',
+                        '--title', "Patron documentation",
                         '--opname', 'index.html',
                         '--line-numbers',
                         '--main', 'README.txt',
                         '--inline-source']
 
   # Dependencies
-  # s.add_dependency 'gemname', '>= version'
+  s.add_dependency 'technicalpickles-jeweler', '>= 0.6.5'
 end
 
-Rake::GemPackageTask.new(spec) do |package|
-  package.gem_spec = spec
+file SESSION_SO => SESSION_SRC do
+  cd EXT_DIR do
+    ruby 'extconf.rb'
+    sh 'make'
+  end
 end
 
-desc 'Build and install the gem'
-task :install => :gem do
-  sh "sudo gem install pkg/patron-#{Patron::VERSION::STRING}.gem"
-end
+desc "Compile extension"
+task :compile => SESSION_SO
 
 desc "Start an IRB shell"
 task :shell => :compile do
@@ -82,7 +65,7 @@ end
 
 Rake::RDocTask.new do |rdoc|
   rdoc.rdoc_dir = 'doc'
-  rdoc.title = RDOC_TITLE
+  rdoc.title = "Patron documentation"
   rdoc.main = 'README.txt'
   rdoc.options << '--line-numbers' << '--inline-source'
   rdoc.rdoc_files.include('README.txt')
