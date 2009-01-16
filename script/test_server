@@ -26,12 +26,18 @@ class TestServlet < HTTPServlet::AbstractServlet
   end
 end
 
+class TimeoutServlet < HTTPServlet::AbstractServlet
+  def do_GET(req,res)
+    sleep(1.1)
+  end
+end
+
 server = WEBrick::HTTPServer.new :Port => 9001
 server.mount("/test", TestServlet)
+server.mount("/timeout", TimeoutServlet)
 
 exit_code = lambda do
   begin
-    #puts "stopping"
     server.shutdown unless server.nil?
   rescue Object => e
     puts "Error #{__FILE__}:#{__LINE__}\n#{e.message}"
