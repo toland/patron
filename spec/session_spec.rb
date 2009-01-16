@@ -26,4 +26,9 @@ describe Patron::Session do
     response.status.should == 200
   end
 
+  it "should raise an exception on timeout" do
+    @session.timeout = 1
+    lambda {@session.get("/timeout")}.should raise_error(Patron::TimeoutError)
+  end
+
 end

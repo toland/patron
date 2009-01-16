@@ -3,6 +3,15 @@
 
 static VALUE mPatron = Qnil;
 static VALUE cSession = Qnil;
+static VALUE ePatronError = Qnil;
+static VALUE eUnsupportedProtocol = Qnil;
+static VALUE eURLFormatError = Qnil;
+static VALUE eHostResolutionError = Qnil;
+static VALUE eConnectionFailed = Qnil;
+static VALUE ePartialFileError = Qnil;
+static VALUE eTimeoutError = Qnil;
+static VALUE eTooManyRedirects = Qnil;
+
 
 struct curl_state {
   CURL* handle;
@@ -171,6 +180,23 @@ VALUE create_response(CURL* curl) {
   return response;
 }
 
+VALUE select_error(CURLcode code) {
+  VALUE error = Qnil;
+  switch (code) {
+    case CURLE_UNSUPPORTED_PROTOCOL:  error = eUnsupportedProtocol; break;
+    case CURLE_URL_MALFORMAT:         error = eURLFormatError;      break;
+    case CURLE_COULDNT_RESOLVE_HOST:  error = eHostResolutionError; break;
+    case CURLE_COULDNT_CONNECT:       error = eConnectionFailed;    break;
+    case CURLE_PARTIAL_FILE:          error = ePartialFileError;    break;
+    case CURLE_OPERATION_TIMEDOUT:    error = eTimeoutError;        break;
+    case CURLE_TOO_MANY_REDIRECTS:    error = eTooManyRedirects;    break;
+
+    default: error = ePatronError;
+  }
+
+  return error;
+}
+
 static VALUE perform_request(VALUE self) {
   struct curl_state *state;
   Data_Get_Struct(self, struct curl_state, state);
@@ -187,7 +213,7 @@ static VALUE perform_request(VALUE self) {
     rb_iv_set(response, "@body", body_buffer);
     return response;
   } else {
-    rb_raise(rb_eRuntimeError, "Curl failed");
+    rb_raise(select_error(ret), "Curl failed: %d", ret);
   }
 }
 
@@ -216,8 +242,19 @@ VALUE session_handle_request(VALUE self, VALUE request) {
 
 void Init_session_ext() {
   curl_global_init(CURL_GLOBAL_NOTHING);
+  rb_require("patron/error");
 
   mPatron = rb_define_module("Patron");
+
+  ePatronError = rb_const_get(mPatron, rb_intern("Error"));
+
+  eUnsupportedProtocol = rb_const_get(mPatron, rb_intern("UnsupportedProtocol"));
+  eURLFormatError = rb_const_get(mPatron, rb_intern("URLFormatError"));
+  eHostResolutionError = rb_const_get(mPatron, rb_intern("HostResolutionError"));
+  eConnectionFailed = rb_const_get(mPatron, rb_intern("ConnectionFailed"));
+  ePartialFileError = rb_const_get(mPatron, rb_intern("PartialFileError"));
+  eTimeoutError = rb_const_get(mPatron, rb_intern("TimeoutError"));
+  eTooManyRedirects = rb_const_get(mPatron, rb_intern("TooManyRedirects"));
 
   rb_define_module_function(mPatron, "libcurl_version", libcurl_version, 0);
 
