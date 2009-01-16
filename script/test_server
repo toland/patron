@@ -1,0 +1,42 @@
+#!/usr/bin/env ruby
+require 'yaml'
+require 'webrick'
+include WEBrick
+
+class TestServlet < HTTPServlet::AbstractServlet
+  def respond_with(method, req, res)
+    res.body = req.to_yaml
+    res['Content-Type'] = "text/plain"
+  end
+
+  def do_GET(req,res)
+    respond_with(:GET, req, res)
+  end
+
+  def do_POST(req,res)
+    respond_with(:POST, req, res)
+  end
+
+  def do_PUT(req,res)
+    respond_with(:PUT, req, res)
+  end
+
+  def do_DELETE(req,res)
+    respond_with(:DELETE, req, res)
+  end
+end
+
+server = WEBrick::HTTPServer.new :Port => 9001
+server.mount("/test", TestServlet)
+
+exit_code = lambda do
+  begin
+    #puts "stopping"
+    server.shutdown unless server.nil?
+  rescue Object => e
+    puts "Error #{__FILE__}:#{__LINE__}\n#{e.message}"
+  end
+end
+
+trap("INT"){exit_code.call}
+server.start

@@ -1,40 +1,29 @@
 require File.dirname(__FILE__) + '/spec_helper.rb'
-require 'patron/request'
+
 
 describe Patron::Session do
 
   before(:each) do
-    @curl = Patron::Session.new
-  end
-
-  it "should return the version number of the request library" do
-    version = Patron::Session.version
-    version.should be_kind_of(String)
+    @session = Patron::Session.new
+    @session.base_url = "http://localhost:9001"
   end
 
   it "should escape and unescape strings" do
     string = "foo~bar baz/"
-    escaped = @curl.escape(string)
-    unescaped = @curl.unescape(escaped)
+    escaped = @session.escape(string)
+    unescaped = @session.unescape(escaped)
     unescaped.should == string
   end
 
-  it "should set and return the URL" do
-    @curl.setopt(Patron::CurlOpts::URL, "http://thehive.com/")
-    url = @curl.getinfo(Patron::CurlInfo::EFFECTIVE_URL)
-    url.should == "http://thehive.com/"
+  it "should get a url" do
+    response = @session.get("/test")
+    response.status.should == 200
   end
 
-  it "should use proc to handle results" do
-    pending "until a test web server is available"
-
-    valid = false
-    p = Proc.new {|data| valid = true}
-
-    @curl.setopt(Patron::CurlOpts::URL, "http://thehive.com/")
-    @curl.setopt(Patron::CurlOpts::WRITE_HANDLER, p)
-    @curl.perform
-    valid.should be_true
+  it "should get a url with custom headers" do
+    @session.headers["User-Agent"] = "PatronTest"
+    response = @session.get("/test")
+    response.status.should == 200
   end
 
 end
