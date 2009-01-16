@@ -15,6 +15,7 @@ static VALUE eTooManyRedirects = Qnil;
 
 struct curl_state {
   CURL* handle;
+  char error_buf[CURL_ERROR_SIZE];
   struct curl_slist* headers;
 };
 
@@ -135,6 +136,8 @@ void set_options_from_request(VALUE self, VALUE request) {
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "HEAD");
   }
 
+  curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, state->error_buf);
+
   VALUE url = rb_iv_get(request, "@url");
   if (NIL_P(url)) {
     rb_raise(rb_eArgError, "Must provide a URL");
@@ -213,7 +216,7 @@ static VALUE perform_request(VALUE self) {
     rb_iv_set(response, "@body", body_buffer);
     return response;
   } else {
-    rb_raise(select_error(ret), "Curl failed: %d", ret);
+    rb_raise(select_error(ret), state->error_buf);
   }
 }
 
