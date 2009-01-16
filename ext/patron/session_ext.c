@@ -6,11 +6,12 @@ static VALUE cSession = Qnil;
 
 struct curl_state {
   CURL* handle;
+  struct curl_slist* headers;
 };
 
 
 //------------------------------------------------------------------------------
-// Callbacks
+// Curl Callbacks
 //
 
 static size_t session_write_handler(char* stream, size_t size, size_t nmemb, VALUE out) {
@@ -26,18 +27,6 @@ static size_t session_write_handler(char* stream, size_t size, size_t nmemb, VAL
 //   return len;
 // }
  
-static VALUE each_http_header(VALUE header, struct curl_slist **list) {
-  VALUE name = rb_obj_as_string(rb_ary_entry(header, 0));
-  VALUE value = rb_obj_as_string(rb_ary_entry(header, 1));
-
-  VALUE header_str = Qnil;
-  header_str = rb_str_plus(name, rb_str_new2(": "));
-  header_str = rb_str_plus(header_str, value);
-
-  *list = curl_slist_append(*list, StringValuePtr(header_str));
-  return Qnil;
-}
-
 //------------------------------------------------------------------------------
 // Object allocation
 //
@@ -103,8 +92,26 @@ VALUE session_unescape(VALUE self, VALUE value) {
   return retval;
 }
 
-void set_options_from_request(CURL* curl, VALUE request) {
-  curl_easy_reset(curl);
+static VALUE each_http_header(VALUE header, VALUE self) {
+  struct curl_state *state;
+  Data_Get_Struct(self, struct curl_state, state);
+
+  VALUE name = rb_obj_as_string(rb_ary_entry(header, 0));
+  VALUE value = rb_obj_as_string(rb_ary_entry(header, 1));
+
+  VALUE header_str = Qnil;
+  header_str = rb_str_plus(name, rb_str_new2(": "));
+  header_str = rb_str_plus(header_str, value);
+
+  state->headers = curl_slist_append(state->headers, StringValuePtr(header_str));
+  return Qnil;
+}
+
+void set_options_from_request(VALUE self, VALUE request) {
+  struct curl_state *state;
+  Data_Get_Struct(self, struct curl_state, state);
+
+  CURL* curl = state->handle;
 
   ID action = SYM2ID(rb_iv_get(request, "@action"));
   if (action == rb_intern("get")) {
@@ -137,17 +144,16 @@ void set_options_from_request(CURL* curl, VALUE request) {
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, r);
   }
 
-  struct curl_slist* hdrs = NULL;
   VALUE headers = rb_iv_get(request, "@headers");
   if (!NIL_P(headers)) {
     if (rb_type(headers) != T_HASH) {
       rb_raise(rb_eArgError, "Headers must be passed in a hash.");
     }
 
-    rb_iterate(rb_each, headers, each_http_header, (VALUE) &hdrs);
+    rb_iterate(rb_each, headers, each_http_header, self);
   }
 
-  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, hdrs);
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, state->headers);
 }
 
 VALUE create_response(CURL* curl) {
@@ -165,13 +171,11 @@ VALUE create_response(CURL* curl) {
   return response;
 }
 
-VALUE session_handle_request(VALUE self, VALUE request) {
+static VALUE perform_request(VALUE self) {
   struct curl_state *state;
   Data_Get_Struct(self, struct curl_state, state);
 
   CURL* curl = state->handle;
-
-  set_options_from_request(curl, request);
 
   VALUE body_buffer = rb_str_buf_new(32768);
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, (curl_write_callback) &session_write_handler);
@@ -185,6 +189,25 @@ VALUE session_handle_request(VALUE self, VALUE request) {
   } else {
     rb_raise(rb_eRuntimeError, "Curl failed");
   }
+}
+
+static VALUE cleanup(VALUE self) {
+  struct curl_state *state;
+  Data_Get_Struct(self, struct curl_state, state);
+
+  curl_easy_reset(state->handle);
+
+  if (state->headers) {
+    curl_slist_free_all(state->headers);
+    state->headers = NULL;
+  }
+
+  return Qnil;
+}
+
+VALUE session_handle_request(VALUE self, VALUE request) {
+  set_options_from_request(self, request);
+  return rb_ensure(&perform_request, self, &cleanup, self);
 }
 
 //------------------------------------------------------------------------------
