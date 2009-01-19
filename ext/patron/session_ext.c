@@ -24,6 +24,7 @@ struct curl_state {
 // Curl Callbacks
 //
 
+// Takes data streamed from libcurl and writes it to a Ruby string buffer.
 static size_t session_write_handler(char* stream, size_t size, size_t nmemb, VALUE out) {
   rb_str_buf_cat(out, stream, size * nmemb);
   return size * nmemb;
@@ -41,11 +42,13 @@ static size_t session_write_handler(char* stream, size_t size, size_t nmemb, VAL
 // Object allocation
 //
 
+// Cleans up the Curl handle when the Session object is garbage collected.
 void session_free(struct curl_state *curl) {
   curl_easy_cleanup(curl->handle);
   free(curl);
 }
 
+// Allocates curl_state data needed for a new Session object.
 VALUE session_alloc(VALUE klass) {
   struct curl_state* curl;
   VALUE obj = Data_Make_Struct(klass, struct curl_state, NULL, session_free, curl);
@@ -57,11 +60,14 @@ VALUE session_alloc(VALUE klass) {
 // Method implementations
 //
 
+// Returns the version of the embedded libcurl as a string.
 VALUE libcurl_version(VALUE klass) {
   char* value = curl_version();
   return rb_str_new2(value);
 }
 
+// Initializes the libcurl handle on object initialization.
+// NOTE: This must be called from Session#initialize.
 VALUE session_ext_initialize(VALUE self) {
   struct curl_state *state;
   Data_Get_Struct(self, struct curl_state, state);
@@ -71,6 +77,7 @@ VALUE session_ext_initialize(VALUE self) {
   return self;
 }
 
+// URL escapes the provided string.
 VALUE session_escape(VALUE self, VALUE value) {
   struct curl_state *state;
   Data_Get_Struct(self, struct curl_state, state);
@@ -86,6 +93,7 @@ VALUE session_escape(VALUE self, VALUE value) {
   return retval;
 }
 
+// Unescapes the provided string.
 VALUE session_unescape(VALUE self, VALUE value) {
   struct curl_state *state;
   Data_Get_Struct(self, struct curl_state, state);
@@ -102,6 +110,7 @@ VALUE session_unescape(VALUE self, VALUE value) {
   return retval;
 }
 
+// Callback used to iterate over the HTTP headers and store them in an slist.
 static VALUE each_http_header(VALUE header, VALUE self) {
   struct curl_state *state;
   Data_Get_Struct(self, struct curl_state, state);
@@ -117,6 +126,9 @@ static VALUE each_http_header(VALUE header, VALUE self) {
   return Qnil;
 }
 
+// Set the options on the Curl handle from a Request object. Takes each field
+// in the Request object and uses it to set the appropriate option on the Curl
+// handle.
 void set_options_from_request(VALUE self, VALUE request) {
   struct curl_state *state;
   Data_Get_Struct(self, struct curl_state, state);
@@ -168,6 +180,7 @@ void set_options_from_request(VALUE self, VALUE request) {
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, state->headers);
 }
 
+// Use the info in a Curl handle to create a new Response object.
 VALUE create_response(CURL* curl) {
   VALUE response = rb_class_new_instance(0, 0,
                       rb_const_get(mPatron, rb_intern("Response")));
@@ -183,6 +196,7 @@ VALUE create_response(CURL* curl) {
   return response;
 }
 
+// Raise an exception based on the Curl error code.
 VALUE select_error(CURLcode code) {
   VALUE error = Qnil;
   switch (code) {
@@ -200,6 +214,7 @@ VALUE select_error(CURLcode code) {
   return error;
 }
 
+// Perform the actual HTTP request by calling libcurl.
 static VALUE perform_request(VALUE self) {
   struct curl_state *state;
   Data_Get_Struct(self, struct curl_state, state);
@@ -220,6 +235,8 @@ static VALUE perform_request(VALUE self) {
   }
 }
 
+// Cleanup after each request by resetting the Curl handle and deallocating all
+// request related objects such as the header slist.
 static VALUE cleanup(VALUE self) {
   struct curl_state *state;
   Data_Get_Struct(self, struct curl_state, state);

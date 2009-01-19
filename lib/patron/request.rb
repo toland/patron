@@ -1,5 +1,9 @@
 
 module Patron
+
+  # Represents the information necessary for an HTTP request.
+  # This is basically a data object with validation. Not all fields will be
+  # used in every request.
   class Request
 
     def initialize
