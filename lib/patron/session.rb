@@ -51,8 +51,11 @@ module Patron
       r.action = action
       r.timeout = self.timeout
       r.max_redirects = self.max_redirects
-      r.url = (self.base_url || "") + url
       r.headers = self.headers.merge(headers)
+
+      r.url = self.base_url.to_s + url.to_s
+      raise ArgumentError, "Empty URL" if r.url.empty?
+
       r
     end
 

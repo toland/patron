@@ -32,9 +32,17 @@ class TimeoutServlet < HTTPServlet::AbstractServlet
   end
 end
 
+class RedirectServlet < HTTPServlet::AbstractServlet
+  def do_GET(req,res)
+    res['Location'] = "http://localhost:9001/test"
+    res.status = 301
+  end
+end
+
 server = WEBrick::HTTPServer.new :Port => 9001
 server.mount("/test", TestServlet)
 server.mount("/timeout", TimeoutServlet)
+server.mount("/redirect", RedirectServlet)
 
 exit_code = lambda do
   begin
