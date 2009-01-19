@@ -30,6 +30,11 @@ static size_t session_write_handler(char* stream, size_t size, size_t nmemb, VAL
   return size * nmemb;
 }
 
+static size_t session_header_handler(char* stream, size_t size, size_t nmemb, VALUE out) {
+  rb_str_buf_cat(out, stream, size * nmemb);
+  return size * nmemb;
+}
+
 // static size_t session_read_shim(char* stream, size_t size, size_t nmemb, VALUE proc) {
 //   size_t result = size * nmemb;
 //   VALUE string = rb_funcall(proc, rb_intern("call"), 1, result);
@@ -225,14 +230,21 @@ static VALUE perform_request(VALUE self) {
 
   CURL* curl = state->handle;
 
+  // headers
+  VALUE header_buffer = rb_str_buf_new(32768);
+  curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &session_header_handler);
+  curl_easy_setopt(curl, CURLOPT_HEADERDATA, header_buffer);
+
+  // body
   VALUE body_buffer = rb_str_buf_new(32768);
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, (curl_write_callback) &session_write_handler);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &session_write_handler);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, body_buffer);
 
   CURLcode ret = curl_easy_perform(curl);
   if (CURLE_OK == ret) {
     VALUE response = create_response(curl);
     rb_iv_set(response, "@body", body_buffer);
+    rb_funcall(response, rb_intern("parse_headers"), 1, header_buffer);
     return response;
   } else {
     rb_raise(select_error(ret), state->error_buf);
