@@ -25,17 +25,26 @@ module Patron
     end
 
     def timeout=(new_timeout)
-      # TODO add validation
-      @timeout = new_timeout
+      if new_timeout.to_i < 1
+        raise ArgumentError, "Timeout must be a positive integer greater than 0"
+      end
+
+      @timeout = new_timeout.to_i
     end
 
     def max_redirects=(new_max_redirects)
-      # TODO add validation
-      @max_redirects = new_max_redirects
+      if new_max_redirects.to_i < -1
+        raise ArgumentError, "Max redirects must be a positive integer, 0 or -1"
+      end
+
+      @max_redirects = new_max_redirects.to_i
     end
 
     def headers=(new_headers)
-      # TODO add validation
+      if !new_headers.kind_of?(Hash)
+        raise ArgumentError, "Headers must be a hash"
+      end
+
       @headers = new_headers
     end
 
