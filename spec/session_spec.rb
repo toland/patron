@@ -74,4 +74,10 @@ describe Patron::Session do
     response.headers.should_not be_empty
   end
 
+  it "should send a delete request with :delete" do
+    response = @session.delete("/test")
+    body = YAML::load(response.body)
+    body.request_method.should == "DELETE"
+  end
+
 end

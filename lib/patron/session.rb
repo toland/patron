@@ -49,6 +49,11 @@ module Patron
       handle_request(req)
     end
 
+    def delete(url, headers = {})
+      req = make_request(:delete, url, headers)
+      handle_request(req)
+    end
+
   private
 
     # Creates a new Request object from the parameters and instance variables.
