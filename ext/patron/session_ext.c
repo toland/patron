@@ -30,11 +30,6 @@ static size_t session_write_handler(char* stream, size_t size, size_t nmemb, VAL
   return size * nmemb;
 }
 
-static size_t session_header_handler(char* stream, size_t size, size_t nmemb, VALUE out) {
-  rb_str_buf_cat(out, stream, size * nmemb);
-  return size * nmemb;
-}
-
 // static size_t session_read_shim(char* stream, size_t size, size_t nmemb, VALUE proc) {
 //   size_t result = size * nmemb;
 //   VALUE string = rb_funcall(proc, rb_intern("call"), 1, result);
@@ -232,7 +227,7 @@ static VALUE perform_request(VALUE self) {
 
   // headers
   VALUE header_buffer = rb_str_buf_new(32768);
-  curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &session_header_handler);
+  curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &session_write_handler);
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, header_buffer);
 
   // body
