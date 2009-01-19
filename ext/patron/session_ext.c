@@ -150,7 +150,7 @@ void set_options_from_request(VALUE self, VALUE request) {
   } else if (action == rb_intern("delete")) {
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
   } else if (action == rb_intern("head")) {
-    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "HEAD");
+    curl_easy_setopt(curl, CURLOPT_NOBODY, 1);
   }
 
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, state->error_buf);

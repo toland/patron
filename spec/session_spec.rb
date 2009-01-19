@@ -67,4 +67,11 @@ describe Patron::Session do
     response.body.should be_empty
   end
 
+  it "should retrieve URL metadata with :head" do
+    response = @session.head("/test")
+    response.status.should == 200
+    response.body.should be_empty
+    response.headers.should_not be_empty
+  end
+
 end

@@ -43,6 +43,12 @@ module Patron
       handle_request(req)
     end
 
+    # As #get but sends an HTTP HEAD request.
+    def head(url, headers = {})
+      req = make_request(:head, url, headers)
+      handle_request(req)
+    end
+
   private
 
     # Creates a new Request object from the parameters and instance variables.
