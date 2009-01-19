@@ -39,35 +39,32 @@ module Patron
     # of the +headers+ instance variable. The results are returned in a
     # Response object.
     def get(url, headers = {})
-      req = make_request(:get, url, headers)
-      handle_request(req)
+      do_request(:get, url, headers)
     end
 
     # As #get but sends an HTTP HEAD request.
     def head(url, headers = {})
-      req = make_request(:head, url, headers)
-      handle_request(req)
+      do_request(:head, url, headers)
     end
 
     def delete(url, headers = {})
-      req = make_request(:delete, url, headers)
-      handle_request(req)
+      do_request(:delete, url, headers)
     end
 
   private
 
     # Creates a new Request object from the parameters and instance variables.
-    def make_request(action, url, headers)
-      r = Request.new
-      r.action = action
-      r.timeout = self.timeout
-      r.max_redirects = self.max_redirects
-      r.headers = self.headers.merge(headers)
+    def do_request(action, url, headers)
+      req = Request.new
+      req.action = action
+      req.timeout = self.timeout
+      req.max_redirects = self.max_redirects
+      req.headers = self.headers.merge(headers)
 
-      r.url = self.base_url.to_s + url.to_s
-      raise ArgumentError, "Empty URL" if r.url.empty?
+      req.url = self.base_url.to_s + url.to_s
+      raise ArgumentError, "Empty URL" if req.url.empty?
 
-      r
+      handle_request(req)
     end
 
   end
