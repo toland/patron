@@ -193,6 +193,10 @@ VALUE create_response(CURL* curl) {
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
   rb_iv_set(response, "@status", INT2NUM(code));
 
+  long count = 0;
+  curl_easy_getinfo(curl, CURLINFO_REDIRECT_COUNT, &count);
+  rb_iv_set(response, "@redirect_count", INT2NUM(count));
+
   return response;
 }
 

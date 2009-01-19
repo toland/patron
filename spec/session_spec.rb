@@ -54,6 +54,12 @@ describe Patron::Session do
     body.path.should == "/test"
   end
 
+  it "should include redirect count in response" do
+    @session.max_redirects = 1
+    response = @session.get("/redirect")
+    response.redirect_count.should == 1
+  end
+
   it "should not follow redirects when configured to do so" do
     @session.max_redirects = 0
     response = @session.get("/redirect")
