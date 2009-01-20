@@ -80,4 +80,12 @@ describe Patron::Session do
     body.request_method.should == "DELETE"
   end
 
+  it "should upload data with :put" do
+    data = "upload data"
+    response = @session.put("/test", data)
+    body = YAML::load(response.body)
+    body.request_method.should == "PUT"
+    body.header['content-length'].should == [data.size.to_s]
+  end
+
 end

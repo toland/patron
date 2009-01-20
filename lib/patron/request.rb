@@ -13,7 +13,7 @@ module Patron
       @max_redirects = -1
     end
 
-    attr_accessor :url
+    attr_accessor :url, :upload_data
     attr_reader :action, :timeout, :max_redirects, :headers
 
     def action=(new_action)

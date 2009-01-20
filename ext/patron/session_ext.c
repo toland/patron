@@ -15,6 +15,7 @@ static VALUE eTooManyRedirects = Qnil;
 
 struct curl_state {
   CURL* handle;
+  char* upload_buf;
   char error_buf[CURL_ERROR_SIZE];
   struct curl_slist* headers;
 };
@@ -30,13 +31,18 @@ static size_t session_write_handler(char* stream, size_t size, size_t nmemb, VAL
   return size * nmemb;
 }
 
-// static size_t session_read_shim(char* stream, size_t size, size_t nmemb, VALUE proc) {
-//   size_t result = size * nmemb;
-//   VALUE string = rb_funcall(proc, rb_intern("call"), 1, result);
-//   size_t len = RSTRING(string)->len;
-//   memcpy(stream, RSTRING(string)->ptr, len);
-//   return len;
-// }
+static size_t session_read_handler(char* stream, size_t size, size_t nmemb, char **buffer) {
+  size_t result = 0;
+
+  if (buffer != NULL && *buffer != NULL) {
+      int len = size * nmemb;
+      char *s1 = strncpy(stream, *buffer, len);
+      result = strlen(s1);
+      *buffer += result;
+  }
+
+  return result;
+}
  
 //------------------------------------------------------------------------------
 // Object allocation
@@ -141,7 +147,15 @@ void set_options_from_request(VALUE self, VALUE request) {
   } else if (action == rb_intern("post")) {
     curl_easy_setopt(curl, CURLOPT_HTTPPOST, 1);
   } else if (action == rb_intern("put")) {
+    VALUE data = rb_iv_get(request, "@upload_data");
+
+    state->upload_buf = StringValuePtr(data);
+    int len = RSTRING_LEN(data);
+
     curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
+    curl_easy_setopt(curl, CURLOPT_READFUNCTION, &session_read_handler);
+    curl_easy_setopt(curl, CURLOPT_READDATA, &state->upload_buf);
+    curl_easy_setopt(curl, CURLOPT_INFILESIZE, len);
   } else if (action == rb_intern("delete")) {
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
   } else if (action == rb_intern("head")) {
@@ -258,6 +272,8 @@ static VALUE cleanup(VALUE self) {
     curl_slist_free_all(state->headers);
     state->headers = NULL;
   }
+
+  state->upload_buf = NULL;
 
   return Qnil;
 }

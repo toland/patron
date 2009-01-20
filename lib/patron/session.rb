@@ -51,15 +51,20 @@ module Patron
       do_request(:delete, url, headers)
     end
 
+    def put(url, data, headers = {})
+      do_request(:put, url, headers, data)
+    end
+
   private
 
     # Creates a new Request object from the parameters and instance variables.
-    def do_request(action, url, headers)
+    def do_request(action, url, headers, data = nil)
       req = Request.new
       req.action = action
       req.timeout = self.timeout
       req.max_redirects = self.max_redirects
       req.headers = self.headers.merge(headers)
+      req.upload_data = data
 
       req.url = self.base_url.to_s + url.to_s
       raise ArgumentError, "Empty URL" if req.url.empty?
