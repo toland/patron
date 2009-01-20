@@ -88,4 +88,12 @@ describe Patron::Session do
     body.header['content-length'].should == [data.size.to_s]
   end
 
+  it "should upload data with :post" do
+    data = "upload data"
+    response = @session.post("/test", data)
+    body = YAML::load(response.body)
+    body.request_method.should == "POST"
+    body.header['content-length'].should == [data.size.to_s]
+  end
+
 end

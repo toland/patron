@@ -55,6 +55,10 @@ module Patron
       do_request(:put, url, headers, data)
     end
 
+    def post(url, data, headers = {})
+      do_request(:post, url, headers, data)
+    end
+
   private
 
     # Creates a new Request object from the parameters and instance variables.

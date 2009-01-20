@@ -145,7 +145,14 @@ void set_options_from_request(VALUE self, VALUE request) {
   if (action == rb_intern("get")) {
     curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
   } else if (action == rb_intern("post")) {
-    curl_easy_setopt(curl, CURLOPT_HTTPPOST, 1);
+    VALUE data = rb_iv_get(request, "@upload_data");
+
+    state->upload_buf = StringValuePtr(data);
+    int len = RSTRING_LEN(data);
+
+    curl_easy_setopt(curl, CURLOPT_POST, 1);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, state->upload_buf);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
   } else if (action == rb_intern("put")) {
     VALUE data = rb_iv_get(request, "@upload_data");
 
