@@ -28,7 +28,6 @@ Jeweler::Tasks.new do |s|
   s.require_path  << 'lib' << 'ext'
 
   s.files = FileList['README.txt',
-                     'History.txt',
                      'Rakefile',
                      'lib/**/*',
                      'spec/*',
@@ -36,7 +35,7 @@ Jeweler::Tasks.new do |s|
 
   # rdoc
   s.has_rdoc         = true
-  s.extra_rdoc_files = ['README.txt', 'History.txt']
+  s.extra_rdoc_files = ['README.txt']
   s.rdoc_options     = ['--quiet',
                         '--title', "Patron documentation",
                         '--opname', 'index.html',
@@ -69,7 +68,6 @@ Rake::RDocTask.new do |rdoc|
   rdoc.main = 'README.txt'
   rdoc.options << '--line-numbers' << '--inline-source'
   rdoc.rdoc_files.include('README.txt')
-  rdoc.rdoc_files.include('History.txt')
   rdoc.rdoc_files.include('lib/**/*.rb')
 end
 
