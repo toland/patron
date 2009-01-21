@@ -25,7 +25,7 @@ Jeweler::Tasks.new do |s|
   s.description       = s.summary
 
   s.extensions    << 'ext/patron/extconf.rb'
-  s.require_path  << 'lib' << 'ext'
+  s.require_paths << 'ext'
 
   s.files = FileList['README.txt',
                      'Rakefile',

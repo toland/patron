@@ -13,7 +13,7 @@ Gem::Specification.new do |s|
   s.has_rdoc = true
   s.homepage = %q{http://www.thehive.com/}
   s.rdoc_options = ["--quiet", "--title", "Patron documentation", "--opname", "index.html", "--line-numbers", "--main", "README.txt", "--inline-source", "--inline-source", "--charset=UTF-8"]
-  s.require_paths = ["liblibext"]
+  s.require_paths = ["lib", "ext"]
   s.rubyforge_project = %q{patron}
   s.rubygems_version = %q{1.2.0}
   s.summary = %q{Ruby HTTP client library based on libcurl}
