@@ -90,8 +90,8 @@ VALUE session_escape(VALUE self, VALUE value) {
 
   VALUE string = StringValue(value);
   char* escaped = curl_easy_escape(state->handle,
-                                   RSTRING(string)->ptr,
-                                   RSTRING(string)->len);
+                                   RSTRING_PTR(string),
+                                   RSTRING_LEN(string));
 
   VALUE retval = rb_str_new2(escaped);
   curl_free(escaped);
@@ -106,8 +106,8 @@ VALUE session_unescape(VALUE self, VALUE value) {
 
   VALUE string = StringValue(value);
   char* unescaped = curl_easy_unescape(state->handle,
-                                       RSTRING(string)->ptr,
-                                       RSTRING(string)->len,
+                                       RSTRING_PTR(string),
+                                       RSTRING_LEN(string),
                                        NULL);
 
   VALUE retval = rb_str_new2(unescaped);
