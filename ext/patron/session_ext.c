@@ -199,6 +199,12 @@ void set_options_from_request(VALUE self, VALUE request) {
   }
 
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, state->headers);
+
+  VALUE credentials = rb_funcall(request, rb_intern("credentials"), 0);
+  if (!NIL_P(credentials)) {
+    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+    curl_easy_setopt(curl, CURLOPT_USERPWD, StringValuePtr(credentials));
+  }
 }
 
 // Use the info in a Curl handle to create a new Response object.

@@ -20,6 +20,9 @@ module Patron
     # Prepended to the URL in all requests.
     attr_accessor :base_url
 
+    # Username and password for http authentication
+    attr_accessor :username, :password
+
     # Standard set of headers that are used in all requests.
     attr_reader :headers
 
@@ -68,6 +71,8 @@ module Patron
       req.timeout = self.timeout
       req.max_redirects = self.max_redirects
       req.headers = self.headers.merge(headers)
+      req.username = self.username
+      req.password = self.password
       req.upload_data = data
 
       req.url = self.base_url.to_s + url.to_s

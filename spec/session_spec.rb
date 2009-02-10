@@ -1,6 +1,6 @@
 require File.dirname(__FILE__) + '/spec_helper.rb'
 require 'webrick'
-
+require 'base64'
 
 describe Patron::Session do
 
@@ -94,6 +94,18 @@ describe Patron::Session do
     body = YAML::load(response.body)
     body.request_method.should == "POST"
     body.header['content-length'].should == [data.size.to_s]
+  end
+
+  it "should pass credentials as http basic auth" do
+    @session.username = "foo"
+    @session.password = "bar"
+    response = @session.get("/test")
+    body = YAML::load(response.body)
+    body.header['authorization'].should == [encode_authz("foo", "bar")]
+  end
+
+  def encode_authz(user, passwd)
+    "Basic " + Base64.encode64("#{user}:#{passwd}").strip
   end
 
 end

@@ -13,7 +13,7 @@ module Patron
       @max_redirects = -1
     end
 
-    attr_accessor :url, :upload_data
+    attr_accessor :url, :username, :password, :upload_data
     attr_reader :action, :timeout, :max_redirects, :headers
 
     def action=(new_action)
@@ -46,6 +46,11 @@ module Patron
       end
 
       @headers = new_headers
+    end
+
+    def credentials
+      return nil if username.nil? || password.nil?
+      "#{username}:#{password}"
     end
 
   end
