@@ -10,6 +10,9 @@ module Patron
   # server.
   class Session
 
+    # HTTP connection timeout in milliseconds. Defaults to 1 second (1000 ms).
+    attr_accessor :connect_timeout
+
     # HTTP transaction timeout in seconds. Defaults to 5 seconds.
     attr_accessor :timeout
 
@@ -31,8 +34,9 @@ module Patron
     # Create an instance of the Session class.
     def initialize
       ext_initialize
-      @timeout = 5
       @headers = {}
+      @timeout = 5
+      @connect_timeout = 1000
       @max_redirects = -1
     end
 
@@ -69,6 +73,7 @@ module Patron
       req = Request.new
       req.action = action
       req.timeout = self.timeout
+      req.connect_timeout = self.connect_timeout
       req.max_redirects = self.max_redirects
       req.headers = self.headers.merge(headers)
       req.username = self.username

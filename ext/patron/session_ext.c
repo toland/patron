@@ -182,6 +182,11 @@ void set_options_from_request(VALUE self, VALUE request) {
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, FIX2INT(timeout));
   }
 
+  timeout = rb_iv_get(request, "@connect_timeout");
+  if (!NIL_P(timeout)) {
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, FIX2INT(timeout));
+  }
+
   VALUE redirects = rb_iv_get(request, "@max_redirects");
   if (!NIL_P(redirects)) {
     int r = FIX2INT(redirects);
