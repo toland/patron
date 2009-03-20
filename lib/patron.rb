@@ -11,6 +11,6 @@ require 'patron/session'
 module Patron #:nodoc:
   # Returns the version number of the Patron library as a string
   def self.version
-    Jeweler::Version.new(File.dirname(__FILE__) + '/../').to_s
+    Jeweler::VersionHelper.new(File.dirname(__FILE__) + '/../').to_s
   end
 end
