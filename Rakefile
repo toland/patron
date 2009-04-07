@@ -42,9 +42,6 @@ Jeweler::Tasks.new do |s|
                         '--line-numbers',
                         '--main', 'README.txt',
                         '--inline-source']
-
-  # Dependencies
-  s.add_dependency 'technicalpickles-jeweler', '>= 0.6.5'
 end
 
 file SESSION_SO => SESSION_SRC do
