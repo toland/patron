@@ -14,6 +14,15 @@ SESSION_SRC = "#{EXT_DIR}/session_ext.c"
 CLEAN.include FileList["#{EXT_DIR}/*"].exclude(/^.*\.(rb|c)$/)
 CLOBBER.include %w( doc coverage pkg )
 
+module Git
+  class Lib
+    def tag(tag)
+      # Force an annotated tag
+      command('tag', [tag, '-a', '-m', tag])
+    end
+  end
+end
+
 Jeweler::Tasks.new do |s|
   s.name              = 'patron'
   s.platform          = Gem::Platform::RUBY
