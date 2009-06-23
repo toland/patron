@@ -50,16 +50,17 @@ Jeweler::Tasks.new do |s|
   s.name              = 'patron'
   s.platform          = Gem::Platform::RUBY
   s.author            = 'Phillip Toland'
-  s.email             = 'ptoland@thehive.com'
-  s.homepage          = 'http://www.thehive.com/'
+  s.email             = 'phil.toland@gmail.com'
+  s.homepage          = 'http://github.com/toland/Patron'
   s.rubyforge_project = 'patron'
-  s.summary           = 'Ruby HTTP client library based on libcurl'
-  s.description       = s.summary
+  s.summary           = 'Patron HTTP client'
+  s.description       = 'Ruby HTTP client library based on libcurl'
 
   s.extensions    << 'ext/patron/extconf.rb'
   s.require_paths << 'ext'
 
   s.files = FileList['README.txt',
+                     'LICENSE',
                      'Rakefile',
                      'lib/**/*',
                      'spec/*',
