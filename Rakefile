@@ -26,6 +26,7 @@ require 'rake/clean'
 require 'rake/rdoctask'
 require 'spec/rake/spectask'
 require 'jeweler'
+require 'yard'
 
 require 'rbconfig'
 include Config
@@ -99,6 +100,11 @@ Rake::RDocTask.new do |rdoc|
   rdoc.options << '--line-numbers' << '--inline-source'
   rdoc.rdoc_files.include('README.txt')
   rdoc.rdoc_files.include('lib/**/*.rb')
+end
+
+YARD::Rake::YardocTask.new do |t|
+  t.files   = ['lib/**/*.rb']
+  t.options = ['--readme', 'README.txt']
 end
 
 desc "Run specs"
