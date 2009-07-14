@@ -1,0 +1,11 @@
+#!/usr/bin/env ruby
+# File: script/console
+irb = RUBY_PLATFORM =~ /(:?mswin|mingw)/ ? 'irb.bat' : 'irb'
+
+cwd = File.dirname(__FILE__)
+
+libs =  " -I#{cwd + '/../lib'} -I#{cwd + '/../ext'}"
+libs << " -r patron -r irb/completion"
+
+puts "Loading Patron"
+exec "#{irb} #{libs} --simple-prompt"
