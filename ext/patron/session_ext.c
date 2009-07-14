@@ -218,6 +218,11 @@ void set_options_from_request(VALUE self, VALUE request) {
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, r);
   }
 
+  VALUE proxy = rb_iv_get(request, "@proxy");
+  if (!NIL_P(proxy)) {
+      curl_easy_setopt(curl, CURLOPT_PROXY, StringValuePtr(proxy));
+  }
+
   VALUE headers = rb_iv_get(request, "@headers");
   if (!NIL_P(headers)) {
     if (rb_type(headers) != T_HASH) {

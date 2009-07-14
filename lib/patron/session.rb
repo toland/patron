@@ -50,6 +50,9 @@ module Patron
     # Username and password for http authentication
     attr_accessor :username, :password
 
+    # HTTP proxy URL
+    attr_accessor :proxy
+
     # Standard set of headers that are used in all requests.
     attr_reader :headers
 
@@ -103,6 +106,7 @@ module Patron
       req.username = self.username
       req.password = self.password
       req.upload_data = data
+      req.proxy = proxy
 
       req.url = self.base_url.to_s + url.to_s
       raise ArgumentError, "Empty URL" if req.url.empty?
