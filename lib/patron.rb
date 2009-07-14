@@ -34,9 +34,10 @@ module Patron #:nodoc:
   # Returns the version number of the Patron library as a string
   def self.version
     cwd = Pathname(__FILE__).dirname
-    yaml = YAML.load_file(cwd.expand_path / '../VERSION.yml')
+    yaml = YAML.load_file(cwd.expand_path + '../VERSION.yml')
     major = (yaml['major'] || yaml[:major]).to_i
     minor = (yaml['minor'] || yaml[:minor]).to_i
-    "#{major}.#{minor}"
+    patch = (yaml['patch'] || yaml[:patch]).to_i
+    "#{major}.#{minor}.#{patch}"
   end
 end
