@@ -51,7 +51,7 @@ describe Patron::Request do
     end
 
     it "should raise an exception when assigned 0" do
-      lambda {@request.timeout = -1}.should raise_error(ArgumentError)
+      lambda {@request.timeout = 0}.should raise_error(ArgumentError)
     end
 
   end
