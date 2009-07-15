@@ -335,7 +335,7 @@ VALUE session_handle_request(VALUE self, VALUE request) {
 //
 
 void Init_session_ext() {
-  curl_global_init(CURL_GLOBAL_SSL);
+  curl_global_init(CURL_GLOBAL_ALL);
   rb_require("patron/error");
 
   mPatron = rb_define_module("Patron");
