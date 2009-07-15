@@ -24,6 +24,7 @@
 require File.dirname(__FILE__) + '/spec_helper.rb'
 require 'webrick'
 require 'base64'
+require 'fileutils'
 
 describe Patron::Session do
 
@@ -50,15 +51,24 @@ describe Patron::Session do
     body.request_method.should == "GET"
   end
 
+  it "should download content with :get and a file path" do
+    tmpfile = "/tmp/patron_test.yaml"
+    response = @session.get "/test", :to_file => tmpfile
+    response.body.should be_nil
+    body = YAML::load_file(tmpfile)
+    body.request_method.should == "GET"
+    FileUtils.rm tmpfile
+  end
+
   it "should include custom headers in a request" do
-    response = @session.get("/test", {"User-Agent" => "PatronTest"})
+    response = @session.get("/test", :headers => {"User-Agent" => "PatronTest"})
     body = YAML::load(response.body)
     body.header["user-agent"].should == ["PatronTest"]
   end
 
   it "should merge custom headers with session headers" do
     @session.headers["X-Test"] = "Testing"
-    response = @session.get("/test", {"User-Agent" => "PatronTest"})
+    response = @session.get("/test", :headers => {"User-Agent" => "PatronTest"})
     body = YAML::load(response.body)
     body.header["user-agent"].should == ["PatronTest"]
     body.header["x-test"].should == ["Testing"]
@@ -105,7 +115,7 @@ describe Patron::Session do
 
   it "should upload data with :put" do
     data = "upload data"
-    response = @session.put("/test", data)
+    response = @session.put("/test", :data => data)
     body = YAML::load(response.body)
     body.request_method.should == "PUT"
     body.header['content-length'].should == [data.size.to_s]
@@ -113,7 +123,7 @@ describe Patron::Session do
 
   it "should upload data with :post" do
     data = "upload data"
-    response = @session.post("/test", data)
+    response = @session.post("/test", :data => data)
     body = YAML::load(response.body)
     body.request_method.should == "POST"
     body.header['content-length'].should == [data.size.to_s]

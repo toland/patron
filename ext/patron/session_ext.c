@@ -40,6 +40,7 @@ static VALUE eTooManyRedirects = Qnil;
 struct curl_state {
   CURL* handle;
   char* upload_buf;
+  FILE* download_file;
   char error_buf[CURL_ERROR_SIZE];
   struct curl_slist* headers;
 };
@@ -193,6 +194,14 @@ void set_options_from_request(VALUE self, VALUE request) {
     curl_easy_setopt(curl, CURLOPT_NOBODY, 1);
   }
 
+  VALUE download_file = rb_iv_get(request, "@download_file");
+  if (!NIL_P(download_file)) {
+    state->download_file = fopen(StringValuePtr(download_file), "w");
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, state->download_file);
+  } else {
+    state->download_file = NULL;
+  }
+
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, state->error_buf);
 
   VALUE url = rb_iv_get(request, "@url");
@@ -292,14 +301,19 @@ static VALUE perform_request(VALUE self) {
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, header_buffer);
 
   // body
-  VALUE body_buffer = rb_str_buf_new(32768);
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &session_write_handler);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, body_buffer);
+  VALUE body_buffer = Qnil;
+  if (!state->download_file) {
+    body_buffer = rb_str_buf_new(32768);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &session_write_handler);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, body_buffer);
+  }
 
   CURLcode ret = curl_easy_perform(curl);
   if (CURLE_OK == ret) {
     VALUE response = create_response(curl);
-    rb_iv_set(response, "@body", body_buffer);
+    if (!NIL_P(body_buffer)) {
+      rb_iv_set(response, "@body", body_buffer);
+    }
     rb_funcall(response, rb_intern("parse_headers"), 1, header_buffer);
     return response;
   } else {
@@ -318,6 +332,11 @@ static VALUE cleanup(VALUE self) {
   if (state->headers) {
     curl_slist_free_all(state->headers);
     state->headers = NULL;
+  }
+
+  if (state->download_file) {
+    fclose(state->download_file);
+    state->download_file = NULL;
   }
 
   state->upload_buf = NULL;

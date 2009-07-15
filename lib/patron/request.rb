@@ -38,7 +38,7 @@ module Patron
       @max_redirects = -1
     end
 
-    attr_accessor :url, :username, :password, :upload_data, :proxy
+    attr_accessor :url, :username, :password, :upload_data, :upload_file, :download_file, :proxy
     attr_reader :action, :timeout, :connect_timeout, :max_redirects, :headers
 
     def action=(new_action)
