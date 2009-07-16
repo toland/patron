@@ -166,28 +166,34 @@ void set_options_from_request(VALUE self, VALUE request) {
 
   CURL* curl = state->handle;
 
+  VALUE headers = rb_iv_get(request, "@headers");
+  if (!NIL_P(headers)) {
+    if (rb_type(headers) != T_HASH) {
+      rb_raise(rb_eArgError, "Headers must be passed in a hash.");
+    }
+
+    rb_iterate(rb_each, headers, each_http_header, self);
+  }
+
   ID action = SYM2ID(rb_iv_get(request, "@action"));
   if (action == rb_intern("get")) {
     curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
-  } else if (action == rb_intern("post")) {
+  } else if (action == rb_intern("post") || action == rb_intern("put")) {
     VALUE data = rb_iv_get(request, "@upload_data");
 
     state->upload_buf = StringValuePtr(data);
     int len = RSTRING_LEN(data);
 
-    curl_easy_setopt(curl, CURLOPT_POST, 1);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, state->upload_buf);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
-  } else if (action == rb_intern("put")) {
-    VALUE data = rb_iv_get(request, "@upload_data");
-
-    state->upload_buf = StringValuePtr(data);
-    int len = RSTRING_LEN(data);
-
-    curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
-    curl_easy_setopt(curl, CURLOPT_READFUNCTION, &session_read_handler);
-    curl_easy_setopt(curl, CURLOPT_READDATA, &state->upload_buf);
-    curl_easy_setopt(curl, CURLOPT_INFILESIZE, len);
+    if (action == rb_intern("post")) {
+      curl_easy_setopt(curl, CURLOPT_POST, 1);
+      curl_easy_setopt(curl, CURLOPT_POSTFIELDS, state->upload_buf);
+      curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
+    } else {
+      curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
+      curl_easy_setopt(curl, CURLOPT_READFUNCTION, &session_read_handler);
+      curl_easy_setopt(curl, CURLOPT_READDATA, &state->upload_buf);
+      curl_easy_setopt(curl, CURLOPT_INFILESIZE, len);
+    }
   } else if (action == rb_intern("delete")) {
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
   } else if (action == rb_intern("head")) {
@@ -202,6 +208,7 @@ void set_options_from_request(VALUE self, VALUE request) {
     state->download_file = NULL;
   }
 
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, state->headers);
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, state->error_buf);
 
   VALUE url = rb_iv_get(request, "@url");
@@ -231,17 +238,6 @@ void set_options_from_request(VALUE self, VALUE request) {
   if (!NIL_P(proxy)) {
       curl_easy_setopt(curl, CURLOPT_PROXY, StringValuePtr(proxy));
   }
-
-  VALUE headers = rb_iv_get(request, "@headers");
-  if (!NIL_P(headers)) {
-    if (rb_type(headers) != T_HASH) {
-      rb_raise(rb_eArgError, "Headers must be passed in a hash.");
-    }
-
-    rb_iterate(rb_each, headers, each_http_header, self);
-  }
-
-  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, state->headers);
 
   VALUE credentials = rb_funcall(request, rb_intern("credentials"), 0);
   if (!NIL_P(credentials)) {
