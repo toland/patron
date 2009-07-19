@@ -1,7 +1,6 @@
 ## -------------------------------------------------------------------
 ##
-## Patron HTTP Client: Response class
-## Copyright (c) 2008 The Hive http://www.thehive.com/
+## Copyright (c) 2009 Phillip Toland <phil.toland@gmail.com>
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy
 ## of this software and associated documentation files (the "Software"), to deal
@@ -22,37 +21,20 @@
 ## THE SOFTWARE.
 ##
 ## -------------------------------------------------------------------
+require File.dirname(__FILE__) + '/spec_helper.rb'
+require 'webrick'
+require 'base64'
+require 'fileutils'
 
-module Patron
+describe Patron::Response do
+  before(:each) do
+    @session = Patron::Session.new
+    @session.base_url = "http://localhost:9001"
+  end
 
-  # Represents the response from the HTTP server.
-  class Response
-
-    def initialize
-      @headers = {}
-    end
-
-    attr_reader :url, :status, :status_line, :redirect_count, :body, :headers
-
-    def inspect
-      # Avoid spamming the console with the header and body data
-      "#<Patron::Response @status_line='#{@status_line}'>"
-    end
-
-  private
-
-    # Called by the C code to parse and set the headers
-    def parse_headers(header_data)
-      header_data.split(/\r\n/).each do |header|
-        if header =~ %r|^HTTP/1.[01]|
-          @status_line = header.strip
-        else
-          parts = header.split(':', 2)
-          parts[1].strip! unless parts[1].nil?
-          @headers[parts[0]] = parts[1]
-        end
-      end
-    end
-
+  it "should strip extra spaces from header values" do
+    response = @session.get("/test")
+    # All digits, no spaces
+    response.headers['Content-Length'].should match(/^\d+$/)
   end
 end
