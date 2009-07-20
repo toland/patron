@@ -41,6 +41,7 @@ struct curl_state {
   CURL* handle;
   char* upload_buf;
   FILE* download_file;
+  FILE* upload_file;
   char error_buf[CURL_ERROR_SIZE];
   struct curl_slist* headers;
 };
@@ -157,6 +158,19 @@ static VALUE each_http_header(VALUE header, VALUE self) {
   return Qnil;
 }
 
+void set_chunked_encoding(struct curl_state *state) {
+  state->headers = curl_slist_append(state->headers, "Transfer-Encoding: chunked");
+}
+
+FILE* open_file(VALUE filename, char* perms) {
+  FILE* handle = fopen(StringValuePtr(filename), perms);
+  if (!handle) {
+    rb_raise(rb_eArgError, "Unable to open specified file.");
+  }
+
+  return handle;
+}
+
 // Set the options on the Curl handle from a Request object. Takes each field
 // in the Request object and uses it to set the appropriate option on the Curl
 // handle.
@@ -181,26 +195,40 @@ void set_options_from_request(VALUE self, VALUE request) {
 
     VALUE download_file = rb_iv_get(request, "@file_name");
     if (!NIL_P(download_file)) {
-      state->download_file = fopen(StringValuePtr(download_file), "w");
+      state->download_file = open_file(download_file, "w");
       curl_easy_setopt(curl, CURLOPT_WRITEDATA, state->download_file);
     } else {
       state->download_file = NULL;
     }
   } else if (action == rb_intern("post") || action == rb_intern("put")) {
     VALUE data = rb_iv_get(request, "@upload_data");
+    VALUE filename = rb_iv_get(request, "@file_name");
 
-    state->upload_buf = StringValuePtr(data);
-    int len = RSTRING_LEN(data);
+    if (!NIL_P(data)) {
+      state->upload_buf = StringValuePtr(data);
+      int len = RSTRING_LEN(data);
 
-    if (action == rb_intern("post")) {
-      curl_easy_setopt(curl, CURLOPT_POST, 1);
-      curl_easy_setopt(curl, CURLOPT_POSTFIELDS, state->upload_buf);
-      curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
-    } else {
+      if (action == rb_intern("post")) {
+        curl_easy_setopt(curl, CURLOPT_POST, 1);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, state->upload_buf);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
+      } else {
+        curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
+        curl_easy_setopt(curl, CURLOPT_READFUNCTION, &session_read_handler);
+        curl_easy_setopt(curl, CURLOPT_READDATA, &state->upload_buf);
+        curl_easy_setopt(curl, CURLOPT_INFILESIZE, len);
+      }
+    } else if (!NIL_P(filename)) {
+      set_chunked_encoding(state);
+
       curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
-      curl_easy_setopt(curl, CURLOPT_READFUNCTION, &session_read_handler);
-      curl_easy_setopt(curl, CURLOPT_READDATA, &state->upload_buf);
-      curl_easy_setopt(curl, CURLOPT_INFILESIZE, len);
+
+      if (action == rb_intern("post")) {
+        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "POST");
+      }
+
+      state->upload_file = open_file(filename, "r");
+      curl_easy_setopt(curl, CURLOPT_READDATA, state->upload_file);
     }
   } else if (action == rb_intern("head")) {
     curl_easy_setopt(curl, CURLOPT_NOBODY, 1);
@@ -334,6 +362,11 @@ static VALUE cleanup(VALUE self) {
   if (state->download_file) {
     fclose(state->download_file);
     state->download_file = NULL;
+  }
+
+  if (state->upload_file) {
+    fclose(state->upload_file);
+    state->upload_file = NULL;
   }
 
   state->upload_buf = NULL;

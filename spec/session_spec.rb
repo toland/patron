@@ -137,12 +137,36 @@ describe Patron::Session do
     body.header['content-length'].should == [data.size.to_s]
   end
 
+  it "should upload a file with :put" do
+    response = @session.put_file("/test", "VERSION.yml")
+    body = YAML::load(response.body)
+    body.request_method.should == "PUT"
+  end
+
+  it "should use chunked encoding when uploading a file with :put" do
+    response = @session.put_file("/test", "VERSION.yml")
+    body = YAML::load(response.body)
+    body.header['transfer-encoding'].first.should == "chunked"
+  end
+
   it "should upload data with :post" do
     data = "upload data"
     response = @session.post("/test", data)
     body = YAML::load(response.body)
     body.request_method.should == "POST"
     body.header['content-length'].should == [data.size.to_s]
+  end
+
+  it "should upload a file with :post" do
+    response = @session.post_file("/test", "VERSION.yml")
+    body = YAML::load(response.body)
+    body.request_method.should == "POST"
+  end
+
+  it "should use chunked encoding when uploading a file with :post" do
+    response = @session.post_file("/test", "VERSION.yml")
+    body = YAML::load(response.body)
+    body.header['transfer-encoding'].first.should == "chunked"
   end
 
   it "should pass credentials as http basic auth" do
