@@ -58,7 +58,7 @@ module Patron
 
     private :ext_initialize, :handle_request
 
-    # Create an instance of the Session class.
+    # Create a new Session object.
     def initialize
       ext_initialize
       @headers = {}
@@ -80,6 +80,8 @@ module Patron
       request(:get, url, headers)
     end
 
+    # Retrieve the contents of the specified +url+ as with #get, but the
+    # content at the URL is downloaded directly into the specified file.
     def get_file(url, filename, headers = {})
       request(:get, url, headers, :file => filename)
     end
@@ -89,22 +91,29 @@ module Patron
       request(:head, url, headers)
     end
 
+    # As #get but sends an HTTP DELETE request.
     def delete(url, headers = {})
       request(:delete, url, headers)
     end
 
+    # Uploads the passed +data+ to the specified +url+ using HTTP PUT. +data+
+    # must be a string.
     def put(url, data, headers = {})
       request(:put, url, headers, :data => data)
     end
 
+    # Uploads the contents of a file to the specified +url+ using HTTP PUT.
     def put_file(url, filename, headers = {})
       request(:put, url, headers, :file => filename)
     end
 
+    # Uploads the passed +data+ to the specified +url+ using HTTP POST. +data+
+    # must be a string.
     def post(url, data, headers = {})
       request(:post, url, headers, :data => data)
     end
 
+    # Uploads the contents of a file to the specified +url+ using HTTP POST.
     def post_file(url, filename, headers = {})
       request(:post, url, headers, :file => filename)
     end
@@ -113,6 +122,7 @@ module Patron
     ### WebDAV methods
     ###
 
+    # Sends a WebDAV COPY request to the specified +url+.
     def copy(url, dest, headers = {})
       headers['Destination'] = dest
       request(:copy, url, headers)
@@ -122,7 +132,7 @@ module Patron
     ### Basic API methods
     ###
 
-    # Creates a new Request object from the parameters and instance variables.
+    # Send an HTTP request to the specified +url+.
     def request(action, url, headers, options = {})
       req = Request.new
       req.action = action
