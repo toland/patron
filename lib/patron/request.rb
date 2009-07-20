@@ -30,6 +30,8 @@ module Patron
   # used in every request.
   class Request
 
+    VALID_ACTIONS = [:get, :put, :post, :delete, :head, :copy]
+
     def initialize
       @action = :get
       @headers = {}
@@ -42,8 +44,8 @@ module Patron
     attr_reader :action, :timeout, :connect_timeout, :max_redirects, :headers
 
     def action=(new_action)
-      if ![:get, :put, :post, :delete, :head].include?(new_action)
-        raise ArgumentError, "Action must be one of :get, :put, :post, :delete or :head"
+      if !VALID_ACTIONS.include?(new_action)
+        raise ArgumentError, "Action must be one of #{VALID_ACTIONS.join(', ')}"
       end
 
       @action = new_action
@@ -79,6 +81,10 @@ module Patron
       end
 
       @headers = new_headers
+    end
+
+    def action_name
+      @action.to_s.upcase
     end
 
     def credentials

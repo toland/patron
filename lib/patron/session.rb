@@ -67,6 +67,10 @@ module Patron
       @max_redirects = -1
     end
 
+    ###################################################################
+    ### Standard HTTP methods
+    ###
+
     # Retrieve the contents of the specified +url+ optionally sending the
     # specified headers. If the +base_url+ varaible is set then it is prepended
     # to the +url+ parameter. Any custom headers are merged with the contents
@@ -104,6 +108,19 @@ module Patron
     def post_file(url, filename, headers = {})
       request(:post, url, headers, :file => filename)
     end
+
+    ###################################################################
+    ### WebDAV methods
+    ###
+
+    def copy(url, dest, headers = {})
+      headers['Destination'] = dest
+      request(:copy, url, headers)
+    end
+
+    ###################################################################
+    ### Basic API methods
+    ###
 
     # Creates a new Request object from the parameters and instance variables.
     def request(action, url, headers, options = {})

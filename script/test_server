@@ -48,6 +48,10 @@ class TestServlet < HTTPServlet::AbstractServlet
   def do_DELETE(req,res)
     respond_with(:DELETE, req, res)
   end
+
+  def do_COPY(req,res)
+    respond_with(:COPY, req, res)
+  end
 end
 
 class TimeoutServlet < HTTPServlet::AbstractServlet

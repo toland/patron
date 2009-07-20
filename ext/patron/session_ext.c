@@ -202,10 +202,11 @@ void set_options_from_request(VALUE self, VALUE request) {
       curl_easy_setopt(curl, CURLOPT_READDATA, &state->upload_buf);
       curl_easy_setopt(curl, CURLOPT_INFILESIZE, len);
     }
-  } else if (action == rb_intern("delete")) {
-    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
   } else if (action == rb_intern("head")) {
     curl_easy_setopt(curl, CURLOPT_NOBODY, 1);
+  } else {
+    VALUE action_name = rb_funcall(request, rb_intern("action_name"), 0);
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, StringValuePtr(action_name));
   }
 
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, state->headers);

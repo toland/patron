@@ -33,7 +33,7 @@ describe Patron::Request do
   describe :action do
 
     it "should accept :get, :put, :post, :delete and :head" do
-      [:get, :put, :post, :delete, :head].each do |action|
+      [:get, :put, :post, :delete, :head, :copy].each do |action|
         lambda {@request.action = action}.should_not raise_error
       end
     end

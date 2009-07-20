@@ -40,6 +40,10 @@ describe Patron::Session do
     unescaped.should == string
   end
 
+  it "should raise an error when passed an invalid action" do
+    lambda { @session.request(:bogus, "/test", {}) }.should raise_error(ArgumentError)
+  end
+
   it "should raise an error when no URL is provided" do
     @session.base_url = nil
     lambda {@session.get(nil)}.should raise_error(ArgumentError)
@@ -111,6 +115,18 @@ describe Patron::Session do
     response = @session.delete("/test")
     body = YAML::load(response.body)
     body.request_method.should == "DELETE"
+  end
+
+  it "should send a COPY request with :copy" do
+    response = @session.copy("/test", "/test2")
+    body = YAML::load(response.body)
+    body.request_method.should == "COPY"
+  end
+
+  it "should include a Destination header in COPY requests" do
+    response = @session.copy("/test", "/test2")
+    body = YAML::load(response.body)
+    body.header['destination'].first.should == "/test2"
   end
 
   it "should upload data with :put" do
