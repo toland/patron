@@ -178,6 +178,14 @@ void set_options_from_request(VALUE self, VALUE request) {
   ID action = SYM2ID(rb_iv_get(request, "@action"));
   if (action == rb_intern("get")) {
     curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
+
+    VALUE download_file = rb_iv_get(request, "@file_name");
+    if (!NIL_P(download_file)) {
+      state->download_file = fopen(StringValuePtr(download_file), "w");
+      curl_easy_setopt(curl, CURLOPT_WRITEDATA, state->download_file);
+    } else {
+      state->download_file = NULL;
+    }
   } else if (action == rb_intern("post") || action == rb_intern("put")) {
     VALUE data = rb_iv_get(request, "@upload_data");
 
@@ -198,14 +206,6 @@ void set_options_from_request(VALUE self, VALUE request) {
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
   } else if (action == rb_intern("head")) {
     curl_easy_setopt(curl, CURLOPT_NOBODY, 1);
-  }
-
-  VALUE download_file = rb_iv_get(request, "@download_file");
-  if (!NIL_P(download_file)) {
-    state->download_file = fopen(StringValuePtr(download_file), "w");
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, state->download_file);
-  } else {
-    state->download_file = NULL;
   }
 
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, state->headers);

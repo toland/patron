@@ -53,7 +53,7 @@ describe Patron::Session do
 
   it "should download content with :get and a file path" do
     tmpfile = "/tmp/patron_test.yaml"
-    response = @session.get "/test", :to_file => tmpfile
+    response = @session.get_file "/test", tmpfile
     response.body.should be_nil
     body = YAML::load_file(tmpfile)
     body.request_method.should == "GET"
@@ -61,14 +61,14 @@ describe Patron::Session do
   end
 
   it "should include custom headers in a request" do
-    response = @session.get("/test", :headers => {"User-Agent" => "PatronTest"})
+    response = @session.get("/test", {"User-Agent" => "PatronTest"})
     body = YAML::load(response.body)
     body.header["user-agent"].should == ["PatronTest"]
   end
 
   it "should merge custom headers with session headers" do
     @session.headers["X-Test"] = "Testing"
-    response = @session.get("/test", :headers => {"User-Agent" => "PatronTest"})
+    response = @session.get("/test", {"User-Agent" => "PatronTest"})
     body = YAML::load(response.body)
     body.header["user-agent"].should == ["PatronTest"]
     body.header["x-test"].should == ["Testing"]
@@ -115,7 +115,7 @@ describe Patron::Session do
 
   it "should upload data with :put" do
     data = "upload data"
-    response = @session.put("/test", :data => data)
+    response = @session.put("/test", data)
     body = YAML::load(response.body)
     body.request_method.should == "PUT"
     body.header['content-length'].should == [data.size.to_s]
@@ -123,7 +123,7 @@ describe Patron::Session do
 
   it "should upload data with :post" do
     data = "upload data"
-    response = @session.post("/test", :data => data)
+    response = @session.post("/test", data)
     body = YAML::load(response.body)
     body.request_method.should == "POST"
     body.header['content-length'].should == [data.size.to_s]

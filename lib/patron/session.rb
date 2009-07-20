@@ -72,48 +72,53 @@ module Patron
     # to the +url+ parameter. Any custom headers are merged with the contents
     # of the +headers+ instance variable. The results are returned in a
     # Response object.
-    def get(url, options = {})
-      do_request(:get, url, options)
+    def get(url, headers = {})
+      do_request(:get, url, headers)
+    end
+
+    def get_file(url, filename, headers = {})
+      do_request(:get, url, headers, :file => filename)
     end
 
     # As #get but sends an HTTP HEAD request.
-    def head(url, options = {})
-      do_request(:head, url, options)
+    def head(url, headers = {})
+      do_request(:head, url, headers)
     end
 
-    def delete(url, options = {})
-      do_request(:delete, url, options)
+    def delete(url, headers = {})
+      do_request(:delete, url, headers)
     end
 
-    def put(url, options = {})
-      if options[:data].nil? && options[:from_file].nil?
-        raise ArgumentError, "Either upload data or a file name must be included"
-      end
-      do_request(:put, url, options)
+    def put(url, data, headers = {})
+      do_request(:put, url, headers, :data => data)
     end
 
-    def post(url, options = {})
-      if options[:data].nil? && options[:from_file].nil?
-        raise ArgumentError, "Either upload data or a file name must be included"
-      end
-      do_request(:post, url, options)
+    def put_file(url, filename, headers = {})
+      do_request(:put, url, headers, :file => filename)
+    end
+
+    def post(url, data, headers = {})
+      do_request(:post, url, headers, :data => data)
+    end
+
+    def post_file(url, filename, headers = {})
+      do_request(:post, url, headers, :file => filename)
     end
 
   private
 
     # Creates a new Request object from the parameters and instance variables.
-    def do_request(action, url, options = {})
+    def do_request(action, url, headers, options = {})
       req = Request.new
       req.action = action
       req.timeout = self.timeout
       req.connect_timeout = self.connect_timeout
       req.max_redirects = self.max_redirects
-      req.headers = self.headers.merge(options[:headers] || {})
+      req.headers = self.headers.merge(headers)
       req.username = self.username
       req.password = self.password
       req.upload_data = options[:data]
-      req.upload_file = options[:from_file]
-      req.download_file = options[:to_file]
+      req.file_name = options[:file]
       req.proxy = proxy
 
       req.url = self.base_url.to_s + url.to_s
