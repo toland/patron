@@ -73,42 +73,40 @@ module Patron
     # of the +headers+ instance variable. The results are returned in a
     # Response object.
     def get(url, headers = {})
-      do_request(:get, url, headers)
+      request(:get, url, headers)
     end
 
     def get_file(url, filename, headers = {})
-      do_request(:get, url, headers, :file => filename)
+      request(:get, url, headers, :file => filename)
     end
 
     # As #get but sends an HTTP HEAD request.
     def head(url, headers = {})
-      do_request(:head, url, headers)
+      request(:head, url, headers)
     end
 
     def delete(url, headers = {})
-      do_request(:delete, url, headers)
+      request(:delete, url, headers)
     end
 
     def put(url, data, headers = {})
-      do_request(:put, url, headers, :data => data)
+      request(:put, url, headers, :data => data)
     end
 
     def put_file(url, filename, headers = {})
-      do_request(:put, url, headers, :file => filename)
+      request(:put, url, headers, :file => filename)
     end
 
     def post(url, data, headers = {})
-      do_request(:post, url, headers, :data => data)
+      request(:post, url, headers, :data => data)
     end
 
     def post_file(url, filename, headers = {})
-      do_request(:post, url, headers, :file => filename)
+      request(:post, url, headers, :file => filename)
     end
 
-  private
-
     # Creates a new Request object from the parameters and instance variables.
-    def do_request(action, url, headers, options = {})
+    def request(action, url, headers, options = {})
       req = Request.new
       req.action = action
       req.timeout = self.timeout
