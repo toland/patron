@@ -158,11 +158,11 @@ static VALUE each_http_header(VALUE header, VALUE self) {
   return Qnil;
 }
 
-void set_chunked_encoding(struct curl_state *state) {
+static void set_chunked_encoding(struct curl_state *state) {
   state->headers = curl_slist_append(state->headers, "Transfer-Encoding: chunked");
 }
 
-FILE* open_file(VALUE filename, char* perms) {
+static FILE* open_file(VALUE filename, char* perms) {
   FILE* handle = fopen(StringValuePtr(filename), perms);
   if (!handle) {
     rb_raise(rb_eArgError, "Unable to open specified file.");
@@ -174,7 +174,7 @@ FILE* open_file(VALUE filename, char* perms) {
 // Set the options on the Curl handle from a Request object. Takes each field
 // in the Request object and uses it to set the appropriate option on the Curl
 // handle.
-void set_options_from_request(VALUE self, VALUE request) {
+static void set_options_from_request(VALUE self, VALUE request) {
   struct curl_state *state;
   Data_Get_Struct(self, struct curl_state, state);
 
@@ -276,7 +276,7 @@ void set_options_from_request(VALUE self, VALUE request) {
 }
 
 // Use the info in a Curl handle to create a new Response object.
-VALUE create_response(CURL* curl) {
+static VALUE create_response(CURL* curl) {
   VALUE response = rb_class_new_instance(0, 0,
                       rb_const_get(mPatron, rb_intern("Response")));
 
@@ -296,7 +296,7 @@ VALUE create_response(CURL* curl) {
 }
 
 // Raise an exception based on the Curl error code.
-VALUE select_error(CURLcode code) {
+static VALUE select_error(CURLcode code) {
   VALUE error = Qnil;
   switch (code) {
     case CURLE_UNSUPPORTED_PROTOCOL:  error = eUnsupportedProtocol; break;
