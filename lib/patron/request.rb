@@ -40,8 +40,21 @@ module Patron
       @max_redirects = -1
     end
 
-    attr_accessor :url, :username, :password, :upload_data, :file_name, :proxy
+    attr_accessor :url, :username, :password, :file_name, :proxy
     attr_reader :action, :timeout, :connect_timeout, :max_redirects, :headers
+
+    def upload_data=(data)
+      @upload_data = case data
+      when Hash:
+        hash_to_string(data)
+      else
+        data
+      end
+    end
+    
+    def upload_data
+      @upload_data
+    end
 
     def action=(new_action)
       if !VALID_ACTIONS.include?(new_action)
@@ -92,5 +105,20 @@ module Patron
       "#{username}:#{password}"
     end
 
+    private
+    
+    # serialize hash for Rails-style params
+    def hash_to_string(hash)
+      pairs = []
+      recursive = Proc.new do |h, prefix| 
+        h.each_pair do |k,v|
+          key = prefix == '' ? k : "#{prefix}[#{k}]"
+          v.is_a?(Hash) ? recursive.call(v, key) : pairs << "#{key}=#{v}"
+        end
+      end
+      recursive.call(hash, '')
+      return pairs.join('&')
+    end
+    
   end
 end
