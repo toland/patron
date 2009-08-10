@@ -40,8 +40,31 @@ module Patron
       @max_redirects = -1
     end
 
-    attr_accessor :url, :username, :password, :file_name, :proxy
+    attr_accessor :url, :username, :password, :file_name, :proxy, :auth_type
     attr_reader :action, :timeout, :connect_timeout, :max_redirects, :headers
+    attr_reader :auth_type
+    
+      # Set the type of authentication to use for this request. 
+      # 
+      # @param [String, Symbol] type - The type of authentication to use for this request, can be one of
+      #   :basic, :digest, or :any
+      #
+      # @example
+      #   sess.username = "foo"
+      #   sess.password = "sekrit"
+      #   sess.auth_type = :digest
+      def auth_type=(type=:basic)
+        @auth_type = case type
+        when :basic, "basic"
+          Request::AuthBasic
+        when :digest, "digest"
+          Request::AuthDigest
+        when :any, "any"
+          Request::AuthAny
+        else
+          raise "#{type.inspect} is an unknown authentication type"
+        end
+      end
 
     def upload_data=(data)
       @upload_data = case data

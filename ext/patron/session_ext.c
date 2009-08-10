@@ -27,6 +27,7 @@
 
 static VALUE mPatron = Qnil;
 static VALUE cSession = Qnil;
+static VALUE cRequest = Qnil;
 static VALUE ePatronError = Qnil;
 static VALUE eUnsupportedProtocol = Qnil;
 static VALUE eURLFormatError = Qnil;
@@ -270,7 +271,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
   VALUE credentials = rb_funcall(request, rb_intern("credentials"), 0);
   if (!NIL_P(credentials)) {
-    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, rb_iv_get(request, "@auth_type"));
     curl_easy_setopt(curl, CURLOPT_USERPWD, StringValuePtr(credentials));
   }
 }
@@ -398,14 +399,21 @@ void Init_session_ext() {
   ePartialFileError = rb_const_get(mPatron, rb_intern("PartialFileError"));
   eTimeoutError = rb_const_get(mPatron, rb_intern("TimeoutError"));
   eTooManyRedirects = rb_const_get(mPatron, rb_intern("TooManyRedirects"));
+	
 
   rb_define_module_function(mPatron, "libcurl_version", libcurl_version, 0);
 
   cSession = rb_define_class_under(mPatron, "Session", rb_cObject);
+	cRequest = rb_define_class_under(mPatron, "Request", rb_cObject);
   rb_define_alloc_func(cSession, session_alloc);
 
   rb_define_method(cSession, "ext_initialize", session_ext_initialize, 0);
   rb_define_method(cSession, "escape",         session_escape,         1);
   rb_define_method(cSession, "unescape",       session_unescape,       1);
   rb_define_method(cSession, "handle_request", session_handle_request, 1);
+
+	rb_define_const(cRequest, "AuthBasic", 	CURLAUTH_BASIC);
+	rb_define_const(cRequest, "AuthDigest", CURLAUTH_DIGEST);
+	rb_define_const(cRequest, "AuthAny",		CURLAUTH_ANY);
+	
 }
