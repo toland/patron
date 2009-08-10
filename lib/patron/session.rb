@@ -69,6 +69,7 @@ module Patron
       @timeout = 5
       @connect_timeout = 1000
       @max_redirects = -1
+      @auth_type = :basic
     end
 
     ###################################################################
