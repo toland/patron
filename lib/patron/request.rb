@@ -68,7 +68,7 @@ module Patron
 
     def upload_data=(data)
       @upload_data = case data
-      when Hash:
+      when Hash
         hash_to_string(data)
       else
         data
