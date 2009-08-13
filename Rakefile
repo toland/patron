@@ -94,8 +94,8 @@ task :shell => :compile do
 end
 
 Rake::RDocTask.new do |rdoc|
-  rdoc.rdoc_dir = 'doc'
-  rdoc.title = "Patron documentation"
+  rdoc.rdoc_dir = 'rdoc'
+  rdoc.title = 'Patron documentation'
   rdoc.main = 'README.txt'
   rdoc.options << '--line-numbers' << '--inline-source'
   rdoc.rdoc_files.include('README.txt')
@@ -126,6 +126,9 @@ Spec::Rake::SpecTask.new('spec:rcov') do |t|
   t.rcov_opts << '--exclude /Library/Ruby/Gems'
 end
 
-Jeweler::RubyforgeTasks.new
+Jeweler::RubyforgeTasks.new do |t|
+  t.remote_doc_path = ''
+  t.doc_task = :yardoc
+end
 
 task :default => :spec
