@@ -334,7 +334,11 @@ static VALUE perform_request(VALUE self) {
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, body_buffer);
   }
 
+  #ifdef HAVE_TBR
+  CURLcode ret = rb_thread_blocking_region(curl_easy_perform, curl, RUBY_UBF_IO, 0);
+  #else
   CURLcode ret = curl_easy_perform(curl);
+  #endif
   if (CURLE_OK == ret) {
     VALUE response = create_response(curl);
     if (!NIL_P(body_buffer)) {
