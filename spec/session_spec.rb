@@ -177,6 +177,21 @@ describe Patron::Session do
     body.header['authorization'].should == [encode_authz("foo", "bar")]
   end
 
+  it "should handle cookies if set" do
+    @session.handle_cookies
+    response = @session.get("/setcookie").body
+    YAML::load(response).header['cookie'].first.should == "session_id=foo123"
+  end
+
+  it "should not handle cookies by default" do
+    response = @session.get("/setcookie").body
+    YAML::load(response).header.should_not include('cookie')
+  end
+
+  it "should raise exception if cookie store is not writable or readable" do
+    lambda { @session.handle_cookies("/trash/clash/foo") }.should raise_error(ArgumentError)
+  end
+  
   def encode_authz(user, passwd)
     "Basic " + Base64.encode64("#{user}:#{passwd}").strip
   end

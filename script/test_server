@@ -67,10 +67,19 @@ class RedirectServlet < HTTPServlet::AbstractServlet
   end
 end
 
+class SetCookieServlet < HTTPServlet::AbstractServlet
+  def do_GET(req, res)
+    res['Set-Cookie'] = "session_id=foo123"
+    res['Location'] = "http://localhost:9001/test"
+    res.status = 301
+  end
+end
+
 server = WEBrick::HTTPServer.new :Port => 9001
 server.mount("/test", TestServlet)
 server.mount("/timeout", TimeoutServlet)
 server.mount("/redirect", RedirectServlet)
+server.mount("/setcookie", SetCookieServlet)
 
 exit_code = lambda do
   begin

@@ -60,7 +60,7 @@ module Patron
     # @see Patron::Request#auth_type
     attr_accessor :auth_type
 
-    private :ext_initialize, :handle_request
+    private :ext_initialize, :handle_request, :enable_cookie_session
 
     # Create a new Session object.
     def initialize
@@ -70,6 +70,23 @@ module Patron
       @connect_timeout = 1000
       @max_redirects = -1
       @auth_type = :basic
+    end
+
+    # Makes this session handle cookies and store them in in +file+.
+    # If file is nil they will be stored in memory. Otherwise the +file+
+    # must be readable and writable. Calling multiple times will add more files.
+    def handle_cookies(file = nil)
+      if file
+        path = Pathname(file).expand_path
+        unless File.exists?(file) and File.writable?(path.dirname)
+          raise ArgumentError, "Can't create file #{path} (permission error)"
+        end
+        unless File.readable?(file) or File.writable?(path)
+          raise ArgumentError, "Cant read or write file #{path} (permission error)"
+        end
+      end
+      enable_cookie_session(path.to_s)
+      self
     end
 
     ###################################################################

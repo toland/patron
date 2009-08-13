@@ -380,6 +380,17 @@ VALUE session_handle_request(VALUE self, VALUE request) {
   return rb_ensure(&perform_request, self, &cleanup, self);
 }
 
+VALUE enable_cookie_session(VALUE self, VALUE file) {
+	struct curl_state *state;
+	Data_Get_Struct(self, struct curl_state, state);
+	CURL* curl = state->handle;
+	char *file_path = RSTRING_PTR(file);
+	if (file_path != "")
+		curl_easy_setopt(curl, CURLOPT_COOKIEJAR, file_path);
+	curl_easy_setopt(curl, CURLOPT_COOKIEFILE, file_path);
+	return Qnil;
+}
+
 //------------------------------------------------------------------------------
 // Extension initialization
 //
@@ -411,6 +422,7 @@ void Init_session_ext() {
   rb_define_method(cSession, "escape",         session_escape,         1);
   rb_define_method(cSession, "unescape",       session_unescape,       1);
   rb_define_method(cSession, "handle_request", session_handle_request, 1);
+  rb_define_method(cSession, "enable_cookie_session", enable_cookie_session, 1);
 
 	rb_define_const(cRequest, "AuthBasic", 	CURLAUTH_BASIC);
 	rb_define_const(cRequest, "AuthDigest", CURLAUTH_DIGEST);
