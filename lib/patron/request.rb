@@ -88,7 +88,7 @@ module Patron
     end
 
     def timeout=(new_timeout)
-      if new_timeout.to_i < 1
+      if new_timeout && new_timeout.to_i < 1
         raise ArgumentError, "Timeout must be a positive integer greater than 0"
       end
 
@@ -96,7 +96,7 @@ module Patron
     end
 
     def connect_timeout=(new_timeout)
-      if new_timeout.to_i < 1
+      if new_timeout && new_timeout.to_i < 1
         raise ArgumentError, "Timeout must be a positive integer greater than 0"
       end
 
