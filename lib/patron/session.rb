@@ -60,6 +60,9 @@ module Patron
     # @see Patron::Request#auth_type
     attr_accessor :auth_type
 
+    # Does this session stricly verify SSL certificates?
+    attr_accessor :insecure
+
     private :ext_initialize, :handle_request, :enable_cookie_session
 
     # Create a new Session object.
@@ -168,6 +171,7 @@ module Patron
       req.file_name = options[:file]
       req.proxy = proxy
       req.auth_type = auth_type
+      req.insecure = insecure
 
       req.url = self.base_url.to_s + url.to_s
       raise ArgumentError, "Empty URL" if req.url.empty?
