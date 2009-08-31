@@ -40,4 +40,6 @@ if CONFIG['CC'] =~ /gcc/
   $CFLAGS << ' -Wall'
 end
 
+$defs.push("-DHAVE_TBR") if have_func('rb_thread_blocking_region')
+
 create_makefile 'patron/session_ext'

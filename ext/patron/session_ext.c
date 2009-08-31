@@ -274,6 +274,12 @@ static void set_options_from_request(VALUE self, VALUE request) {
     curl_easy_setopt(curl, CURLOPT_HTTPAUTH, rb_iv_get(request, "@auth_type"));
     curl_easy_setopt(curl, CURLOPT_USERPWD, StringValuePtr(credentials));
   }
+
+  VALUE insecure = rb_iv_get(request, "@insecure");
+  if(!NIL_P(insecure)) {
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 1);
+  }
 }
 
 // Use the info in a Curl handle to create a new Response object.
@@ -334,7 +340,11 @@ static VALUE perform_request(VALUE self) {
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, body_buffer);
   }
 
+  #ifdef HAVE_TBR
+  CURLcode ret = rb_thread_blocking_region(curl_easy_perform, curl, RUBY_UBF_IO, 0);
+  #else
   CURLcode ret = curl_easy_perform(curl);
+  #endif
   if (CURLE_OK == ret) {
     VALUE response = create_response(curl);
     if (!NIL_P(body_buffer)) {

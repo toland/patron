@@ -40,7 +40,7 @@ module Patron
       @max_redirects = -1
     end
 
-    attr_accessor :url, :username, :password, :file_name, :proxy, :auth_type
+    attr_accessor :url, :username, :password, :file_name, :proxy, :auth_type, :insecure
     attr_reader :action, :timeout, :connect_timeout, :max_redirects, :headers
     attr_reader :auth_type
     
@@ -88,7 +88,7 @@ module Patron
     end
 
     def timeout=(new_timeout)
-      if new_timeout.to_i < 1
+      if new_timeout && new_timeout.to_i < 1
         raise ArgumentError, "Timeout must be a positive integer greater than 0"
       end
 
@@ -96,7 +96,7 @@ module Patron
     end
 
     def connect_timeout=(new_timeout)
-      if new_timeout.to_i < 1
+      if new_timeout && new_timeout.to_i < 1
         raise ArgumentError, "Timeout must be a positive integer greater than 0"
       end
 
