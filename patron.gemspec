@@ -9,7 +9,7 @@ Gem::Specification.new do |s|
 
   s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
   s.authors = ["Phillip Toland"]
-  s.date = %q{2009-08-13}
+  s.date = %q{2009-08-30}
   s.description = %q{Ruby HTTP client library based on libcurl}
   s.email = %q{phil.toland@gmail.com}
   s.extensions = ["ext/patron/extconf.rb"]
