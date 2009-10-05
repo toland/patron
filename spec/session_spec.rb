@@ -137,10 +137,18 @@ describe Patron::Session do
     body.header['content-length'].should == [data.size.to_s]
   end
 
+  it "should raise when no data is provided to :put" do
+    lambda { @session.put("/test", nil) }.should raise_error(ArgumentError)
+  end
+
   it "should upload a file with :put" do
     response = @session.put_file("/test", "VERSION.yml")
     body = YAML::load(response.body)
     body.request_method.should == "PUT"
+  end
+
+  it "should raise when no file is provided to :put" do
+    lambda { @session.put_file("/test", nil) }.should raise_error(ArgumentError)
   end
 
   it "should use chunked encoding when uploading a file with :put" do
@@ -157,10 +165,18 @@ describe Patron::Session do
     body.header['content-length'].should == [data.size.to_s]
   end
 
+  it "should raise when no data is provided to :post" do
+    lambda { @session.post("/test", nil) }.should raise_error(ArgumentError)
+  end
+
   it "should upload a file with :post" do
     response = @session.post_file("/test", "VERSION.yml")
     body = YAML::load(response.body)
     body.request_method.should == "POST"
+  end
+
+  it "should raise when no file is provided to :post" do
+    lambda { @session.post_file("/test", nil) }.should raise_error(ArgumentError)
   end
 
   it "should use chunked encoding when uploading a file with :post" do

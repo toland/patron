@@ -230,6 +230,8 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
       state->upload_file = open_file(filename, "r");
       curl_easy_setopt(curl, CURLOPT_READDATA, state->upload_file);
+    } else {
+      rb_raise(rb_eArgError, "Must provide either data or a filename when doing a PUT or POST");
     }
   } else if (action == rb_intern("head")) {
     curl_easy_setopt(curl, CURLOPT_NOBODY, 1);
