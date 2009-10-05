@@ -393,14 +393,15 @@ VALUE session_handle_request(VALUE self, VALUE request) {
 }
 
 VALUE enable_cookie_session(VALUE self, VALUE file) {
-	struct curl_state *state;
-	Data_Get_Struct(self, struct curl_state, state);
-	CURL* curl = state->handle;
-	char *file_path = RSTRING_PTR(file);
-	if (file_path != "")
-		curl_easy_setopt(curl, CURLOPT_COOKIEJAR, file_path);
-	curl_easy_setopt(curl, CURLOPT_COOKIEFILE, file_path);
-	return Qnil;
+  struct curl_state *state;
+  Data_Get_Struct(self, struct curl_state, state);
+  CURL* curl = state->handle;
+  char* file_path = RSTRING_PTR(file);
+  if (file_path != "") {
+    curl_easy_setopt(curl, CURLOPT_COOKIEJAR, file_path);
+  }
+  curl_easy_setopt(curl, CURLOPT_COOKIEFILE, file_path);
+  return Qnil;
 }
 
 //------------------------------------------------------------------------------
