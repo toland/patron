@@ -397,7 +397,7 @@ VALUE enable_cookie_session(VALUE self, VALUE file) {
   Data_Get_Struct(self, struct curl_state, state);
   CURL* curl = state->handle;
   char* file_path = RSTRING_PTR(file);
-  if (file_path != "") {
+  if (file_path != NULL && strlen(file_path) != 0) {
     curl_easy_setopt(curl, CURLOPT_COOKIEJAR, file_path);
   }
   curl_easy_setopt(curl, CURLOPT_COOKIEFILE, file_path);
