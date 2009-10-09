@@ -21,6 +21,11 @@
 ## THE SOFTWARE.
 ##
 ## -------------------------------------------------------------------
+
+if RUBY_PLATFORM =~ /darwin10\.0/
+  ENV['ARCHFLAGS'] = '-arch x86_64'
+end
+
 require 'mkmf'
 require 'rbconfig'
 
