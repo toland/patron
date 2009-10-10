@@ -61,6 +61,7 @@ Jeweler::Tasks.new do |s|
   s.require_paths << 'ext'
 
   s.files = FileList['README.txt',
+                     'VERSION.yml',
                      'LICENSE',
                      'Rakefile',
                      'lib/**/*',
