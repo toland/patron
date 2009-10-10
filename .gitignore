@@ -1,5 +1,6 @@
 *.tmproj
 .yardoc
 coverage
+rdoc
 doc
 pkg
