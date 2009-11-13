@@ -41,7 +41,7 @@ module Patron
     attr_accessor :timeout
 
     # Maximum number of times to follow redirects.
-    # Set to 0 to disable and -1 to follow all redirects (the default).
+    # Set to 0 to disable and -1 to follow all redirects. Defaults to 5.
     attr_accessor :max_redirects
 
     # Prepended to the URL in all requests.
@@ -71,7 +71,7 @@ module Patron
       @headers = {}
       @timeout = 5
       @connect_timeout = 1000
-      @max_redirects = -1
+      @max_redirects = 5
       @auth_type = :basic
     end
 
