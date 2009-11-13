@@ -34,7 +34,7 @@ module Patron
   # server. This is the primary API for Patron.
   class Session
 
-    # HTTP connection timeout in milliseconds. Defaults to 1 second (1000 ms).
+    # HTTP connection timeout in seconds. Defaults to 1 second.
     attr_accessor :connect_timeout
 
     # HTTP transaction timeout in seconds. Defaults to 5 seconds.
@@ -70,7 +70,7 @@ module Patron
       ext_initialize
       @headers = {}
       @timeout = 5
-      @connect_timeout = 1000
+      @connect_timeout = 1
       @max_redirects = 5
       @auth_type = :basic
     end
