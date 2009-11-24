@@ -37,4 +37,9 @@ describe Patron::Response do
     # All digits, no spaces
     response.headers['Content-Length'].should match(/^\d+$/)
   end
+
+  it "should combine header values sent in different fields with same name" do
+    response = @session.get("/repetitiveheader")
+    response.headers['Set-Cookie'].should == "a=1,b=2"
+  end
 end

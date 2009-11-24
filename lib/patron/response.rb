@@ -49,7 +49,11 @@ module Patron
         else
           parts = header.split(':', 2)
           parts[1].strip! unless parts[1].nil?
-          @headers[parts[0]] = parts[1]
+          if @headers.has_key?(parts[0])
+            @headers[parts[0]] << ",#{parts[1]}"
+          else
+            @headers[parts[0]] = parts[1]
+          end
         end
       end
     end
