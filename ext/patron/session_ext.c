@@ -70,7 +70,7 @@ static size_t session_read_handler(char* stream, size_t size, size_t nmemb, char
 
   return result;
 }
- 
+
 //------------------------------------------------------------------------------
 // Object allocation
 //
@@ -342,11 +342,12 @@ static VALUE perform_request(VALUE self) {
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, body_buffer);
   }
 
-  #ifdef HAVE_TBR
+  #if defined(HAVE_TBR) && defined(USE_TBR)
   CURLcode ret = rb_thread_blocking_region(curl_easy_perform, curl, RUBY_UBF_IO, 0);
   #else
   CURLcode ret = curl_easy_perform(curl);
   #endif
+
   if (CURLE_OK == ret) {
     VALUE response = create_response(curl);
     if (!NIL_P(body_buffer)) {
@@ -423,12 +424,12 @@ void Init_session_ext() {
   ePartialFileError = rb_const_get(mPatron, rb_intern("PartialFileError"));
   eTimeoutError = rb_const_get(mPatron, rb_intern("TimeoutError"));
   eTooManyRedirects = rb_const_get(mPatron, rb_intern("TooManyRedirects"));
-	
+
 
   rb_define_module_function(mPatron, "libcurl_version", libcurl_version, 0);
 
   cSession = rb_define_class_under(mPatron, "Session", rb_cObject);
-	cRequest = rb_define_class_under(mPatron, "Request", rb_cObject);
+  cRequest = rb_define_class_under(mPatron, "Request", rb_cObject);
   rb_define_alloc_func(cSession, session_alloc);
 
   rb_define_method(cSession, "ext_initialize", session_ext_initialize, 0);
@@ -437,8 +438,8 @@ void Init_session_ext() {
   rb_define_method(cSession, "handle_request", session_handle_request, 1);
   rb_define_method(cSession, "enable_cookie_session", enable_cookie_session, 1);
 
-	rb_define_const(cRequest, "AuthBasic", 	CURLAUTH_BASIC);
-	rb_define_const(cRequest, "AuthDigest", CURLAUTH_DIGEST);
-	rb_define_const(cRequest, "AuthAny",		CURLAUTH_ANY);
-	
+  rb_define_const(cRequest, "AuthBasic",   CURLAUTH_BASIC);
+  rb_define_const(cRequest, "AuthDigest", CURLAUTH_DIGEST);
+  rb_define_const(cRequest, "AuthAny",    CURLAUTH_ANY);
+
 }

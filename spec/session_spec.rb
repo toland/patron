@@ -207,7 +207,19 @@ describe Patron::Session do
   it "should raise exception if cookie store is not writable or readable" do
     lambda { @session.handle_cookies("/trash/clash/foo") }.should raise_error(ArgumentError)
   end
-  
+
+  it "should work with multiple threads" do
+    threads = []
+    3.times do
+      threads << Thread.new do
+        session = Patron::Session.new
+        session.base_url = "http://localhost:9001"
+        session.post_file("/test", "VERSION.yml")
+      end
+    end
+    threads.each {|t| t.join }
+  end
+
   def encode_authz(user, passwd)
     "Basic " + Base64.encode64("#{user}:#{passwd}").strip
   end
