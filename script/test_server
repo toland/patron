@@ -75,11 +75,22 @@ class SetCookieServlet < HTTPServlet::AbstractServlet
   end
 end
 
+class RepetitiveHeaderServlet < HTTPServlet::AbstractServlet
+  def do_GET(req, res)
+    # the only way to get webrick to output two headers with the same name is using cookies, so that's what we'll do:
+    res.cookies << Cookie.new('a', '1')
+    res.cookies << Cookie.new('b', '2')
+    res['Content-Type'] = "text/plain"
+    res.body = "Hi."
+  end
+end
+
 server = WEBrick::HTTPServer.new :Port => 9001
 server.mount("/test", TestServlet)
 server.mount("/timeout", TimeoutServlet)
 server.mount("/redirect", RedirectServlet)
 server.mount("/setcookie", SetCookieServlet)
+server.mount("/repetitiveheader", RepetitiveHeaderServlet)
 
 exit_code = lambda do
   begin
