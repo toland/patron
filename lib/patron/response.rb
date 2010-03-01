@@ -48,11 +48,13 @@ module Patron
           @status_line = header.strip
         else
           parts = header.split(':', 2)
-          parts[1].strip! unless parts[1].nil?
-          if @headers.has_key?(parts[0])
-            @headers[parts[0]] << ",#{parts[1]}"
-          else
-            @headers[parts[0]] = parts[1]
+          unless parts.empty?
+            parts[1].strip! unless parts[1].nil?
+            if @headers.has_key?(parts[0])
+              @headers[parts[0]] << ",#{parts[1]}"
+            else
+              @headers[parts[0]] = parts[1]
+            end
           end
         end
       end
