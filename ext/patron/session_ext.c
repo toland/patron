@@ -356,7 +356,7 @@ static VALUE perform_request(VALUE self) {
     rb_funcall(response, rb_intern("parse_headers"), 1, header_buffer);
     return response;
   } else {
-    rb_raise(select_error(ret), state->error_buf);
+    rb_raise(select_error(ret), "%s", state->error_buf);
   }
 }
 
