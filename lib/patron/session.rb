@@ -159,6 +159,9 @@ module Patron
 
     # Send an HTTP request to the specified +url+.
     def request(action, url, headers, options = {})
+      # If the Expect header isn't set uploads are really slow
+      headers['Expect'] ||= ''
+
       req = Request.new
       req.action = action
       req.timeout = self.timeout
