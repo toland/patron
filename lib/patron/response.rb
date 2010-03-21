@@ -51,7 +51,8 @@ module Patron
           unless parts.empty?
             parts[1].strip! unless parts[1].nil?
             if @headers.has_key?(parts[0])
-              @headers[parts[0]] << ",#{parts[1]}"
+              @headers[parts[0]] = [@headers[parts[0]]] unless @headers[parts[0]].kind_of? Array
+              @headers[parts[0]] << parts[1]
             else
               @headers[parts[0]] = parts[1]
             end
