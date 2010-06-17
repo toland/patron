@@ -438,8 +438,8 @@ void Init_session_ext() {
   rb_define_method(cSession, "handle_request", session_handle_request, 1);
   rb_define_method(cSession, "enable_cookie_session", enable_cookie_session, 1);
 
-  rb_define_const(cRequest, "AuthBasic",   CURLAUTH_BASIC);
-  rb_define_const(cRequest, "AuthDigest", CURLAUTH_DIGEST);
-  rb_define_const(cRequest, "AuthAny",    CURLAUTH_ANY);
+  rb_define_const(cRequest, "AuthBasic",  INT2FIX(CURLAUTH_BASIC));
+  rb_define_const(cRequest, "AuthDigest", INT2FIX(CURLAUTH_DIGEST));
+  rb_define_const(cRequest, "AuthAny",    INT2FIX(CURLAUTH_ANY));
 
 }
