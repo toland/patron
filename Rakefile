@@ -127,9 +127,4 @@ Spec::Rake::SpecTask.new('spec:rcov') do |t|
   t.rcov_opts << '--exclude /Library/Ruby/Gems'
 end
 
-Jeweler::RubyforgeTasks.new do |t|
-  t.remote_doc_path = ''
-  t.doc_task = :yardoc
-end
-
 task :default => :spec
