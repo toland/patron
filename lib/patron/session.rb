@@ -55,7 +55,7 @@ module Patron
 
     # Standard set of headers that are used in all requests.
     attr_reader :headers
-    
+
     # Set the authentication type for the request.
     # @see Patron::Request#auth_type
     attr_accessor :auth_type
@@ -141,7 +141,7 @@ module Patron
     # Uploads the contents of a file to the specified +url+ using HTTP POST.
     def post_file(url, filename, headers = {})
       request(:post, url, headers, :file => filename)
-    end     
+    end
 
     ###################################################################
     ### WebDAV methods
@@ -181,6 +181,5 @@ module Patron
 
       handle_request(req)
     end
-
   end
 end

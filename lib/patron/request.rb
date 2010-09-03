@@ -43,28 +43,28 @@ module Patron
     attr_accessor :url, :username, :password, :file_name, :proxy, :auth_type, :insecure
     attr_reader :action, :timeout, :connect_timeout, :max_redirects, :headers
     attr_reader :auth_type
-    
-      # Set the type of authentication to use for this request. 
-      # 
-      # @param [String, Symbol] type - The type of authentication to use for this request, can be one of
-      #   :basic, :digest, or :any
-      #
-      # @example
-      #   sess.username = "foo"
-      #   sess.password = "sekrit"
-      #   sess.auth_type = :digest
-      def auth_type=(type=:basic)
-        @auth_type = case type
-        when :basic, "basic"
-          Request::AuthBasic
-        when :digest, "digest"
-          Request::AuthDigest
-        when :any, "any"
-          Request::AuthAny
-        else
-          raise "#{type.inspect} is an unknown authentication type"
-        end
+
+    # Set the type of authentication to use for this request.
+    #
+    # @param [String, Symbol] type - The type of authentication to use for this request, can be one of
+    #   :basic, :digest, or :any
+    #
+    # @example
+    #   sess.username = "foo"
+    #   sess.password = "sekrit"
+    #   sess.auth_type = :digest
+    def auth_type=(type=:basic)
+      @auth_type = case type
+      when :basic, "basic"
+        Request::AuthBasic
+      when :digest, "digest"
+        Request::AuthDigest
+      when :any, "any"
+        Request::AuthAny
+      else
+        raise "#{type.inspect} is an unknown authentication type"
       end
+    end
 
     def upload_data=(data)
       @upload_data = case data
@@ -74,7 +74,7 @@ module Patron
         data
       end
     end
-    
+
     def upload_data
       @upload_data
     end
@@ -128,12 +128,12 @@ module Patron
       "#{username}:#{password}"
     end
 
-    private
-    
+  private
+
     # serialize hash for Rails-style params
     def hash_to_string(hash)
       pairs = []
-      recursive = Proc.new do |h, prefix| 
+      recursive = Proc.new do |h, prefix|
         h.each_pair do |k,v|
           key = prefix == '' ? k : "#{prefix}[#{k}]"
           v.is_a?(Hash) ? recursive.call(v, key) : pairs << "#{key}=#{v}"
@@ -142,6 +142,5 @@ module Patron
       recursive.call(hash, '')
       return pairs.join('&')
     end
-    
   end
 end

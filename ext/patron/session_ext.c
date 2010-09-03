@@ -342,11 +342,11 @@ static VALUE perform_request(VALUE self) {
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, body_buffer);
   }
 
-  #if defined(HAVE_TBR) && defined(USE_TBR)
+#if defined(HAVE_TBR) && defined(USE_TBR)
   CURLcode ret = rb_thread_blocking_region(curl_easy_perform, curl, RUBY_UBF_IO, 0);
-  #else
+#else
   CURLcode ret = curl_easy_perform(curl);
-  #endif
+#endif
 
   if (CURLE_OK == ret) {
     VALUE response = create_response(curl);
@@ -425,7 +425,6 @@ void Init_session_ext() {
   eTimeoutError = rb_const_get(mPatron, rb_intern("TimeoutError"));
   eTooManyRedirects = rb_const_get(mPatron, rb_intern("TooManyRedirects"));
 
-
   rb_define_module_function(mPatron, "libcurl_version", libcurl_version, 0);
 
   cSession = rb_define_class_under(mPatron, "Session", rb_cObject);
@@ -441,5 +440,4 @@ void Init_session_ext() {
   rb_define_const(cRequest, "AuthBasic",  INT2FIX(CURLAUTH_BASIC));
   rb_define_const(cRequest, "AuthDigest", INT2FIX(CURLAUTH_DIGEST));
   rb_define_const(cRequest, "AuthAny",    INT2FIX(CURLAUTH_ANY));
-
 }
