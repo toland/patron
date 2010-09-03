@@ -27,6 +27,15 @@ require 'yaml'
 require 'webrick'
 include WEBrick
 
+# This ugly little hack is necessary to make the specs pass when running
+# the test_server script under Ruby 1.9. URI::Parser#to_yaml generates
+# regexp representations that YAML.parse cannot parse.
+class URI::Parser
+  def to_yaml(opts = {})
+    {}.to_yaml(opts)
+  end
+end
+
 class TestServlet < HTTPServlet::AbstractServlet
   def respond_with(method, req, res)
     res.body = req.to_yaml
