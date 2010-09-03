@@ -273,7 +273,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
   VALUE credentials = rb_funcall(request, rb_intern("credentials"), 0);
   if (!NIL_P(credentials)) {
-    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, rb_iv_get(request, "@auth_type"));
+    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, FIX2INT(rb_iv_get(request, "@auth_type")));
     curl_easy_setopt(curl, CURLOPT_USERPWD, StringValuePtr(credentials));
   }
 
