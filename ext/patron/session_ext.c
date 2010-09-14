@@ -144,19 +144,19 @@ VALUE session_unescape(VALUE self, VALUE value) {
 }
 
 // Callback used to iterate over the HTTP headers and store them in an slist.
-static VALUE each_http_header(VALUE header, VALUE self) {
+static int each_http_header(VALUE header_key, VALUE header_value, VALUE self) {
   struct curl_state *state;
   Data_Get_Struct(self, struct curl_state, state);
 
-  VALUE name = rb_obj_as_string(rb_ary_entry(header, 0));
-  VALUE value = rb_obj_as_string(rb_ary_entry(header, 1));
+  VALUE name = rb_obj_as_string(header_key);
+  VALUE value = rb_obj_as_string(header_value);
 
   VALUE header_str = Qnil;
   header_str = rb_str_plus(name, rb_str_new2(": "));
   header_str = rb_str_plus(header_str, value);
 
   state->headers = curl_slist_append(state->headers, StringValuePtr(header_str));
-  return Qnil;
+  return 0;
 }
 
 static void set_chunked_encoding(struct curl_state *state) {
@@ -187,7 +187,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
       rb_raise(rb_eArgError, "Headers must be passed in a hash.");
     }
 
-    rb_iterate(rb_each, headers, each_http_header, self);
+    rb_hash_foreach(headers, each_http_header, self);
   }
 
   ID action = SYM2ID(rb_iv_get(request, "@action"));
