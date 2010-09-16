@@ -50,8 +50,11 @@ module Patron
     # Username and password for http authentication
     attr_accessor :username, :password
 
-    # HTTP proxy URL
+    # Proxy URL in cURL format ('hostname:8080')
     attr_accessor :proxy
+
+    # Proxy type (default is HTTP), see constants under ProxyType for supported types.
+    attr_accessor :proxy_type
 
     # Standard set of headers that are used in all requests.
     attr_reader :headers
@@ -173,6 +176,7 @@ module Patron
       req.upload_data = options[:data]
       req.file_name = options[:file]
       req.proxy = proxy
+      req.proxy_type = proxy_type
       req.auth_type = auth_type
       req.insecure = insecure
 

@@ -26,6 +26,7 @@
 #include <curl/curl.h>
 
 static VALUE mPatron = Qnil;
+static VALUE mProxyType = Qnil;
 static VALUE cSession = Qnil;
 static VALUE cRequest = Qnil;
 static VALUE ePatronError = Qnil;
@@ -271,6 +272,11 @@ static void set_options_from_request(VALUE self, VALUE request) {
       curl_easy_setopt(curl, CURLOPT_PROXY, StringValuePtr(proxy));
   }
 
+  VALUE proxy_type = rb_iv_get(request, "@proxy_type");
+  if (!NIL_P(proxy_type)) {
+    curl_easy_setopt(curl, CURLOPT_PROXYTYPE, FIX2INT(proxy_type));
+  }
+
   VALUE credentials = rb_funcall(request, rb_intern("credentials"), 0);
   if (!NIL_P(credentials)) {
     curl_easy_setopt(curl, CURLOPT_HTTPAUTH, FIX2INT(rb_iv_get(request, "@auth_type")));
@@ -440,4 +446,13 @@ void Init_session_ext() {
   rb_define_const(cRequest, "AuthBasic",  INT2FIX(CURLAUTH_BASIC));
   rb_define_const(cRequest, "AuthDigest", INT2FIX(CURLAUTH_DIGEST));
   rb_define_const(cRequest, "AuthAny",    INT2FIX(CURLAUTH_ANY));
+
+  mProxyType = rb_define_module_under(mPatron, "ProxyType");
+  rb_define_const(mProxyType, "HTTP", INT2FIX(CURLPROXY_HTTP));
+  rb_define_const(mProxyType, "HTTP_1_0", INT2FIX(CURLPROXY_HTTP_1_0));
+  rb_define_const(mProxyType, "SOCKS4", INT2FIX(CURLPROXY_SOCKS4));
+  rb_define_const(mProxyType, "SOCKS5", INT2FIX(CURLPROXY_SOCKS5));
+  rb_define_const(mProxyType, "SOCKS4A", INT2FIX(CURLPROXY_SOCKS4A));
+  rb_define_const(mProxyType, "SOCKS5_HOSTNAME", INT2FIX(CURLPROXY_SOCKS5_HOSTNAME));
 }
+
