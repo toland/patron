@@ -40,7 +40,7 @@ module Patron
       @max_redirects = -1
     end
 
-    attr_accessor :url, :username, :password, :file_name, :proxy, :auth_type, :insecure
+    attr_accessor :url, :username, :password, :file_name, :proxy, :auth_type, :insecure, :multipart
     attr_reader :action, :timeout, :connect_timeout, :max_redirects, :headers
     attr_reader :auth_type
 
@@ -69,7 +69,7 @@ module Patron
     def upload_data=(data)
       @upload_data = case data
       when Hash
-        hash_to_string(data)
+        self.multipart ? data : hash_to_string(data)
       else
         data
       end

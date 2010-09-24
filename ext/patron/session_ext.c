@@ -45,8 +45,9 @@ struct curl_state {
   FILE* upload_file;
   char error_buf[CURL_ERROR_SIZE];
   struct curl_slist* headers;
+  struct curl_httppost* post;
+  struct curl_httppost* last;
 };
-
 
 //------------------------------------------------------------------------------
 // Curl Callbacks
@@ -106,6 +107,8 @@ VALUE session_ext_initialize(VALUE self) {
   Data_Get_Struct(self, struct curl_state, state);
 
   state->handle = curl_easy_init();
+  state->post   = NULL;
+  state->last   = NULL;
 
   return self;
 }
@@ -159,6 +162,31 @@ static int each_http_header(VALUE header_key, VALUE header_value, VALUE self) {
   return 0;
 }
 
+static int formadd_values(VALUE data_key, VALUE data_value, VALUE self) {
+  struct curl_state *state;
+  Data_Get_Struct(self, struct curl_state, state);
+
+  VALUE name = rb_obj_as_string(data_key);
+  VALUE value = rb_obj_as_string(data_value);
+
+  curl_formadd(&state->post, &state->last, CURLFORM_PTRNAME, RSTRING_PTR(name),
+                CURLFORM_PTRCONTENTS, RSTRING_PTR(value), CURLFORM_END);  
+  return 0;
+}
+
+static int formadd_files(VALUE data_key, VALUE data_value, VALUE self) {
+  struct curl_state *state;
+  Data_Get_Struct(self, struct curl_state, state);
+
+  VALUE name = rb_obj_as_string(data_key);
+  VALUE value = rb_obj_as_string(data_value);
+
+  curl_formadd(&state->post, &state->last, CURLFORM_PTRNAME, RSTRING_PTR(name),
+                CURLFORM_FILE, RSTRING_PTR(value), CURLFORM_END); 
+                
+  return 0;
+}
+
 static void set_chunked_encoding(struct curl_state *state) {
   state->headers = curl_slist_append(state->headers, "Transfer-Encoding: chunked");
 }
@@ -189,7 +217,6 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
     rb_hash_foreach(headers, each_http_header, self);
   }
-
   ID action = SYM2ID(rb_iv_get(request, "@action"));
   if (action == rb_intern("get")) {
     curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
@@ -204,8 +231,9 @@ static void set_options_from_request(VALUE self, VALUE request) {
   } else if (action == rb_intern("post") || action == rb_intern("put")) {
     VALUE data = rb_iv_get(request, "@upload_data");
     VALUE filename = rb_iv_get(request, "@file_name");
+    VALUE multipart = rb_iv_get(request, "@multipart");
 
-    if (!NIL_P(data)) {
+    if (!NIL_P(data) && NIL_P(multipart)) {
       state->upload_buf = StringValuePtr(data);
       int len = RSTRING_LEN(data);
 
@@ -219,7 +247,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
         curl_easy_setopt(curl, CURLOPT_READDATA, &state->upload_buf);
         curl_easy_setopt(curl, CURLOPT_INFILESIZE, len);
       }
-    } else if (!NIL_P(filename)) {
+    } else if (!NIL_P(filename) && NIL_P(multipart)) {
       set_chunked_encoding(state);
 
       curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
@@ -230,6 +258,21 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
       state->upload_file = open_file(filename, "r");
       curl_easy_setopt(curl, CURLOPT_READDATA, state->upload_file);
+    } else if (!NIL_P(multipart)) {
+      if (action == rb_intern("post")) {
+        if(!NIL_P(data) && !NIL_P(filename)) {
+          if (rb_type(data) == T_HASH && rb_type(filename) == T_HASH) {
+            rb_hash_foreach(data, formadd_values, self);
+            rb_hash_foreach(filename, formadd_files, self);
+        } else {   rb_raise(rb_eArgError, "Data and Filename must be passed in a hash.");}
+        }
+        gi
+        curl_easy_setopt(curl, CURLOPT_HTTPPOST, state->post);
+        
+      } else {
+         rb_raise(rb_eArgError, "Multipart PUT not supported");
+      }
+    
     } else {
       rb_raise(rb_eArgError, "Must provide either data or a filename when doing a PUT or POST");
     }
