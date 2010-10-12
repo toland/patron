@@ -78,9 +78,9 @@ module Patron
       @auth_type = :basic
     end
 
-    # Makes this session handle cookies and store them in in +file+.
-    # If file is nil they will be stored in memory. Otherwise the +file+
-    # must be readable and writable. Calling multiple times will add more files.
+    # Turn on cooking handling for this session, storing them in memory by
+    # default or in +file+ if specified. The +file+ must be readable and
+    # writable. Calling multiple times will add more files.
     def handle_cookies(file = nil)
       if file
         path = Pathname(file).expand_path
