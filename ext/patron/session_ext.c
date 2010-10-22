@@ -266,7 +266,6 @@ static void set_options_from_request(VALUE self, VALUE request) {
             rb_hash_foreach(filename, formadd_files, self);
         } else {   rb_raise(rb_eArgError, "Data and Filename must be passed in a hash.");}
         }
-        gi
         curl_easy_setopt(curl, CURLOPT_HTTPPOST, state->post);
         
       } else {
