@@ -17,6 +17,7 @@ requests:
     sess.timeout = 10
     sess.base_url = "http://myserver.com:9900"
     sess.headers['User-Agent'] = 'myapp/1.0'
+    sess.enable_debug "/tmp/patron.debug"
 
 The Session is used to make HTTP requests.
 

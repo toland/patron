@@ -43,6 +43,7 @@ struct curl_state {
   char* upload_buf;
   FILE* download_file;
   FILE* upload_file;
+  FILE* debug_file;
   char error_buf[CURL_ERROR_SIZE];
   struct curl_slist* headers;
 };
@@ -78,6 +79,12 @@ static size_t session_read_handler(char* stream, size_t size, size_t nmemb, char
 // Cleans up the Curl handle when the Session object is garbage collected.
 void session_free(struct curl_state *curl) {
   curl_easy_cleanup(curl->handle);
+
+  if (curl->debug_file) {
+    fclose(curl->debug_file);
+    curl->debug_file = NULL;
+  }
+
   free(curl);
 }
 
@@ -282,6 +289,12 @@ static void set_options_from_request(VALUE self, VALUE request) {
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 1);
   }
+
+  if(state->debug_file) {
+    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1);
+    curl_easy_setopt(curl, CURLOPT_STDERR, state->debug_file);
+  }
+
 }
 
 // Use the info in a Curl handle to create a new Response object.
@@ -405,6 +418,25 @@ VALUE enable_cookie_session(VALUE self, VALUE file) {
   return Qnil;
 }
 
+VALUE set_debug_file(VALUE self, VALUE file) {
+  struct curl_state *state;
+  Data_Get_Struct(self, struct curl_state, state);
+  char* file_path = RSTRING_PTR(file);
+
+  if(state->debug_file){
+    fclose(state->debug_file);
+    state->debug_file = NULL;
+  }
+
+  if(file_path != NULL && strlen(file_path) != 0) {
+    state->debug_file = open_file(file, "w");
+  } else {
+    state->debug_file = stderr;
+  }
+
+  return Qnil;
+}
+
 //------------------------------------------------------------------------------
 // Extension initialization
 //
@@ -436,6 +468,7 @@ void Init_session_ext() {
   rb_define_method(cSession, "unescape",       session_unescape,       1);
   rb_define_method(cSession, "handle_request", session_handle_request, 1);
   rb_define_method(cSession, "enable_cookie_session", enable_cookie_session, 1);
+  rb_define_method(cSession, "set_debug_file", set_debug_file, 1);
 
   rb_define_const(cRequest, "AuthBasic",  INT2FIX(CURLAUTH_BASIC));
   rb_define_const(cRequest, "AuthDigest", INT2FIX(CURLAUTH_DIGEST));
