@@ -63,7 +63,7 @@ module Patron
     # Does this session stricly verify SSL certificates?
     attr_accessor :insecure
 
-    private :ext_initialize, :handle_request, :enable_cookie_session
+    private :ext_initialize, :handle_request, :enable_cookie_session, :set_debug_file
 
     # Create a new Session object.
     def initialize
@@ -90,6 +90,11 @@ module Patron
       end
       enable_cookie_session(path.to_s)
       self
+    end
+
+    # Enable debug output to stderr or to specified +file+.
+    def enable_debug(file = nil)
+      set_debug_file(file.to_s)
     end
 
     ###################################################################
