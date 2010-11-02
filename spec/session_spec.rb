@@ -21,7 +21,7 @@
 ## THE SOFTWARE.
 ##
 ## -------------------------------------------------------------------
-require File.dirname(__FILE__) + '/spec_helper.rb'
+require File.expand_path("./spec") + '/spec_helper.rb'
 require 'webrick'
 require 'base64'
 require 'fileutils'
