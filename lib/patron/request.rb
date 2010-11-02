@@ -41,7 +41,7 @@ module Patron
     end
 
     attr_accessor :url, :username, :password, :file_name, :proxy, :auth_type, :insecure
-    attr_reader :action, :timeout, :connect_timeout, :max_redirects, :headers
+    attr_reader :action, :timeout, :connect_timeout, :max_redirects, :headers, :buffer_size
     attr_reader :auth_type
 
     # Set the type of authentication to use for this request.
@@ -117,6 +117,14 @@ module Patron
       end
 
       @headers = new_headers
+    end
+
+    def buffer_size=(buffer_size)
+      if buffer_size != nil && buffer_size.to_i < 1
+        raise ArgumentError, "Buffer size must be a positive integer greater than 0 or nil"
+      end
+
+      @buffer_size = buffer_size.to_i
     end
 
     def action_name

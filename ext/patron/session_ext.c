@@ -282,6 +282,11 @@ static void set_options_from_request(VALUE self, VALUE request) {
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 1);
   }
+
+  VALUE buffer_size = rb_iv_get(request, "@buffer_size");
+  if (!NIL_P(buffer_size)) {
+     curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, FIX2INT(buffer_size));
+  }
 }
 
 // Use the info in a Curl handle to create a new Response object.
