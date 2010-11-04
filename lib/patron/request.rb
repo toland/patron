@@ -124,7 +124,7 @@ module Patron
         raise ArgumentError, "Buffer size must be a positive integer greater than 0 or nil"
       end
 
-      @buffer_size = buffer_size.to_i
+      @buffer_size = buffer_size != nil ? buffer_size.to_i : nil
     end
 
     def action_name
