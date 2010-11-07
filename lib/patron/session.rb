@@ -66,6 +66,10 @@ module Patron
     # Does this session stricly verify SSL certificates?
     attr_accessor :insecure
 
+    # Set the buffer size for this request. This option will
+    # only be set if buffer_size is non-nil
+    attr_accessor :buffer_size
+
     private :ext_initialize, :handle_request, :enable_cookie_session, :set_debug_file
 
     # Create a new Session object.
@@ -150,7 +154,7 @@ module Patron
     def post_file(url, filename, headers = {})
       request(:post, url, headers, :file => filename)
     end
-    
+
     # Uploads the contents of a file and data to the specified +url+ using HTTP POST.
     def post_multipart(url, data, filename, headers = {})
       request(:post, url, headers, {:data => data, :file => filename, :multipart => true})
@@ -190,6 +194,7 @@ module Patron
       req.proxy_type = proxy_type
       req.auth_type = auth_type
       req.insecure = insecure
+      req.buffer_size = buffer_size
 
       req.url = self.base_url.to_s + url.to_s
       raise ArgumentError, "Empty URL" if req.url.empty?

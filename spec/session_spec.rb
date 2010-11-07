@@ -21,7 +21,7 @@
 ## THE SOFTWARE.
 ##
 ## -------------------------------------------------------------------
-require File.dirname(__FILE__) + '/spec_helper.rb'
+require File.expand_path("./spec") + '/spec_helper.rb'
 require 'webrick'
 require 'base64'
 require 'fileutils'
@@ -224,6 +224,24 @@ describe Patron::Session do
       end
     end
     threads.each {|t| t.join }
+  end
+
+  it "should limit the buffer_size" do
+    # Buffer size is tricky to test, as it only affects the buffer size for each 
+    # read and it's not really visible at this, higher level. It's also only a 
+    # suggestion rather than a command so it may not even take affect. Currently 
+    # we just test that the response completes without any issues, it would be nice 
+    # to have a more robust test here.
+    @session.buffer_size = 1
+
+    body = nil
+
+    lambda {
+      response = @session.get("/test")
+      body = YAML::load(response.body)
+    }.should_not raise_error
+
+    body.request_method.should == "GET"
   end
 
   def encode_authz(user, passwd)

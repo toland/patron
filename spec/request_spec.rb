@@ -21,7 +21,7 @@
 ## THE SOFTWARE.
 ##
 ## -------------------------------------------------------------------
-require File.dirname(__FILE__) + '/spec_helper.rb'
+require File.expand_path("./spec") + '/spec_helper.rb'
 
 
 describe Patron::Request do
@@ -72,4 +72,15 @@ describe Patron::Request do
 
   end
 
+  describe :buffer_size do
+
+    it "should raise an exception when assigned a negative number" do
+      lambda {@request.buffer_size = -1}.should raise_error(ArgumentError)
+    end
+
+    it "should raise an exception when assigned 0" do
+      lambda {@request.buffer_size = 0}.should raise_error(ArgumentError)
+    end
+
+  end
 end
