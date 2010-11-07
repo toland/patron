@@ -174,6 +174,12 @@ describe Patron::Session do
     body = YAML::load(response.body)
     body.request_method.should == "POST"
   end
+  
+  it "should upload a multipart with :post" do
+    response = @session.post_multipart("/test", { :test_data => "123" }, { :test_file => "VERSION.yml" } )
+    body = YAML::load(response.body)
+    body.request_method.should == "POST"    
+  end
 
   it "should raise when no file is provided to :post" do
     lambda { @session.post_file("/test", nil) }.should raise_error(ArgumentError)

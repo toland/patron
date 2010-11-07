@@ -150,6 +150,11 @@ module Patron
     def post_file(url, filename, headers = {})
       request(:post, url, headers, :file => filename)
     end
+    
+    # Uploads the contents of a file and data to the specified +url+ using HTTP POST.
+    def post_multipart(url, data, filename, headers = {})
+      request(:post, url, headers, {:data => data, :file => filename, :multipart => true})
+    end
 
     ###################################################################
     ### WebDAV methods
@@ -178,6 +183,7 @@ module Patron
       req.headers = self.headers.merge(headers)
       req.username = self.username
       req.password = self.password
+      req.multipart = options[:multipart]
       req.upload_data = options[:data]
       req.file_name = options[:file]
       req.proxy = proxy
