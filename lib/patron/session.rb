@@ -78,7 +78,7 @@ module Patron
       @auth_type = :basic
     end
 
-    # Turn on cooking handling for this session, storing them in memory by
+    # Turn on cookie handling for this session, storing them in memory by
     # default or in +file+ if specified. The +file+ must be readable and
     # writable. Calling multiple times will add more files.
     def handle_cookies(file = nil)
@@ -88,7 +88,7 @@ module Patron
           raise ArgumentError, "Can't create file #{path} (permission error)"
         end
         unless File.readable?(file) or File.writable?(path)
-          raise ArgumentError, "Cant read or write file #{path} (permission error)"
+          raise ArgumentError, "Can't read or write file #{path} (permission error)"
         end
       end
       enable_cookie_session(path.to_s)
