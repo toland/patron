@@ -9,7 +9,7 @@ Gem::Specification.new do |s|
 
   s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
   s.authors = ["Phillip Toland"]
-  s.date = %q{2010-09-14}
+  s.date = %q{2010-11-06}
   s.description = %q{Ruby HTTP client library based on libcurl}
   s.email = %q{phil.toland@gmail.com}
   s.extensions = ["ext/patron/extconf.rb", "ext/patron/extconf.rb"]
@@ -25,6 +25,7 @@ Gem::Specification.new do |s|
      "ext/patron/session_ext.c",
      "lib/patron.rb",
      "lib/patron/error.rb",
+     "lib/patron/proxy_type.rb",
      "lib/patron/request.rb",
      "lib/patron/response.rb",
      "lib/patron/session.rb",
