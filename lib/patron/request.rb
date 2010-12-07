@@ -23,6 +23,8 @@
 ##
 ## -------------------------------------------------------------------
 
+require 'cgi'
+
 module Patron
 
   # Represents the information necessary for an HTTP request.
@@ -144,6 +146,7 @@ module Patron
       recursive = Proc.new do |h, prefix|
         h.each_pair do |k,v|
           key = prefix == '' ? k : "#{prefix}[#{k}]"
+					@action == :post ? v = CGI::escape(v.to_s) : v
           v.is_a?(Hash) ? recursive.call(v, key) : pairs << "#{key}=#{v}"
         end
       end
