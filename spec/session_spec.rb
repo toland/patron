@@ -142,7 +142,7 @@ describe Patron::Session do
   end
 
   it "should upload a file with :put" do
-    response = @session.put_file("/test", "VERSION.yml")
+    response = @session.put_file("/test", "LICENSE")
     body = YAML::load(response.body)
     body.request_method.should == "PUT"
   end
@@ -152,7 +152,7 @@ describe Patron::Session do
   end
 
   it "should use chunked encoding when uploading a file with :put" do
-    response = @session.put_file("/test", "VERSION.yml")
+    response = @session.put_file("/test", "LICENSE")
     body = YAML::load(response.body)
     body.header['transfer-encoding'].first.should == "chunked"
   end
@@ -170,15 +170,15 @@ describe Patron::Session do
   end
 
   it "should upload a file with :post" do
-    response = @session.post_file("/test", "VERSION.yml")
+    response = @session.post_file("/test", "LICENSE")
     body = YAML::load(response.body)
     body.request_method.should == "POST"
   end
-  
+
   it "should upload a multipart with :post" do
-    response = @session.post_multipart("/test", { :test_data => "123" }, { :test_file => "VERSION.yml" } )
+    response = @session.post_multipart("/test", { :test_data => "123" }, { :test_file => "LICENSE" } )
     body = YAML::load(response.body)
-    body.request_method.should == "POST"    
+    body.request_method.should == "POST"
   end
 
   it "should raise when no file is provided to :post" do
@@ -186,7 +186,7 @@ describe Patron::Session do
   end
 
   it "should use chunked encoding when uploading a file with :post" do
-    response = @session.post_file("/test", "VERSION.yml")
+    response = @session.post_file("/test", "LICENSE")
     body = YAML::load(response.body)
     body.header['transfer-encoding'].first.should == "chunked"
   end
@@ -220,17 +220,17 @@ describe Patron::Session do
       threads << Thread.new do
         session = Patron::Session.new
         session.base_url = "http://localhost:9001"
-        session.post_file("/test", "VERSION.yml")
+        session.post_file("/test", "LICENSE")
       end
     end
     threads.each {|t| t.join }
   end
 
   it "should limit the buffer_size" do
-    # Buffer size is tricky to test, as it only affects the buffer size for each 
-    # read and it's not really visible at this, higher level. It's also only a 
-    # suggestion rather than a command so it may not even take affect. Currently 
-    # we just test that the response completes without any issues, it would be nice 
+    # Buffer size is tricky to test, as it only affects the buffer size for each
+    # read and it's not really visible at this, higher level. It's also only a
+    # suggestion rather than a command so it may not even take affect. Currently
+    # we just test that the response completes without any issues, it would be nice
     # to have a more robust test here.
     @session.buffer_size = 1
 

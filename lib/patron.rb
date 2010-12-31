@@ -22,7 +22,6 @@
 ## THE SOFTWARE.
 ##
 ## -------------------------------------------------------------------
-require 'yaml'
 require 'pathname'
 
 cwd = Pathname(__FILE__).dirname
@@ -33,11 +32,6 @@ require 'patron/session'
 module Patron #:nodoc:
   # Returns the version number of the Patron library as a string
   def self.version
-    cwd = Pathname(__FILE__).dirname.expand_path.to_s
-    yaml = YAML.load_file(cwd + '/../VERSION.yml')
-    major = (yaml['major'] || yaml[:major]).to_i
-    minor = (yaml['minor'] || yaml[:minor]).to_i
-    patch = (yaml['patch'] || yaml[:patch]).to_i
-    "#{major}.#{minor}.#{patch}"
+    VERSION
   end
 end

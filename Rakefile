@@ -21,73 +21,22 @@
 ## THE SOFTWARE.
 ##
 ## -------------------------------------------------------------------
-require 'yaml'
 require 'rake/clean'
 require 'rake/rdoctask'
-require 'spec/rake/spectask'
-require 'jeweler'
-require 'yard'
+require 'rake/extensiontask'
+require 'rspec/core/rake_task'
+require 'bundler'
 
-require 'rbconfig'
-include Config
+Rake::ExtensionTask.new do |ext|
+  ext.name = 'session_ext'           # indicate the name of the extension.
+  ext.ext_dir = 'ext/patron'         # search for 'hello_world' inside it.
+  ext.lib_dir = 'lib/patron'         # put binaries into this folder.
+end
 
-EXT_DIR     = 'ext/patron'
-SESSION_SO  = "#{EXT_DIR}/session_ext.#{CONFIG['DLEXT']}"
-SESSION_SRC = "#{EXT_DIR}/session_ext.c"
+Bundler::GemHelper.install_tasks
 
-CLEAN.include FileList["#{EXT_DIR}/*"].exclude(/^.*\.(rb|c)$/)
+CLEAN.include FileList["ext/patron/*"].exclude(/^.*\.(rb|c)$/)
 CLOBBER.include %w( doc coverage pkg )
-
-module Git
-  class Lib
-    def tag(tag)
-      # Force an annotated tag
-      command('tag', [tag, '-a', '-m', tag])
-    end
-  end
-end
-
-Jeweler::Tasks.new do |s|
-  s.name              = 'patron'
-  s.platform          = Gem::Platform::RUBY
-  s.author            = 'Phillip Toland'
-  s.email             = 'phil.toland@gmail.com'
-  s.homepage          = 'http://github.com/toland/Patron'
-  s.rubyforge_project = 'patron'
-  s.summary           = 'Patron HTTP client'
-  s.description       = 'Ruby HTTP client library based on libcurl'
-
-  s.extensions    << 'ext/patron/extconf.rb'
-  s.require_paths << 'ext'
-
-  s.files = FileList['README.txt',
-                     'VERSION.yml',
-                     'LICENSE',
-                     'Rakefile',
-                     'lib/**/*',
-                     'spec/*',
-                     'ext/patron/*.{rb,c}']
-
-  # rdoc
-  s.has_rdoc         = true
-  s.extra_rdoc_files = ['README.txt']
-  s.rdoc_options     = ['--quiet',
-                        '--title', "Patron documentation",
-                        '--opname', 'index.html',
-                        '--line-numbers',
-                        '--main', 'README.txt',
-                        '--inline-source']
-end
-
-file SESSION_SO => SESSION_SRC do
-  cd EXT_DIR do
-    ruby 'extconf.rb'
-    sh 'make'
-  end
-end
-
-desc "Compile extension"
-task :compile => SESSION_SO
 
 desc "Start an IRB shell"
 task :shell => :compile do
@@ -98,33 +47,23 @@ Rake::RDocTask.new do |rdoc|
   rdoc.rdoc_dir = 'rdoc'
   rdoc.title = 'Patron documentation'
   rdoc.main = 'README.txt'
-  rdoc.options << '--line-numbers' << '--inline-source'
   rdoc.rdoc_files.include('README.txt')
   rdoc.rdoc_files.include('lib/**/*.rb')
 end
 
-YARD::Rake::YardocTask.new do |t|
-  t.files   = ['lib/**/*.rb']
-  t.options = ['--readme', 'README.txt']
-end
-
 desc "Run specs"
-Spec::Rake::SpecTask.new(:spec) do |t|
-  t.spec_opts = ['--options', "spec/spec.opts"]
-  t.spec_files = FileList['spec/**/*_spec.rb']
+RSpec::Core::RakeTask.new do |t|
+  t.rspec_opts = %w( --colour --format progress )
+  t.pattern = 'spec/**/*_spec.rb'
 end
 
 task :spec => [:compile]
 
 desc "Run specs with RCov"
-Spec::Rake::SpecTask.new('spec:rcov') do |t|
-  t.spec_files = FileList['spec/**/*_spec.rb']
+RSpec::Core::RakeTask.new('spec:rcov') do |t|
+  t.pattern = 'spec/**/*_spec.rb'
   t.rcov = true
-  t.rcov_opts << '--sort coverage'
-  t.rcov_opts << '--comments'
-  t.rcov_opts << '--exclude spec'
-  t.rcov_opts << '--exclude lib/magneto.rb'
-  t.rcov_opts << '--exclude /Library/Ruby/Gems'
+  t.rcov_opts = %q(--sort coverage --comments --exclude "spec")
 end
 
 task :default => :spec
