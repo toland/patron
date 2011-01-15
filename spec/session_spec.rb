@@ -243,6 +243,20 @@ describe Patron::Session do
 
     body.request_method.should == "GET"
   end
+  
+  it "should serialize query params and append them to the url" do
+    response = @session.request(:get, "/test", {}, :query => {:foo => "bar"})
+    request = YAML::load(response.body)
+    request.parse
+    (request.path + '?' + request.query_string).should == "/test?foo=bar"
+  end
+  
+  it "should merge parameters in the :query option with pre-existing query parameters" do
+    response = @session.request(:get, "/test?foo=bar", {}, :query => {:baz => "quux"})
+    request = YAML::load(response.body)
+    request.parse
+    (request.path + '?' + request.query_string).should == "/test?foo=bar&baz=quux"
+  end
 
   def encode_authz(user, passwd)
     "Basic " + Base64.encode64("#{user}:#{passwd}").strip

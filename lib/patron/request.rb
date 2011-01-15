@@ -23,7 +23,7 @@
 ##
 ## -------------------------------------------------------------------
 
-require 'cgi'
+require 'patron/util'
 
 module Patron
 
@@ -71,7 +71,7 @@ module Patron
     def upload_data=(data)
       @upload_data = case data
       when Hash
-        self.multipart ? data : hash_to_string(data)
+        self.multipart ? data : Util.build_query_string_from_hash(data, @action == :post)
       else
         data
       end
@@ -138,20 +138,5 @@ module Patron
       "#{username}:#{password}"
     end
 
-  private
-
-    # serialize hash for Rails-style params
-    def hash_to_string(hash)
-      pairs = []
-      recursive = Proc.new do |h, prefix|
-        h.each_pair do |k,v|
-          key = prefix == '' ? k : "#{prefix}[#{k}]"
-                                    @action == :post ? v = CGI::escape(v.to_s) : v
-          v.is_a?(Hash) ? recursive.call(v, key) : pairs << "#{key}=#{v}"
-        end
-      end
-      recursive.call(hash, '')
-      return pairs.join('&')
-    end
   end
 end

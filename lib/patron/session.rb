@@ -22,11 +22,12 @@
 ## THE SOFTWARE.
 ##
 ## -------------------------------------------------------------------
+
 require 'patron/error'
 require 'patron/request'
 require 'patron/response'
 require 'patron/session_ext'
-
+require 'patron/util'
 
 module Patron
 
@@ -196,8 +197,15 @@ module Patron
       req.insecure = insecure
       req.buffer_size = buffer_size
 
-      req.url = self.base_url.to_s + url.to_s
-      raise ArgumentError, "Empty URL" if req.url.empty?
+      url = self.base_url.to_s + url.to_s
+      uri = URI.parse(url)
+      query = uri.query.to_s.split('&')
+      query += options[:query].is_a?(Hash) ? Util.build_query_pairs_from_hash(options[:query]) : options[:query].to_s.split('&')
+      uri.query = query.join('&')
+      uri.query = nil if uri.query.empty?
+      url = uri.to_s
+      raise ArgumentError, "Empty URL" if url.empty?
+      req.url = url
 
       handle_request(req)
     end
