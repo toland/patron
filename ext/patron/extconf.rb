@@ -29,6 +29,8 @@ end
 require 'mkmf'
 require 'rbconfig'
 
+dir_config('curl')
+
 if find_executable('curl-config')
   $CFLAGS << " #{`curl-config --cflags`.strip}"
   $LIBS << " #{`curl-config --libs`.strip}"
