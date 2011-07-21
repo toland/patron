@@ -42,7 +42,7 @@ module Patron
       @max_redirects = -1
     end
 
-    attr_accessor :url, :username, :password, :file_name, :proxy, :proxy_type, :auth_type, :insecure, :multipart
+    attr_accessor :url, :username, :password, :file_name, :proxy, :proxy_type, :auth_type, :insecure, :ignore_content_size, :multipart
     attr_reader :action, :timeout, :connect_timeout, :max_redirects, :headers, :buffer_size
     attr_reader :auth_type
 
