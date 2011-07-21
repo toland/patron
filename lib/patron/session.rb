@@ -68,6 +68,9 @@ module Patron
     # Does this session stricly verify SSL certificates?
     attr_accessor :insecure
 
+    # Does this session ignore Content-Size headers?
+    attr_accessor :ignore_content_size
+
     # Set the buffer size for this request. This option will
     # only be set if buffer_size is non-nil
     attr_accessor :buffer_size
@@ -196,6 +199,7 @@ module Patron
       req.proxy_type = proxy_type
       req.auth_type = auth_type
       req.insecure = insecure
+      req.ignore_content_size = ignore_content_size
       req.buffer_size = buffer_size
 
       url = self.base_url.to_s + url.to_s
