@@ -332,6 +332,11 @@ static void set_options_from_request(VALUE self, VALUE request) {
     curl_easy_setopt(curl, CURLOPT_USERPWD, StringValuePtr(credentials));
   }
 
+  VALUE ignore_content_length = rb_iv_get(request, "@ignore_content_length");
+  if (!NIL_P(ignore_content_length)) {
+    curl_easy_setopt(curl, CURLOPT_IGNORE_CONTENT_LENGTH, 1);
+  }
+
   VALUE insecure = rb_iv_get(request, "@insecure");
   if(!NIL_P(insecure)) {
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
