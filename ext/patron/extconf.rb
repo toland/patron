@@ -22,10 +22,6 @@
 ##
 ## -------------------------------------------------------------------
 
-if RUBY_PLATFORM =~ /darwin10\.0/
-  ENV['ARCHFLAGS'] = '-force_cpusubtype_ALL -mmacosx-version-min=10.4 -arch i386 -arch ppc -arch x86_64'
-end
-
 require 'mkmf'
 require 'rbconfig'
 
