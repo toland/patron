@@ -94,12 +94,21 @@ class RepetitiveHeaderServlet < HTTPServlet::AbstractServlet
   end
 end
 
+class WrongContentLengthServlet < HTTPServlet::AbstractServlet
+  def do_GET(req, res)
+    res.keep_alive = false
+    res.content_length = 1024
+    res.body = "Hello."
+  end
+end
+
 server = WEBrick::HTTPServer.new :Port => 9001
 server.mount("/test", TestServlet)
 server.mount("/timeout", TimeoutServlet)
 server.mount("/redirect", RedirectServlet)
 server.mount("/setcookie", SetCookieServlet)
 server.mount("/repetitiveheader", RepetitiveHeaderServlet)
+server.mount("/wrongcontentlength", WrongContentLengthServlet)
 
 exit_code = lambda do
   begin

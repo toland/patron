@@ -69,7 +69,7 @@ module Patron
     attr_accessor :insecure
 
     # Does this session ignore Content-Size headers?
-    attr_accessor :ignore_content_size
+    attr_accessor :ignore_content_length
 
     # Set the buffer size for this request. This option will
     # only be set if buffer_size is non-nil
@@ -199,7 +199,7 @@ module Patron
       req.proxy_type = proxy_type
       req.auth_type = auth_type
       req.insecure = insecure
-      req.ignore_content_size = ignore_content_size
+      req.ignore_content_length = ignore_content_length
       req.buffer_size = buffer_size
 
       url = self.base_url.to_s + url.to_s
