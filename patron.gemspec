@@ -11,7 +11,7 @@ Gem::Specification.new do |s|
   s.summary     = "Patron HTTP Client"
   s.description = "Ruby HTTP client library based on libcurl"
 
-  s.required_rubygems_version = ">= 1.3.6"
+  s.required_rubygems_version = ">= 1.2.0"
   s.rubyforge_project = "patron"
 
   s.add_development_dependency "bundler", ">= 1.0.0"

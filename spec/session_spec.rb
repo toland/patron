@@ -210,6 +210,20 @@ describe Patron::Session do
     YAML::load(response).header.should_not include('cookie')
   end
 
+  it "should ignore a wrong Content-Length when asked to" do
+    lambda {
+      @session.ignore_content_length = true
+      @session.get("/wrongcontentlength")
+    }.should_not raise_error
+  end
+
+  it "should fail by default with a Content-Length too high" do
+    lambda {
+      @session.ignore_content_length = nil
+      @session.get("/wrongcontentlength")
+    }.should raise_error(Patron::PartialFileError)
+  end
+
   it "should raise exception if cookie store is not writable or readable" do
     lambda { @session.handle_cookies("/trash/clash/foo") }.should raise_error(ArgumentError)
   end
