@@ -23,6 +23,7 @@
 ## -------------------------------------------------------------------
 require File.expand_path("./spec") + '/spec_helper.rb'
 require 'webrick'
+require 'yaml'
 require 'base64'
 require 'fileutils'
 
@@ -163,6 +164,15 @@ describe Patron::Session do
     body = YAML::load(response.body)
     body.request_method.should == "POST"
     body.header['content-length'].should == [data.size.to_s]
+  end
+
+  it "should post a hash of arguments as a urlencoded form" do
+    data = {:foo => 123, 'baz' => '++hello world++'}
+    response = @session.post("/testpost", data)
+    body = YAML::load(response.body)
+    body['content_type'].should == "application/x-www-form-urlencoded"
+    body['body'].should match('baz=%2b%2bhello%20world%2b%2b')
+    body['body'].should match('foo=123')
   end
 
   it "should raise when no data is provided to :post" do
