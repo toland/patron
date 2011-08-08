@@ -36,11 +36,16 @@ class URI::Parser
   end
 end
 
-class TestServlet < HTTPServlet::AbstractServlet
+module RespondWith
   def respond_with(method, req, res)
     res.body = req.to_yaml
     res['Content-Type'] = "text/plain"
   end
+end
+
+class TestServlet < HTTPServlet::AbstractServlet
+
+  include RespondWith
 
   def do_GET(req,res)
     respond_with(:GET, req, res)
@@ -76,6 +81,16 @@ class RedirectServlet < HTTPServlet::AbstractServlet
   end
 end
 
+
+class TestPostBodyServlet < HTTPServlet::AbstractServlet
+  include RespondWith
+  def do_POST(req, res)
+    respond_with(:POST, {'body' => req.body, 'content_type' => req.content_type}, res)
+  end
+end
+
+
+
 class SetCookieServlet < HTTPServlet::AbstractServlet
   def do_GET(req, res)
     res['Set-Cookie'] = "session_id=foo123"
@@ -104,6 +119,7 @@ end
 
 server = WEBrick::HTTPServer.new :Port => 9001
 server.mount("/test", TestServlet)
+server.mount("/testpost", TestPostBodyServlet)
 server.mount("/timeout", TimeoutServlet)
 server.mount("/redirect", RedirectServlet)
 server.mount("/setcookie", SetCookieServlet)
