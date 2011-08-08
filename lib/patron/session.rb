@@ -150,8 +150,12 @@ module Patron
     end
 
     # Uploads the passed +data+ to the specified +url+ using HTTP POST. +data+
-    # must be a string.
+    # can be a string or a hash.
     def post(url, data, headers = {})
+      if data.is_a?(Hash)
+        data = data.map {|k,v| urlencode(k.to_s) + '=' + urlencode(v.to_s) }.join('&')
+        headers['Content-Type'] = 'application/x-www-form-urlencoded'
+      end
       request(:post, url, headers, :data => data)
     end
 
@@ -214,5 +218,12 @@ module Patron
 
       handle_request(req)
     end
+
+    private
+
+    def urlencode(str)
+      str.gsub(/[^a-zA-Z0-9_\.\-]/n) {|s| sprintf('%%%02x', s[0]) }
+    end
+
   end
 end
