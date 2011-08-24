@@ -28,11 +28,22 @@ module Patron
   # Represents the response from the HTTP server.
   class Response
 
-    def initialize
-      @headers = {}
+    def initialize(url, status, redirect_count, header_data, body, default_charset = "ASCII-8BIT")
+      @url            = url
+      @status         = status
+      @redirect_count = redirect_count
+      @body           = body
+      
+      @charset        = determine_charset(header_data, body) || default_charset
+      
+      [url, header_data, body].each do |attr|
+        convert_to_default_encoding!(attr)
+      end
+      
+      parse_headers(header_data)
     end
 
-    attr_reader :url, :status, :status_line, :redirect_count, :body, :headers
+    attr_reader :url, :status, :status_line, :redirect_count, :body, :headers, :charset
 
     def inspect
       # Avoid spamming the console with the header and body data
@@ -41,8 +52,26 @@ module Patron
 
   private
 
+    def determine_charset(header_data, body)
+      header_data.match(charset_regex) || (body && body.match(charset_regex))
+      
+      $1
+    end
+    
+    def charset_regex
+      /(?:charset|encoding)="?([a-z0-9-]+)"?/i
+    end
+
+    def convert_to_default_encoding!(str)
+      if str.respond_to?(:encode) && Encoding.default_internal
+        str.force_encoding(charset).encode!(Encoding.default_internal)
+      end
+    end
+
     # Called by the C code to parse and set the headers
     def parse_headers(header_data)
+      @headers = {}
+
       header_data.split(/\r\n/).each do |header|
         if header =~ %r|^HTTP/1.[01]|
           @status_line = header.strip
