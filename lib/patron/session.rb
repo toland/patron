@@ -75,6 +75,9 @@ module Patron
     # only be set if buffer_size is non-nil
     attr_accessor :buffer_size
 
+    # Default encoding of responses. Used if no charset is provided by the host.
+    attr_accessor :default_response_charset
+
     private :ext_initialize, :handle_request, :enable_cookie_session, :set_debug_file
 
     # Create a new Session object.

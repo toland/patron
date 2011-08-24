@@ -355,23 +355,25 @@ static void set_options_from_request(VALUE self, VALUE request) {
 }
 
 // Use the info in a Curl handle to create a new Response object.
-static VALUE create_response(CURL* curl) {
-  VALUE response = rb_class_new_instance(0, 0,
-                      rb_const_get(mPatron, rb_intern("Response")));
-
-  char* url = NULL;
-  curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &url);
-  rb_iv_set(response, "@url", rb_str_new2(url));
+static VALUE create_response(VALUE self, CURL* curl, VALUE header_buffer, VALUE body_buffer) {
+  char* effective_url = NULL;
+  curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &effective_url);
+  VALUE url = rb_str_new2(effective_url);
 
   long code = 0;
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
-  rb_iv_set(response, "@status", INT2NUM(code));
+  VALUE status = INT2NUM(code);
 
   long count = 0;
   curl_easy_getinfo(curl, CURLINFO_REDIRECT_COUNT, &count);
-  rb_iv_set(response, "@redirect_count", INT2NUM(count));
+  VALUE redirect_count = INT2NUM(count);
 
-  return response;
+  VALUE default_charset = rb_iv_get(self, "@default_response_charset");
+
+  VALUE args[6] = { url, status, redirect_count, header_buffer, body_buffer, default_charset };
+  
+  return rb_class_new_instance(6, args,
+                               rb_const_get(mPatron, rb_intern("Response")));
 }
 
 // Raise an exception based on the Curl error code.
@@ -419,12 +421,7 @@ static VALUE perform_request(VALUE self) {
 #endif
 
   if (CURLE_OK == ret) {
-    VALUE response = create_response(curl);
-    if (!NIL_P(body_buffer)) {
-      rb_iv_set(response, "@body", body_buffer);
-    }
-    rb_funcall(response, rb_intern("parse_headers"), 1, header_buffer);
-    return response;
+    return create_response(self, curl, header_buffer, body_buffer);
   } else {
     rb_raise(select_error(ret), "%s", state->error_buf);
   }

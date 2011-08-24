@@ -171,8 +171,8 @@ describe Patron::Session do
     response = @session.post("/testpost", data)
     body = YAML::load(response.body)
     body['content_type'].should == "application/x-www-form-urlencoded"
-    body['body'].should match('baz=%2b%2bhello%20world%2b%2b')
-    body['body'].should match('foo=123')
+    body['body'].should match(/baz=%2b%2bhello%20world%2b%2b/)
+    body['body'].should match(/foo=123/)
   end
 
   it "should raise when no data is provided to :post" do
