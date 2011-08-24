@@ -1,3 +1,5 @@
+.rbenv*
+.rvmrc
 *.bundle
 coverage
 rdoc
