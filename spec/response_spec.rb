@@ -44,8 +44,9 @@ describe Patron::Response do
   end
 
   it "should not allow a default charset to be nil" do
+    Encoding.stub(:default_internal).and_return("UTF-8")
     expect {
-      Patron::Response("url", "status", 0, {}, {}, nil)
+      Patron::Response.new("url", "status", 0, "", "", nil)
     }.to_not raise_error
   end
 end
