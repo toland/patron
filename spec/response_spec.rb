@@ -42,4 +42,10 @@ describe Patron::Response do
     response = @session.get("/repetitiveheader")
     response.headers['Set-Cookie'].should == ["a=1","b=2"]
   end
+
+  it "should not allow a default charset to be nil" do
+    expect {
+      Patron::Response("url", "status", 0, {}, {}, nil)
+    }.to_not raise_error
+  end
 end
