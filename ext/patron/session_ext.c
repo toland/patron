@@ -414,7 +414,7 @@ static VALUE perform_request(VALUE self) {
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, body_buffer);
   }
 
-#if defined(HAVE_TBR) && defined(USE_TBR)
+#if defined(HAVE_TBR)
   CURLcode ret = rb_thread_blocking_region(curl_easy_perform, curl, RUBY_UBF_IO, 0);
 #else
   CURLcode ret = curl_easy_perform(curl);
