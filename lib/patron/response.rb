@@ -38,11 +38,14 @@ module Patron
       
       @charset        = determine_charset(header_data, body) || default_charset
       
-      [url, header_data, body].each do |attr|
+      [url, header_data].each do |attr|
         convert_to_default_encoding!(attr)
       end
       
       parse_headers(header_data)
+      if @headers["Content-Type"] && @headers["Content-Type"][0, 5] == "text/"
+        convert_to_default_encoding!(@body)
+      end
     end
 
     attr_reader :url, :status, :status_line, :redirect_count, :body, :headers, :charset
