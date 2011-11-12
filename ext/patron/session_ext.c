@@ -24,6 +24,7 @@
 // -------------------------------------------------------------------
 #include <ruby.h>
 #include <curl/curl.h>
+#include "membuffer.h"
 
 static VALUE mPatron = Qnil;
 static VALUE mProxyType = Qnil;
@@ -49,6 +50,8 @@ struct curl_state {
   struct curl_slist* headers;
   struct curl_httppost* post;
   struct curl_httppost* last;
+  membuffer header_buffer;
+  membuffer body_buffer;
 };
 
 //------------------------------------------------------------------------------
@@ -56,8 +59,11 @@ struct curl_state {
 //
 
 // Takes data streamed from libcurl and writes it to a Ruby string buffer.
-static size_t session_write_handler(char* stream, size_t size, size_t nmemb, VALUE out) {
-  rb_str_buf_cat(out, stream, size * nmemb);
+static size_t session_write_handler(char* stream, size_t size, size_t nmemb, membuffer* buf) {
+  int rc = membuffer_append(buf, stream, size * nmemb);
+
+  // FIXME: handle error codes returned from `membuffer_append`
+  // if (MB_OK != rc) ....??
   return size * nmemb;
 }
 
@@ -65,10 +71,10 @@ static size_t session_read_handler(char* stream, size_t size, size_t nmemb, char
   size_t result = 0;
 
   if (buffer != NULL && *buffer != NULL) {
-      int len = size * nmemb;
-      char *s1 = strncpy(stream, *buffer, len);
-      result = strlen(s1);
-      *buffer += result;
+    int len = size * nmemb;
+    char *s1 = strncpy(stream, *buffer, len);
+    result = strlen(s1);
+    *buffer += result;
   }
 
   return result;
@@ -86,6 +92,9 @@ void session_free(struct curl_state *curl) {
     fclose(curl->debug_file);
     curl->debug_file = NULL;
   }
+
+  membuffer_destroy( &curl->header_buffer );
+  membuffer_destroy( &curl->body_buffer );
 
   free(curl);
 }
@@ -117,6 +126,11 @@ VALUE session_ext_initialize(VALUE self) {
   state->handle = curl_easy_init();
   state->post   = NULL;
   state->last   = NULL;
+
+  membuffer_init( &state->header_buffer );
+  membuffer_init( &state->body_buffer );
+
+  curl_easy_setopt(state->handle, CURLOPT_NOSIGNAL, 1);
 
   return self;
 }
@@ -178,7 +192,7 @@ static int formadd_values(VALUE data_key, VALUE data_value, VALUE self) {
   VALUE value = rb_obj_as_string(data_value);
 
   curl_formadd(&state->post, &state->last, CURLFORM_PTRNAME, RSTRING_PTR(name),
-                CURLFORM_PTRCONTENTS, RSTRING_PTR(value), CURLFORM_END);  
+                CURLFORM_PTRCONTENTS, RSTRING_PTR(value), CURLFORM_END);
   return 0;
 }
 
@@ -190,8 +204,8 @@ static int formadd_files(VALUE data_key, VALUE data_value, VALUE self) {
   VALUE value = rb_obj_as_string(data_value);
 
   curl_formadd(&state->post, &state->last, CURLFORM_PTRNAME, RSTRING_PTR(name),
-                CURLFORM_FILE, RSTRING_PTR(value), CURLFORM_END); 
-                
+                CURLFORM_FILE, RSTRING_PTR(value), CURLFORM_END);
+
   return 0;
 }
 
@@ -275,11 +289,11 @@ static void set_options_from_request(VALUE self, VALUE request) {
         } else {   rb_raise(rb_eArgError, "Data and Filename must be passed in a hash.");}
         }
         curl_easy_setopt(curl, CURLOPT_HTTPPOST, state->post);
-        
+
       } else {
          rb_raise(rb_eArgError, "Multipart PUT not supported");
       }
-    
+
     } else {
       rb_raise(rb_eArgError, "Must provide either data or a filename when doing a PUT or POST");
     }
@@ -371,7 +385,7 @@ static VALUE create_response(VALUE self, CURL* curl, VALUE header_buffer, VALUE 
   VALUE default_charset = rb_iv_get(self, "@default_response_charset");
 
   VALUE args[6] = { url, status, redirect_count, header_buffer, body_buffer, default_charset };
-  
+
   return rb_class_new_instance(6, args,
                                rb_const_get(mPatron, rb_intern("Response")));
 }
@@ -400,16 +414,18 @@ static VALUE perform_request(VALUE self) {
   Data_Get_Struct(self, struct curl_state, state);
 
   CURL* curl = state->handle;
+  membuffer* header_buffer = &state->header_buffer;
+  membuffer* body_buffer = &state->body_buffer;
+
+  membuffer_clear(header_buffer);
+  membuffer_clear(body_buffer);
 
   // headers
-  VALUE header_buffer = rb_str_buf_new(32768);
   curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &session_write_handler);
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, header_buffer);
 
   // body
-  VALUE body_buffer = Qnil;
   if (!state->download_file) {
-    body_buffer = rb_str_buf_new(32768);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &session_write_handler);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, body_buffer);
   }
@@ -421,7 +437,11 @@ static VALUE perform_request(VALUE self) {
 #endif
 
   if (CURLE_OK == ret) {
-    return create_response(self, curl, header_buffer, body_buffer);
+    VALUE header_str = membuffer_to_rb_str(header_buffer);
+    VALUE body_str = Qnil;
+    if (!state->download_file) { body_str = membuffer_to_rb_str(body_buffer); }
+
+    return create_response(self, curl, header_str, body_str);
   } else {
     rb_raise(select_error(ret), "%s", state->error_buf);
   }
