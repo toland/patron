@@ -43,6 +43,12 @@ describe Patron::Response do
     response.headers['Set-Cookie'].should == ["a=1","b=2"]
   end
 
+  it "should works with non-text files" do
+    response = @session.get("/picture")
+    response.headers['Content-Type'].should == 'image/png'
+    response.body.encoding.should == Encoding::ASCII_8BIT
+  end
+  
   it "should not allow a default charset to be nil" do
     Encoding.stub(:default_internal).and_return("UTF-8")
     expect {

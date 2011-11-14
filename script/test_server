@@ -109,6 +109,13 @@ class RepetitiveHeaderServlet < HTTPServlet::AbstractServlet
   end
 end
 
+class PictureServlet < HTTPServlet::AbstractServlet
+  def do_GET(req, res)
+    res['Content-Type'] = "image/png"
+    res.body = File.read("./pic.png")
+  end
+end
+
 class WrongContentLengthServlet < HTTPServlet::AbstractServlet
   def do_GET(req, res)
     res.keep_alive = false
@@ -122,6 +129,7 @@ server.mount("/test", TestServlet)
 server.mount("/testpost", TestPostBodyServlet)
 server.mount("/timeout", TimeoutServlet)
 server.mount("/redirect", RedirectServlet)
+server.mount("/picture", PictureServlet)
 server.mount("/setcookie", SetCookieServlet)
 server.mount("/repetitiveheader", RepetitiveHeaderServlet)
 server.mount("/wrongcontentlength", WrongContentLengthServlet)
