@@ -25,6 +25,7 @@
 #include <ruby.h>
 #include <curl/curl.h>
 #include "membuffer.h"
+#include "sglib.h"  // Simple Generic Library -> http://sglib.sourceforge.net/
 
 static VALUE mPatron = Qnil;
 static VALUE mProxyType = Qnil;
@@ -52,7 +53,9 @@ struct curl_state {
   struct curl_httppost* last;
   membuffer header_buffer;
   membuffer body_buffer;
+  int interrupt;
 };
+
 
 //------------------------------------------------------------------------------
 // Curl Callbacks
@@ -62,8 +65,10 @@ struct curl_state {
 static size_t session_write_handler(char* stream, size_t size, size_t nmemb, membuffer* buf) {
   int rc = membuffer_append(buf, stream, size * nmemb);
 
-  // FIXME: handle error codes returned from `membuffer_append`
-  // if (MB_OK != rc) ....??
+  // return 0 to signal that we could not append data to our buffer
+  if (MB_OK != rc) { return 0; }
+
+  // otherwise, return the number of bytes appended
   return size * nmemb;
 }
 
@@ -71,7 +76,7 @@ static size_t session_read_handler(char* stream, size_t size, size_t nmemb, char
   size_t result = 0;
 
   if (buffer != NULL && *buffer != NULL) {
-    int len = size * nmemb;
+    size_t len = size * nmemb;
     char *s1 = strncpy(stream, *buffer, len);
     result = strlen(s1);
     *buffer += result;
@@ -79,6 +84,58 @@ static size_t session_read_handler(char* stream, size_t size, size_t nmemb, char
 
   return result;
 }
+
+// A non-zero return value from the progress handler will terminate the
+// current request. We use this fact in order to interrupt any request when
+// either the user calls the "interrupt" method on the session or when the Ruby
+// interpreter is attempting to exit.
+static int session_progress_handler(void *clientp, double dltotal, double dlnow, double ultotal, double ulnow) {
+  struct curl_state* state = (struct curl_state*) clientp;
+  return state->interrupt;
+}
+
+
+//------------------------------------------------------------------------------
+// List of active curl sessions
+//
+
+struct curl_state_list {
+  struct curl_state       *state;
+  struct curl_state_list  *next;
+};
+
+#define CS_LIST_COMPARATOR(p, _state_) (p->state == _state_)
+
+static struct curl_state_list *cs_list = NULL;
+
+static void cs_list_append( struct curl_state *state ) {
+  assert(state != NULL);
+  struct curl_state_list *item = ruby_xmalloc(sizeof(struct curl_state_list));
+  item->state = state;
+  item->next = NULL;
+
+  SGLIB_LIST_ADD(struct curl_state_list, cs_list, item, next);
+}
+
+static void cs_list_remove( struct curl_state *state ) {
+  assert(state != NULL);
+  struct curl_state_list *item = NULL;
+
+  SGLIB_LIST_FIND_MEMBER(struct curl_state_list, cs_list, state, CS_LIST_COMPARATOR, next, item);
+  if (item) {
+    SGLIB_LIST_DELETE(struct curl_state_list, cs_list, item, next);
+    ruby_xfree(item);
+  }
+}
+
+static void cs_list_interrupt(VALUE data) {
+  struct curl_state_list *item = NULL;
+
+  SGLIB_LIST_MAP_ON_ELEMENTS(struct curl_state_list, cs_list, item, next, {
+    item->state->interrupt = 1;
+  });
+}
+
 
 //------------------------------------------------------------------------------
 // Object allocation
@@ -96,6 +153,8 @@ void session_free(struct curl_state *curl) {
   membuffer_destroy( &curl->header_buffer );
   membuffer_destroy( &curl->body_buffer );
 
+  cs_list_remove(curl);
+
   free(curl);
 }
 
@@ -103,6 +162,7 @@ void session_free(struct curl_state *curl) {
 VALUE session_alloc(VALUE klass) {
   struct curl_state* curl;
   VALUE obj = Data_Make_Struct(klass, struct curl_state, NULL, session_free, curl);
+  cs_list_append(curl);
   return obj;
 }
 
@@ -131,6 +191,9 @@ VALUE session_ext_initialize(VALUE self) {
   membuffer_init( &state->body_buffer );
 
   curl_easy_setopt(state->handle, CURLOPT_NOSIGNAL, 1);
+  curl_easy_setopt(state->handle, CURLOPT_NOPROGRESS, 0);
+  curl_easy_setopt(state->handle, CURLOPT_PROGRESSFUNCTION, &session_progress_handler);
+  curl_easy_setopt(state->handle, CURLOPT_PROGRESSDATA, state);
 
   return self;
 }
@@ -413,6 +476,9 @@ static VALUE perform_request(VALUE self) {
   struct curl_state *state;
   Data_Get_Struct(self, struct curl_state, state);
 
+  // clear any interrupt flags
+  state->interrupt = 0;
+
   CURL* curl = state->handle;
   membuffer* header_buffer = &state->header_buffer;
   membuffer* body_buffer = &state->body_buffer;
@@ -511,6 +577,7 @@ VALUE set_debug_file(VALUE self, VALUE file) {
   return Qnil;
 }
 
+
 //------------------------------------------------------------------------------
 // Extension initialization
 //
@@ -518,6 +585,8 @@ VALUE set_debug_file(VALUE self, VALUE file) {
 void Init_session_ext() {
   curl_global_init(CURL_GLOBAL_ALL);
   rb_require("patron/error");
+
+  rb_set_end_proc(&cs_list_interrupt, NULL);
 
   mPatron = rb_define_module("Patron");
 
