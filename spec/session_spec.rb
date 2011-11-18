@@ -286,4 +286,17 @@ describe Patron::Session do
     "Basic " + Base64.encode64("#{user}:#{passwd}").strip
   end
 
+  # ------------------------------------------------------------------------
+  describe 'when debug is enabled' do
+    it 'it should not clobber stderr' do
+      rdev = STDERR.stat.rdev
+
+      @session.enable_debug
+      STDERR.stat.rdev.should be == rdev
+
+      @session.enable_debug 'tmp/curl.txt'
+      STDERR.stat.rdev.should be == rdev
+    end
+  end
+
 end

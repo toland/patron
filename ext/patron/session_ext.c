@@ -141,14 +141,18 @@ static void cs_list_interrupt(VALUE data) {
 // Object allocation
 //
 
+static void session_close_debug_file(struct curl_state *curl) {
+  if (curl->debug_file && stderr != curl->debug_file) {
+    fclose(curl->debug_file);
+  }
+  curl->debug_file = NULL;
+}
+
 // Cleans up the Curl handle when the Session object is garbage collected.
 void session_free(struct curl_state *curl) {
   curl_easy_cleanup(curl->handle);
 
-  if (curl->debug_file) {
-    fclose(curl->debug_file);
-    curl->debug_file = NULL;
-  }
+  session_close_debug_file(curl);
 
   membuffer_destroy( &curl->header_buffer );
   membuffer_destroy( &curl->body_buffer );
@@ -563,10 +567,7 @@ VALUE set_debug_file(VALUE self, VALUE file) {
   Data_Get_Struct(self, struct curl_state, state);
   char* file_path = RSTRING_PTR(file);
 
-  if(state->debug_file){
-    fclose(state->debug_file);
-    state->debug_file = NULL;
-  }
+  session_close_debug_file(state);
 
   if(file_path != NULL && strlen(file_path) != 0) {
     state->debug_file = open_file(file, "w");
