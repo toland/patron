@@ -1,4 +1,3 @@
-#!/usr/bin/env ruby
 ## -------------------------------------------------------------------
 ##
 ## Patron HTTP Client: HTTP test server for integration tests
@@ -124,23 +123,45 @@ class WrongContentLengthServlet < HTTPServlet::AbstractServlet
   end
 end
 
-server = WEBrick::HTTPServer.new :Port => 9001
-server.mount("/test", TestServlet)
-server.mount("/testpost", TestPostBodyServlet)
-server.mount("/timeout", TimeoutServlet)
-server.mount("/redirect", RedirectServlet)
-server.mount("/picture", PictureServlet)
-server.mount("/setcookie", SetCookieServlet)
-server.mount("/repetitiveheader", RepetitiveHeaderServlet)
-server.mount("/wrongcontentlength", WrongContentLengthServlet)
+class Patron::TestServer
 
-exit_code = lambda do
-  begin
-    server.shutdown unless server.nil?
-  rescue Object => e
-    puts "Error #{__FILE__}:#{__LINE__}\n#{e.message}"
+  def self.start( log_file = nil )
+    new(log_file).start
+  end
+
+  def initialize( log_file = nil )
+    log_file ||= StringIO.new
+    log = WEBrick::Log.new(log_file)
+
+    @server = WEBrick::HTTPServer.new(
+      :Port => 9001,
+      :Logger => log,
+      :AccessLog => [
+          [ log, WEBrick::AccessLog::COMMON_LOG_FORMAT ],
+          [ log, WEBrick::AccessLog::REFERER_LOG_FORMAT ]
+       ]
+    )
+    @server.mount("/test", TestServlet)
+    @server.mount("/testpost", TestPostBodyServlet)
+    @server.mount("/timeout", TimeoutServlet)
+    @server.mount("/redirect", RedirectServlet)
+    @server.mount("/picture", PictureServlet)
+    @server.mount("/setcookie", SetCookieServlet)
+    @server.mount("/repetitiveheader", RepetitiveHeaderServlet)
+    @server.mount("/wrongcontentlength", WrongContentLengthServlet)
+  end
+
+  def start
+    trap('INT') {
+      begin
+        @server.shutdown unless @server.nil?
+      rescue Object => e
+        STDERR.puts "Error #{__FILE__}:#{__LINE__}\n#{e.message}"
+      end
+    }
+
+    Thread.new { @server.start }
+    Thread.pass
   end
 end
 
-trap("INT"){exit_code.call}
-server.start
