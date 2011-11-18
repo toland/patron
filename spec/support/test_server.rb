@@ -123,7 +123,7 @@ class WrongContentLengthServlet < HTTPServlet::AbstractServlet
   end
 end
 
-class Patron::TestServer
+class PatronTestServer
 
   def self.start( log_file = nil )
     new(log_file).start
@@ -156,12 +156,20 @@ class Patron::TestServer
       begin
         @server.shutdown unless @server.nil?
       rescue Object => e
-        STDERR.puts "Error #{__FILE__}:#{__LINE__}\n#{e.message}"
+        $stderr.puts "Error #{__FILE__}:#{__LINE__}\n#{e.message}"
       end
     }
 
-    Thread.new { @server.start }
+    @thread = Thread.new { @server.start }
     Thread.pass
+    self
+  end
+
+  def join
+    if defined? @thread and @thread
+      @thread.join
+    end
+    self
   end
 end
 
