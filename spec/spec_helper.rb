@@ -29,4 +29,4 @@ require 'patron'
 
 Dir['./spec/support/**/*.rb'].each { |fn| require fn }
 
-Patron::TestServer.start
+PatronTestServer.start if RUBY_VERSION >= '1.9'
