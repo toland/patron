@@ -294,7 +294,7 @@ describe Patron::Session do
       @session.enable_debug
       STDERR.stat.rdev.should be == rdev
 
-      @session.enable_debug 'tmp/curl.txt'
+      @session.enable_debug
       STDERR.stat.rdev.should be == rdev
     end
   end
