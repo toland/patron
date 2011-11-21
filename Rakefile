@@ -35,7 +35,7 @@ end
 
 Bundler::GemHelper.install_tasks
 
-CLEAN.include FileList["ext/patron/*"].exclude(/^.*\.(rb|c)$/)
+CLEAN.include FileList["ext/patron/*"].exclude(/^.*\.(rb|c|h)$/)
 CLOBBER.include %w( doc coverage pkg )
 
 desc "Start an IRB shell"
