@@ -57,7 +57,7 @@ int membuffer_insert( membuffer* m, size_t index, const void* src, size_t length
   assert(NULL != m);
 
   // sanity checks on the inputs
-  if (index < 0 || index > m->length) { return MB_OUT_OF_BOUNDS; }
+  if (index > m->length) { return MB_OUT_OF_BOUNDS; }
   if (NULL == src || 0 == length) { return MB_OK; }
 
   // increase capacity if needed
