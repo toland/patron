@@ -1,31 +1,31 @@
-// -------------------------------------------------------------------
-//
-// Patron HTTP Client: Interface to libcurl
-// Copyright (c) 2008 The Hive http://www.thehive.com/
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-//
-// -------------------------------------------------------------------
+/* -------------------------------------------------------------------------- *\
+ *
+ * Patron HTTP Client: Interface to libcurl
+ * Copyright (c) 2008 The Hive http://www.thehive.com/
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ *
+\* -------------------------------------------------------------------------- */
 #include <ruby.h>
 #include <curl/curl.h>
 #include "membuffer.h"
-#include "sglib.h"  // Simple Generic Library -> http://sglib.sourceforge.net/
+#include "sglib.h"  /* Simple Generic Library -> http://sglib.sourceforge.net */
 
 static VALUE mPatron = Qnil;
 static VALUE mProxyType = Qnil;
@@ -57,18 +57,17 @@ struct curl_state {
 };
 
 
-//------------------------------------------------------------------------------
-// Curl Callbacks
-//
+/*----------------------------------------------------------------------------*/
+/* Curl Callbacks                                                             */
 
-// Takes data streamed from libcurl and writes it to a Ruby string buffer.
+/* Takes data streamed from libcurl and writes it to a Ruby string buffer. */
 static size_t session_write_handler(char* stream, size_t size, size_t nmemb, membuffer* buf) {
   int rc = membuffer_append(buf, stream, size * nmemb);
 
-  // return 0 to signal that we could not append data to our buffer
+  /* return 0 to signal that we could not append data to our buffer */
   if (MB_OK != rc) { return 0; }
 
-  // otherwise, return the number of bytes appended
+  /* otherwise, return the number of bytes appended */
   return size * nmemb;
 }
 
@@ -85,19 +84,19 @@ static size_t session_read_handler(char* stream, size_t size, size_t nmemb, char
   return result;
 }
 
-// A non-zero return value from the progress handler will terminate the
-// current request. We use this fact in order to interrupt any request when
-// either the user calls the "interrupt" method on the session or when the Ruby
-// interpreter is attempting to exit.
+/* A non-zero return value from the progress handler will terminate the current
+ * request. We use this fact in order to interrupt any request when either the
+ * user calls the "interrupt" method on the session or when the Ruby interpreter
+ * is attempting to exit.
+ */
 static int session_progress_handler(void *clientp, double dltotal, double dlnow, double ultotal, double ulnow) {
   struct curl_state* state = (struct curl_state*) clientp;
   return state->interrupt;
 }
 
 
-//------------------------------------------------------------------------------
-// List of active curl sessions
-//
+/*----------------------------------------------------------------------------*/
+/* List of active curl sessions                                               */
 
 struct curl_state_list {
   struct curl_state       *state;
@@ -109,8 +108,10 @@ struct curl_state_list {
 static struct curl_state_list *cs_list = NULL;
 
 static void cs_list_append( struct curl_state *state ) {
+  struct curl_state_list *item = NULL;
+
   assert(state != NULL);
-  struct curl_state_list *item = ruby_xmalloc(sizeof(struct curl_state_list));
+  item = ruby_xmalloc(sizeof(struct curl_state_list));
   item->state = state;
   item->next = NULL;
 
@@ -118,9 +119,9 @@ static void cs_list_append( struct curl_state *state ) {
 }
 
 static void cs_list_remove( struct curl_state *state ) {
-  assert(state != NULL);
   struct curl_state_list *item = NULL;
 
+  assert(state != NULL);
   SGLIB_LIST_FIND_MEMBER(struct curl_state_list, cs_list, state, CS_LIST_COMPARATOR, next, item);
   if (item) {
     SGLIB_LIST_DELETE(struct curl_state_list, cs_list, item, next);
@@ -137,9 +138,8 @@ static void cs_list_interrupt(VALUE data) {
 }
 
 
-//------------------------------------------------------------------------------
-// Object allocation
-//
+/*----------------------------------------------------------------------------*/
+/* Object allocation                                                          */
 
 static void session_close_debug_file(struct curl_state *curl) {
   if (curl->debug_file && stderr != curl->debug_file) {
@@ -148,7 +148,7 @@ static void session_close_debug_file(struct curl_state *curl) {
   curl->debug_file = NULL;
 }
 
-// Cleans up the Curl handle when the Session object is garbage collected.
+/* Cleans up the Curl handle when the Session object is garbage collected. */
 void session_free(struct curl_state *curl) {
   curl_easy_cleanup(curl->handle);
 
@@ -162,7 +162,7 @@ void session_free(struct curl_state *curl) {
   free(curl);
 }
 
-// Allocates curl_state data needed for a new Session object.
+/* Allocates curl_state data needed for a new Session object. */
 VALUE session_alloc(VALUE klass) {
   struct curl_state* curl;
   VALUE obj = Data_Make_Struct(klass, struct curl_state, NULL, session_free, curl);
@@ -171,22 +171,21 @@ VALUE session_alloc(VALUE klass) {
 }
 
 
-//------------------------------------------------------------------------------
-// Method implementations
-//
+/*----------------------------------------------------------------------------*/
+/* Method implementations                                                     */
 
-// Returns the version of the embedded libcurl as a string.
+/* Returns the version of the embedded libcurl as a string. */
 VALUE libcurl_version(VALUE klass) {
   char* value = curl_version();
   return rb_str_new2(value);
 }
 
-// Initializes the libcurl handle on object initialization.
-// NOTE: This must be called from Session#initialize.
+/* Initializes the libcurl handle on object initialization. */
+/* NOTE: This must be called from Session#initialize. */
 VALUE session_ext_initialize(VALUE self) {
-  struct curl_state *state;
-  Data_Get_Struct(self, struct curl_state, state);
+  struct curl_state *state = NULL;
 
+  Data_Get_Struct(self, struct curl_state, state);
   state->handle = curl_easy_init();
   state->post   = NULL;
   state->last   = NULL;
@@ -202,74 +201,77 @@ VALUE session_ext_initialize(VALUE self) {
   return self;
 }
 
-// URL escapes the provided string.
+/* URL escapes the provided string. */
 VALUE session_escape(VALUE self, VALUE value) {
-  struct curl_state *state;
-  Data_Get_Struct(self, struct curl_state, state);
-
+  struct curl_state *state = NULL;
   VALUE string = StringValue(value);
-  char* escaped = curl_easy_escape(state->handle,
-                                   RSTRING_PTR(string),
-                                   RSTRING_LEN(string));
+  char* escaped = NULL;
+  VALUE retval = Qnil;
 
-  VALUE retval = rb_str_new2(escaped);
+  Data_Get_Struct(self, struct curl_state, state);
+  escaped = curl_easy_escape(state->handle,
+                             RSTRING_PTR(string),
+                             RSTRING_LEN(string));
+
+  retval = rb_str_new2(escaped);
   curl_free(escaped);
 
   return retval;
 }
 
-// Unescapes the provided string.
+/* Unescapes the provided string. */
 VALUE session_unescape(VALUE self, VALUE value) {
-  struct curl_state *state;
-  Data_Get_Struct(self, struct curl_state, state);
-
+  struct curl_state *state = NULL;
   VALUE string = StringValue(value);
-  char* unescaped = curl_easy_unescape(state->handle,
-                                       RSTRING_PTR(string),
-                                       RSTRING_LEN(string),
-                                       NULL);
+  char* unescaped = NULL;
+  VALUE retval = Qnil;
 
-  VALUE retval = rb_str_new2(unescaped);
+  Data_Get_Struct(self, struct curl_state, state);
+  unescaped = curl_easy_unescape(state->handle,
+                                 RSTRING_PTR(string),
+                                 RSTRING_LEN(string),
+                                 NULL);
+
+  retval = rb_str_new2(unescaped);
   curl_free(unescaped);
 
   return retval;
 }
 
-// Callback used to iterate over the HTTP headers and store them in an slist.
+/* Callback used to iterate over the HTTP headers and store them in an slist. */
 static int each_http_header(VALUE header_key, VALUE header_value, VALUE self) {
-  struct curl_state *state;
-  Data_Get_Struct(self, struct curl_state, state);
-
+  struct curl_state *state = NULL;
   VALUE name = rb_obj_as_string(header_key);
   VALUE value = rb_obj_as_string(header_value);
-
   VALUE header_str = Qnil;
+
   header_str = rb_str_plus(name, rb_str_new2(": "));
   header_str = rb_str_plus(header_str, value);
 
+  Data_Get_Struct(self, struct curl_state, state);
   state->headers = curl_slist_append(state->headers, StringValuePtr(header_str));
+
   return 0;
 }
 
 static int formadd_values(VALUE data_key, VALUE data_value, VALUE self) {
-  struct curl_state *state;
-  Data_Get_Struct(self, struct curl_state, state);
-
+  struct curl_state *state = NULL;
   VALUE name = rb_obj_as_string(data_key);
   VALUE value = rb_obj_as_string(data_value);
 
+  Data_Get_Struct(self, struct curl_state, state);
   curl_formadd(&state->post, &state->last, CURLFORM_PTRNAME, RSTRING_PTR(name),
                 CURLFORM_PTRCONTENTS, RSTRING_PTR(value), CURLFORM_END);
+
   return 0;
 }
 
 static int formadd_files(VALUE data_key, VALUE data_value, VALUE self) {
-  struct curl_state *state;
-  Data_Get_Struct(self, struct curl_state, state);
-
+  struct curl_state *state = NULL;
   VALUE name = rb_obj_as_string(data_key);
   VALUE value = rb_obj_as_string(data_value);
 
+  Data_Get_Struct(self, struct curl_state, state);
   curl_formadd(&state->post, &state->last, CURLFORM_PTRNAME, RSTRING_PTR(name),
                 CURLFORM_FILE, RSTRING_PTR(value), CURLFORM_END);
 
@@ -289,16 +291,30 @@ static FILE* open_file(VALUE filename, char* perms) {
   return handle;
 }
 
-// Set the options on the Curl handle from a Request object. Takes each field
-// in the Request object and uses it to set the appropriate option on the Curl
-// handle.
+/* Set the options on the Curl handle from a Request object. Takes each field 
+ * in the Request object and uses it to set the appropriate option on the Curl
+ * handle.
+ */
 static void set_options_from_request(VALUE self, VALUE request) {
-  struct curl_state *state;
+  struct curl_state *state = NULL;
+  CURL* curl = NULL;
+
+  ID    action                = Qnil;
+  VALUE headers               = Qnil;
+  VALUE url                   = Qnil;
+  VALUE timeout               = Qnil;
+  VALUE redirects             = Qnil;
+  VALUE proxy                 = Qnil;
+  VALUE proxy_type            = Qnil;
+  VALUE credentials           = Qnil;
+  VALUE ignore_content_length = Qnil;
+  VALUE insecure              = Qnil;
+  VALUE buffer_size           = Qnil;
+
   Data_Get_Struct(self, struct curl_state, state);
+  curl = state->handle;
 
-  CURL* curl = state->handle;
-
-  VALUE headers = rb_iv_get(request, "@headers");
+  headers = rb_iv_get(request, "@headers");
   if (!NIL_P(headers)) {
     if (rb_type(headers) != T_HASH) {
       rb_raise(rb_eArgError, "Headers must be passed in a hash.");
@@ -306,11 +322,12 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
     rb_hash_foreach(headers, each_http_header, self);
   }
-  ID action = SYM2ID(rb_iv_get(request, "@action"));
-  if (action == rb_intern("get")) {
-    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
 
+  action = SYM2ID(rb_iv_get(request, "@action"));
+  if (action == rb_intern("get")) {
     VALUE download_file = rb_iv_get(request, "@file_name");
+
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
     if (!NIL_P(download_file)) {
       state->download_file = open_file(download_file, "w");
       curl_easy_setopt(curl, CURLOPT_WRITEDATA, state->download_file);
@@ -323,8 +340,9 @@ static void set_options_from_request(VALUE self, VALUE request) {
     VALUE multipart = rb_iv_get(request, "@multipart");
 
     if (!NIL_P(data) && NIL_P(multipart)) {
-      state->upload_buf = StringValuePtr(data);
       int len = RSTRING_LEN(data);
+
+      state->upload_buf = StringValuePtr(data);
 
       if (action == rb_intern("post")) {
         curl_easy_setopt(curl, CURLOPT_POST, 1);
@@ -374,13 +392,13 @@ static void set_options_from_request(VALUE self, VALUE request) {
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, state->headers);
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, state->error_buf);
 
-  VALUE url = rb_iv_get(request, "@url");
+  url = rb_iv_get(request, "@url");
   if (NIL_P(url)) {
     rb_raise(rb_eArgError, "Must provide a URL");
   }
   curl_easy_setopt(curl, CURLOPT_URL, StringValuePtr(url));
 
-  VALUE timeout = rb_iv_get(request, "@timeout");
+  timeout = rb_iv_get(request, "@timeout");
   if (!NIL_P(timeout)) {
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, FIX2INT(timeout));
   }
@@ -390,41 +408,41 @@ static void set_options_from_request(VALUE self, VALUE request) {
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, FIX2INT(timeout));
   }
 
-  VALUE redirects = rb_iv_get(request, "@max_redirects");
+  redirects = rb_iv_get(request, "@max_redirects");
   if (!NIL_P(redirects)) {
     int r = FIX2INT(redirects);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, r == 0 ? 0 : 1);
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, r);
   }
 
-  VALUE proxy = rb_iv_get(request, "@proxy");
+  proxy = rb_iv_get(request, "@proxy");
   if (!NIL_P(proxy)) {
       curl_easy_setopt(curl, CURLOPT_PROXY, StringValuePtr(proxy));
   }
 
-  VALUE proxy_type = rb_iv_get(request, "@proxy_type");
+  proxy_type = rb_iv_get(request, "@proxy_type");
   if (!NIL_P(proxy_type)) {
     curl_easy_setopt(curl, CURLOPT_PROXYTYPE, FIX2INT(proxy_type));
   }
 
-  VALUE credentials = rb_funcall(request, rb_intern("credentials"), 0);
+  credentials = rb_funcall(request, rb_intern("credentials"), 0);
   if (!NIL_P(credentials)) {
     curl_easy_setopt(curl, CURLOPT_HTTPAUTH, FIX2INT(rb_iv_get(request, "@auth_type")));
     curl_easy_setopt(curl, CURLOPT_USERPWD, StringValuePtr(credentials));
   }
 
-  VALUE ignore_content_length = rb_iv_get(request, "@ignore_content_length");
+  ignore_content_length = rb_iv_get(request, "@ignore_content_length");
   if (!NIL_P(ignore_content_length)) {
     curl_easy_setopt(curl, CURLOPT_IGNORE_CONTENT_LENGTH, 1);
   }
 
-  VALUE insecure = rb_iv_get(request, "@insecure");
+  insecure = rb_iv_get(request, "@insecure");
   if(!NIL_P(insecure)) {
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 1);
   }
 
-  VALUE buffer_size = rb_iv_get(request, "@buffer_size");
+  buffer_size = rb_iv_get(request, "@buffer_size");
   if (!NIL_P(buffer_size)) {
      curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, FIX2INT(buffer_size));
   }
@@ -435,29 +453,30 @@ static void set_options_from_request(VALUE self, VALUE request) {
   }
 }
 
-// Use the info in a Curl handle to create a new Response object.
+/* Use the info in a Curl handle to create a new Response object. */
 static VALUE create_response(VALUE self, CURL* curl, VALUE header_buffer, VALUE body_buffer) {
+  VALUE args[6] = { Qnil, Qnil, Qnil, Qnil, Qnil, Qnil };
   char* effective_url = NULL;
-  curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &effective_url);
-  VALUE url = rb_str_new2(effective_url);
-
   long code = 0;
-  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
-  VALUE status = INT2NUM(code);
-
   long count = 0;
+
+  curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &effective_url);
+  args[0] = rb_str_new2(effective_url);
+
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+  args[1] = INT2NUM(code);
+
   curl_easy_getinfo(curl, CURLINFO_REDIRECT_COUNT, &count);
-  VALUE redirect_count = INT2NUM(count);
+  args[2] = INT2NUM(count);
 
-  VALUE default_charset = rb_iv_get(self, "@default_response_charset");
+  args[3] = header_buffer;
+  args[4] = body_buffer;
+  args[5] = rb_iv_get(self, "@default_response_charset");
 
-  VALUE args[6] = { url, status, redirect_count, header_buffer, body_buffer, default_charset };
-
-  return rb_class_new_instance(6, args,
-                               rb_const_get(mPatron, rb_intern("Response")));
+  return rb_class_new_instance(6, args, rb_const_get(mPatron, rb_intern("Response")));
 }
 
-// Raise an exception based on the Curl error code.
+/* Raise an exception based on the Curl error code. */
 static VALUE select_error(CURLcode code) {
   VALUE error = Qnil;
   switch (code) {
@@ -475,35 +494,38 @@ static VALUE select_error(CURLcode code) {
   return error;
 }
 
-// Perform the actual HTTP request by calling libcurl.
+/* Perform the actual HTTP request by calling libcurl. */
 static VALUE perform_request(VALUE self) {
-  struct curl_state *state;
+  struct curl_state *state = NULL;
+  CURL* curl = NULL;
+  membuffer* header_buffer = NULL;
+  membuffer* body_buffer = NULL;
+  CURLcode ret = 0;
+
   Data_Get_Struct(self, struct curl_state, state);
+  state->interrupt = 0;  /* clear any interrupt flags */
 
-  // clear any interrupt flags
-  state->interrupt = 0;
-
-  CURL* curl = state->handle;
-  membuffer* header_buffer = &state->header_buffer;
-  membuffer* body_buffer = &state->body_buffer;
+  curl = state->handle;
+  header_buffer = &state->header_buffer;
+  body_buffer = &state->body_buffer;
 
   membuffer_clear(header_buffer);
   membuffer_clear(body_buffer);
 
-  // headers
+  /* headers */
   curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &session_write_handler);
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, header_buffer);
 
-  // body
+  /* body */
   if (!state->download_file) {
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &session_write_handler);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, body_buffer);
   }
 
 #if defined(HAVE_TBR) && defined(USE_TBR)
-  CURLcode ret = rb_thread_blocking_region(curl_easy_perform, curl, RUBY_UBF_IO, 0);
+  ret = rb_thread_blocking_region(curl_easy_perform, curl, RUBY_UBF_IO, 0);
 #else
-  CURLcode ret = curl_easy_perform(curl);
+  ret = curl_easy_perform(curl);
 #endif
 
   if (CURLE_OK == ret) {
@@ -517,12 +539,13 @@ static VALUE perform_request(VALUE self) {
   }
 }
 
-// Cleanup after each request by resetting the Curl handle and deallocating all
-// request related objects such as the header slist.
+/* Cleanup after each request by resetting the Curl handle and deallocating
+ * all request related objects such as the header slist.
+ */
 static VALUE cleanup(VALUE self) {
-  struct curl_state *state;
-  Data_Get_Struct(self, struct curl_state, state);
+  struct curl_state *state = NULL;
 
+  Data_Get_Struct(self, struct curl_state, state);
   curl_easy_reset(state->handle);
 
   if (state->headers) {
@@ -551,22 +574,27 @@ VALUE session_handle_request(VALUE self, VALUE request) {
 }
 
 VALUE enable_cookie_session(VALUE self, VALUE file) {
-  struct curl_state *state;
+  struct curl_state *state = NULL;
+  CURL* curl = NULL;
+  char* file_path = NULL;
+
   Data_Get_Struct(self, struct curl_state, state);
-  CURL* curl = state->handle;
-  char* file_path = RSTRING_PTR(file);
+  curl = state->handle;
+
+  file_path = RSTRING_PTR(file);
   if (file_path != NULL && strlen(file_path) != 0) {
     curl_easy_setopt(curl, CURLOPT_COOKIEJAR, file_path);
   }
   curl_easy_setopt(curl, CURLOPT_COOKIEFILE, file_path);
+
   return Qnil;
 }
 
 VALUE set_debug_file(VALUE self, VALUE file) {
-  struct curl_state *state;
-  Data_Get_Struct(self, struct curl_state, state);
+  struct curl_state *state = NULL;
   char* file_path = RSTRING_PTR(file);
 
+  Data_Get_Struct(self, struct curl_state, state);
   session_close_debug_file(state);
 
   if(file_path != NULL && strlen(file_path) != 0) {
@@ -579,9 +607,8 @@ VALUE set_debug_file(VALUE self, VALUE file) {
 }
 
 
-//------------------------------------------------------------------------------
-// Extension initialization
-//
+/*----------------------------------------------------------------------------*/
+/* Extension initialization                                                   */
 
 void Init_session_ext() {
   curl_global_init(CURL_GLOBAL_ALL);

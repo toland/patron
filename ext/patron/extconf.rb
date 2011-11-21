@@ -40,7 +40,7 @@ elsif !have_library('curl') or !have_header('curl/curl.h')
 end
 
 if CONFIG['CC'] =~ /gcc/
-  $CFLAGS << ' -Wall'
+  $CFLAGS << ' -pedantic -Wall'
 end
 
 $defs.push("-DUSE_TBR")

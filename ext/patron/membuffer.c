@@ -1,4 +1,3 @@
-
 #include <ruby.h>
 #include <assert.h>
 #include "membuffer.h"
@@ -21,7 +20,6 @@ static int membuffer_ensure_capacity( membuffer* m, size_t length ) {
     m->buf = tmp_buf;
     m->capacity = new_capacity;
   }
-  // fprintf(stderr, "\n buf -> %p, capacity = %d", m->buf, m->capacity);
 
   return MB_OK;
 }
@@ -56,21 +54,21 @@ int membuffer_insert( membuffer* m, size_t index, const void* src, size_t length
   int rc = MB_OK;
   assert(NULL != m);
 
-  // sanity checks on the inputs
+  /* sanity checks on the inputs */
   if (index > m->length) { return MB_OUT_OF_BOUNDS; }
   if (NULL == src || 0 == length) { return MB_OK; }
 
-  // increase capacity if needed
+  /* increase capacity if needed */
   rc = membuffer_ensure_capacity( m, m->length + length );
   if (MB_OK != rc) { return rc; }
 
-  // move data in the buffer to the right of the insertion point
+  /* move data in the buffer to the right of the insertion point */
   memmove( m->buf + index + length, m->buf + index, m->length - index );
 
-  // copy date into the insertion point
+  /* copy date into the insertion point */
   memcpy( m->buf + index, src, length );
   m->length += length;
-  m->buf[m->length] = 0;  // null terminate the buffer
+  m->buf[m->length] = 0;  /* null terminate the buffer */
 
   return MB_OK;
 }
