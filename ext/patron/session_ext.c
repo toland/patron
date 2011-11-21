@@ -27,6 +27,8 @@
 #include "membuffer.h"
 #include "sglib.h"  /* Simple Generic Library -> http://sglib.sourceforge.net */
 
+#define UNUSED_ARGUMENT(x) (void)x
+
 static VALUE mPatron = Qnil;
 static VALUE mProxyType = Qnil;
 static VALUE cSession = Qnil;
@@ -91,6 +93,10 @@ static size_t session_read_handler(char* stream, size_t size, size_t nmemb, char
  */
 static int session_progress_handler(void *clientp, double dltotal, double dlnow, double ultotal, double ulnow) {
   struct curl_state* state = (struct curl_state*) clientp;
+  UNUSED_ARGUMENT(dltotal);
+  UNUSED_ARGUMENT(dlnow);
+  UNUSED_ARGUMENT(ultotal);
+  UNUSED_ARGUMENT(ulnow);
   return state->interrupt;
 }
 
@@ -118,7 +124,7 @@ static void cs_list_append( struct curl_state *state ) {
   SGLIB_LIST_ADD(struct curl_state_list, cs_list, item, next);
 }
 
-static void cs_list_remove( struct curl_state *state ) {
+static void cs_list_remove(struct curl_state *state) {
   struct curl_state_list *item = NULL;
 
   assert(state != NULL);
@@ -130,7 +136,7 @@ static void cs_list_remove( struct curl_state *state ) {
 }
 
 static void cs_list_interrupt(VALUE data) {
-  struct curl_state_list *item = NULL;
+  UNUSED_ARGUMENT(data);
 
   SGLIB_LIST_MAP_ON_ELEMENTS(struct curl_state_list, cs_list, item, next, {
     item->state->interrupt = 1;
@@ -177,6 +183,7 @@ VALUE session_alloc(VALUE klass) {
 /* Returns the version of the embedded libcurl as a string. */
 VALUE libcurl_version(VALUE klass) {
   char* value = curl_version();
+  UNUSED_ARGUMENT(klass);
   return rb_str_new2(value);
 }
 
@@ -211,7 +218,7 @@ VALUE session_escape(VALUE self, VALUE value) {
   Data_Get_Struct(self, struct curl_state, state);
   escaped = curl_easy_escape(state->handle,
                              RSTRING_PTR(string),
-                             RSTRING_LEN(string));
+                             (int) RSTRING_LEN(string));
 
   retval = rb_str_new2(escaped);
   curl_free(escaped);
@@ -229,7 +236,7 @@ VALUE session_unescape(VALUE self, VALUE value) {
   Data_Get_Struct(self, struct curl_state, state);
   unescaped = curl_easy_unescape(state->handle,
                                  RSTRING_PTR(string),
-                                 RSTRING_LEN(string),
+                                 (int) RSTRING_LEN(string),
                                  NULL);
 
   retval = rb_str_new2(unescaped);
@@ -282,7 +289,7 @@ static void set_chunked_encoding(struct curl_state *state) {
   state->headers = curl_slist_append(state->headers, "Transfer-Encoding: chunked");
 }
 
-static FILE* open_file(VALUE filename, char* perms) {
+static FILE* open_file(VALUE filename, const char* perms) {
   FILE* handle = fopen(StringValuePtr(filename), perms);
   if (!handle) {
     rb_raise(rb_eArgError, "Unable to open specified file.");
@@ -340,7 +347,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
     VALUE multipart = rb_iv_get(request, "@multipart");
 
     if (!NIL_P(data) && NIL_P(multipart)) {
-      int len = RSTRING_LEN(data);
+      long len = RSTRING_LEN(data);
 
       state->upload_buf = StringValuePtr(data);
 
@@ -523,7 +530,10 @@ static VALUE perform_request(VALUE self) {
   }
 
 #if defined(HAVE_TBR) && defined(USE_TBR)
-  ret = rb_thread_blocking_region(curl_easy_perform, curl, RUBY_UBF_IO, 0);
+  ret = (CURLcode) rb_thread_blocking_region(
+          (rb_blocking_function_t*) curl_easy_perform, curl,
+          RUBY_UBF_IO, 0
+        );
 #else
   ret = curl_easy_perform(curl);
 #endif
@@ -614,7 +624,7 @@ void Init_session_ext() {
   curl_global_init(CURL_GLOBAL_ALL);
   rb_require("patron/error");
 
-  rb_set_end_proc(&cs_list_interrupt, NULL);
+  rb_set_end_proc(&cs_list_interrupt, Qnil);
 
   mPatron = rb_define_module("Patron");
 
