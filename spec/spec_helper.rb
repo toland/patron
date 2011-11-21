@@ -26,3 +26,7 @@ require 'rspec'
 $:.unshift(File.dirname(__FILE__) + '/../lib')
 $:.unshift(File.dirname(__FILE__) + '/../ext')
 require 'patron'
+
+Dir['./spec/support/**/*.rb'].each { |fn| require fn }
+
+PatronTestServer.start if RUBY_VERSION >= '1.9'
