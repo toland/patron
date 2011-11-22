@@ -618,6 +618,18 @@ static VALUE session_reset(VALUE self) {
 }
 
 /* call-seq:
+ *    session.interrupt   -> session
+ *
+ * Interrupt any currently executing request. This will cause the current
+ * request to error and raise an exception.
+ */
+static VALUE session_interrupt(VALUE self) {
+  struct curl_state *state = get_curl_state(self);
+  state->interrupt = 1;
+  return self;
+}
+
+/* call-seq:
  *    session.enable_cookie_session( file )   -> session
  *
  * Turn on cookie handling for this session, storing them in memory by
@@ -690,6 +702,7 @@ void Init_session_ext() {
   rb_define_method(cSession, "unescape",       session_unescape,       1);
   rb_define_method(cSession, "handle_request", session_handle_request, 1);
   rb_define_method(cSession, "reset",          session_reset,          0);
+  rb_define_method(cSession, "interrupt",      session_interrupt,      0);
   rb_define_method(cSession, "enable_cookie_session", enable_cookie_session, 1);
   rb_define_method(cSession, "set_debug_file", set_debug_file, 1);
 
