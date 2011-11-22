@@ -156,7 +156,10 @@ static void session_close_debug_file(struct curl_state *curl) {
 
 /* Cleans up the Curl handle when the Session object is garbage collected. */
 void session_free(struct curl_state *curl) {
-  curl_easy_cleanup(curl->handle);
+  if (curl->handle) {
+    curl_easy_cleanup(curl->handle);
+    curl->handle = NULL;
+  }
 
   session_close_debug_file(curl);
 
@@ -172,8 +175,28 @@ void session_free(struct curl_state *curl) {
 VALUE session_alloc(VALUE klass) {
   struct curl_state* curl;
   VALUE obj = Data_Make_Struct(klass, struct curl_state, NULL, session_free, curl);
+
+  membuffer_init( &curl->header_buffer );
+  membuffer_init( &curl->body_buffer );
   cs_list_append(curl);
+
   return obj;
+}
+
+/* Return the curl_state from the ruby VALUE which is the Session instance. */
+static struct curl_state* get_curl_state(VALUE self) {
+  struct curl_state *state;
+  Data_Get_Struct(self, struct curl_state, state);
+
+  if (NULL == state->handle) {
+    state->handle = curl_easy_init();
+    curl_easy_setopt(state->handle, CURLOPT_NOSIGNAL, 1);
+    curl_easy_setopt(state->handle, CURLOPT_NOPROGRESS, 0);
+    curl_easy_setopt(state->handle, CURLOPT_PROGRESSFUNCTION, &session_progress_handler);
+    curl_easy_setopt(state->handle, CURLOPT_PROGRESSDATA, state);
+  }
+
+  return state;
 }
 
 
@@ -187,35 +210,13 @@ VALUE libcurl_version(VALUE klass) {
   return rb_str_new2(value);
 }
 
-/* Initializes the libcurl handle on object initialization. */
-/* NOTE: This must be called from Session#initialize. */
-VALUE session_ext_initialize(VALUE self) {
-  struct curl_state *state = NULL;
-
-  Data_Get_Struct(self, struct curl_state, state);
-  state->handle = curl_easy_init();
-  state->post   = NULL;
-  state->last   = NULL;
-
-  membuffer_init( &state->header_buffer );
-  membuffer_init( &state->body_buffer );
-
-  curl_easy_setopt(state->handle, CURLOPT_NOSIGNAL, 1);
-  curl_easy_setopt(state->handle, CURLOPT_NOPROGRESS, 0);
-  curl_easy_setopt(state->handle, CURLOPT_PROGRESSFUNCTION, &session_progress_handler);
-  curl_easy_setopt(state->handle, CURLOPT_PROGRESSDATA, state);
-
-  return self;
-}
-
 /* URL escapes the provided string. */
 VALUE session_escape(VALUE self, VALUE value) {
-  struct curl_state *state = NULL;
+  struct curl_state *state = get_curl_state(self);
   VALUE string = StringValue(value);
   char* escaped = NULL;
   VALUE retval = Qnil;
 
-  Data_Get_Struct(self, struct curl_state, state);
   escaped = curl_easy_escape(state->handle,
                              RSTRING_PTR(string),
                              (int) RSTRING_LEN(string));
@@ -228,12 +229,11 @@ VALUE session_escape(VALUE self, VALUE value) {
 
 /* Unescapes the provided string. */
 VALUE session_unescape(VALUE self, VALUE value) {
-  struct curl_state *state = NULL;
+  struct curl_state *state = get_curl_state(self);
   VALUE string = StringValue(value);
   char* unescaped = NULL;
   VALUE retval = Qnil;
 
-  Data_Get_Struct(self, struct curl_state, state);
   unescaped = curl_easy_unescape(state->handle,
                                  RSTRING_PTR(string),
                                  (int) RSTRING_LEN(string),
@@ -247,7 +247,7 @@ VALUE session_unescape(VALUE self, VALUE value) {
 
 /* Callback used to iterate over the HTTP headers and store them in an slist. */
 static int each_http_header(VALUE header_key, VALUE header_value, VALUE self) {
-  struct curl_state *state = NULL;
+  struct curl_state *state = get_curl_state(self);
   VALUE name = rb_obj_as_string(header_key);
   VALUE value = rb_obj_as_string(header_value);
   VALUE header_str = Qnil;
@@ -255,18 +255,16 @@ static int each_http_header(VALUE header_key, VALUE header_value, VALUE self) {
   header_str = rb_str_plus(name, rb_str_new2(": "));
   header_str = rb_str_plus(header_str, value);
 
-  Data_Get_Struct(self, struct curl_state, state);
   state->headers = curl_slist_append(state->headers, StringValuePtr(header_str));
 
   return 0;
 }
 
 static int formadd_values(VALUE data_key, VALUE data_value, VALUE self) {
-  struct curl_state *state = NULL;
+  struct curl_state *state = get_curl_state(self);
   VALUE name = rb_obj_as_string(data_key);
   VALUE value = rb_obj_as_string(data_value);
 
-  Data_Get_Struct(self, struct curl_state, state);
   curl_formadd(&state->post, &state->last, CURLFORM_PTRNAME, RSTRING_PTR(name),
                 CURLFORM_PTRCONTENTS, RSTRING_PTR(value), CURLFORM_END);
 
@@ -274,11 +272,10 @@ static int formadd_values(VALUE data_key, VALUE data_value, VALUE self) {
 }
 
 static int formadd_files(VALUE data_key, VALUE data_value, VALUE self) {
-  struct curl_state *state = NULL;
+  struct curl_state *state = get_curl_state(self);
   VALUE name = rb_obj_as_string(data_key);
   VALUE value = rb_obj_as_string(data_value);
 
-  Data_Get_Struct(self, struct curl_state, state);
   curl_formadd(&state->post, &state->last, CURLFORM_PTRNAME, RSTRING_PTR(name),
                 CURLFORM_FILE, RSTRING_PTR(value), CURLFORM_END);
 
@@ -303,8 +300,8 @@ static FILE* open_file(VALUE filename, const char* perms) {
  * handle.
  */
 static void set_options_from_request(VALUE self, VALUE request) {
-  struct curl_state *state = NULL;
-  CURL* curl = NULL;
+  struct curl_state *state = get_curl_state(self);
+  CURL* curl = state->handle;
 
   ID    action                = Qnil;
   VALUE headers               = Qnil;
@@ -317,9 +314,6 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE ignore_content_length = Qnil;
   VALUE insecure              = Qnil;
   VALUE buffer_size           = Qnil;
-
-  Data_Get_Struct(self, struct curl_state, state);
-  curl = state->handle;
 
   headers = rb_iv_get(request, "@headers");
   if (!NIL_P(headers)) {
@@ -503,16 +497,14 @@ static VALUE select_error(CURLcode code) {
 
 /* Perform the actual HTTP request by calling libcurl. */
 static VALUE perform_request(VALUE self) {
-  struct curl_state *state = NULL;
-  CURL* curl = NULL;
+  struct curl_state *state = get_curl_state(self);
+  CURL* curl = state->handle;
   membuffer* header_buffer = NULL;
   membuffer* body_buffer = NULL;
   CURLcode ret = 0;
 
-  Data_Get_Struct(self, struct curl_state, state);
   state->interrupt = 0;  /* clear any interrupt flags */
 
-  curl = state->handle;
   header_buffer = &state->header_buffer;
   body_buffer = &state->body_buffer;
 
@@ -553,9 +545,7 @@ static VALUE perform_request(VALUE self) {
  * all request related objects such as the header slist.
  */
 static VALUE cleanup(VALUE self) {
-  struct curl_state *state = NULL;
-
-  Data_Get_Struct(self, struct curl_state, state);
+  struct curl_state *state = get_curl_state(self);
   curl_easy_reset(state->handle);
 
   if (state->headers) {
@@ -583,13 +573,33 @@ VALUE session_handle_request(VALUE self, VALUE request) {
   return rb_ensure(&perform_request, self, &cleanup, self);
 }
 
-VALUE enable_cookie_session(VALUE self, VALUE file) {
-  struct curl_state *state = NULL;
-  CURL* curl = NULL;
-  char* file_path = NULL;
+/*
+ *  call-seq:
+ *     session.reset   -> session
+ *
+ *  Reset the underlying cURL session. This effectively closes all open connections and
+ *  disables debug output.
+ */
 
+static VALUE
+session_reset(VALUE self) {
+  struct curl_state *state;
   Data_Get_Struct(self, struct curl_state, state);
-  curl = state->handle;
+
+  if (NULL != state->handle) {
+    cleanup(self);
+    curl_easy_cleanup(state->handle);
+    state->handle = NULL;
+    session_close_debug_file(state);
+  }
+
+  return self;
+}
+
+VALUE enable_cookie_session(VALUE self, VALUE file) {
+  struct curl_state *state = get_curl_state(self);
+  CURL* curl = state->handle;
+  char* file_path = NULL;
 
   file_path = RSTRING_PTR(file);
   if (file_path != NULL && strlen(file_path) != 0) {
@@ -601,10 +611,9 @@ VALUE enable_cookie_session(VALUE self, VALUE file) {
 }
 
 VALUE set_debug_file(VALUE self, VALUE file) {
-  struct curl_state *state = NULL;
+  struct curl_state *state = get_curl_state(self);
   char* file_path = RSTRING_PTR(file);
 
-  Data_Get_Struct(self, struct curl_state, state);
   session_close_debug_file(state);
 
   if(file_path != NULL && strlen(file_path) != 0) {
@@ -644,10 +653,10 @@ void Init_session_ext() {
   cRequest = rb_define_class_under(mPatron, "Request", rb_cObject);
   rb_define_alloc_func(cSession, session_alloc);
 
-  rb_define_method(cSession, "ext_initialize", session_ext_initialize, 0);
   rb_define_method(cSession, "escape",         session_escape,         1);
   rb_define_method(cSession, "unescape",       session_unescape,       1);
   rb_define_method(cSession, "handle_request", session_handle_request, 1);
+  rb_define_method(cSession, "reset",          session_reset,          0);
   rb_define_method(cSession, "enable_cookie_session", enable_cookie_session, 1);
   rb_define_method(cSession, "set_debug_file", set_debug_file, 1);
 
