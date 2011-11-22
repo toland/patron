@@ -203,15 +203,23 @@ static struct curl_state* get_curl_state(VALUE self) {
 /*----------------------------------------------------------------------------*/
 /* Method implementations                                                     */
 
-/* Returns the version of the embedded libcurl as a string. */
-VALUE libcurl_version(VALUE klass) {
+/* call-seq:
+ *    Patron.libcurl_version   -> version string
+ *
+ * Returns the version of the embedded libcurl as a string.
+ */
+static VALUE libcurl_version(VALUE klass) {
   char* value = curl_version();
   UNUSED_ARGUMENT(klass);
   return rb_str_new2(value);
 }
 
-/* URL escapes the provided string. */
-VALUE session_escape(VALUE self, VALUE value) {
+/* call-seq:
+ *    Session.escape( string )   -> escaped string
+ *
+ * URL escapes the provided string.
+ */
+static VALUE session_escape(VALUE self, VALUE value) {
   struct curl_state *state = get_curl_state(self);
   VALUE string = StringValue(value);
   char* escaped = NULL;
@@ -227,8 +235,12 @@ VALUE session_escape(VALUE self, VALUE value) {
   return retval;
 }
 
-/* Unescapes the provided string. */
-VALUE session_unescape(VALUE self, VALUE value) {
+/* call-seq:
+ *    Session.unescape( string )   -> unescaped string
+ *
+ * Unescapes the provided string.
+ */
+static VALUE session_unescape(VALUE self, VALUE value) {
   struct curl_state *state = get_curl_state(self);
   VALUE string = StringValue(value);
   char* unescaped = NULL;
@@ -295,7 +307,7 @@ static FILE* open_file(VALUE filename, const char* perms) {
   return handle;
 }
 
-/* Set the options on the Curl handle from a Request object. Takes each field 
+/* Set the options on the Curl handle from a Request object. Takes each field
  * in the Request object and uses it to set the appropriate option on the Curl
  * handle.
  */
@@ -568,21 +580,30 @@ static VALUE cleanup(VALUE self) {
   return Qnil;
 }
 
-VALUE session_handle_request(VALUE self, VALUE request) {
+/* call-seq:
+ *    session.handle_request( request )   -> response
+ *
+ * Peform the actual HTTP request by calling libcurl. Each filed in the
+ * +request+ object will be used to set the appropriate option on the libcurl
+ * library. After the request completes, a Response object will be created and
+ * returned.
+ *
+ * In the event of an error in the libcurl library, a Ruby exception will be
+ * created and raised. The exception will return the libcurl error code and
+ * error message.
+ */
+static VALUE session_handle_request(VALUE self, VALUE request) {
   set_options_from_request(self, request);
   return rb_ensure(&perform_request, self, &cleanup, self);
 }
 
-/*
- *  call-seq:
- *     session.reset   -> session
+/* call-seq:
+ *    session.reset   -> session
  *
- *  Reset the underlying cURL session. This effectively closes all open connections and
- *  disables debug output.
+ * Reset the underlying cURL session. This effectively closes all open connections and
+ * disables debug output.
  */
-
-static VALUE
-session_reset(VALUE self) {
+static VALUE session_reset(VALUE self) {
   struct curl_state *state;
   Data_Get_Struct(self, struct curl_state, state);
 
@@ -596,7 +617,14 @@ session_reset(VALUE self) {
   return self;
 }
 
-VALUE enable_cookie_session(VALUE self, VALUE file) {
+/* call-seq:
+ *    session.enable_cookie_session( file )   -> session
+ *
+ * Turn on cookie handling for this session, storing them in memory by
+ * default or in +file+ if specified. The +file+ must be readable and
+ * writable. Calling multiple times will add more files.
+ */
+static VALUE enable_cookie_session(VALUE self, VALUE file) {
   struct curl_state *state = get_curl_state(self);
   CURL* curl = state->handle;
   char* file_path = NULL;
@@ -607,10 +635,15 @@ VALUE enable_cookie_session(VALUE self, VALUE file) {
   }
   curl_easy_setopt(curl, CURLOPT_COOKIEFILE, file_path);
 
-  return Qnil;
+  return self;
 }
 
-VALUE set_debug_file(VALUE self, VALUE file) {
+/* call-seq:
+ *    session.set_debug_file( file )   -> session
+ *
+ * Enable debug output to stderr or to specified +file+.
+ */
+static VALUE set_debug_file(VALUE self, VALUE file) {
   struct curl_state *state = get_curl_state(self);
   char* file_path = RSTRING_PTR(file);
 
@@ -622,7 +655,7 @@ VALUE set_debug_file(VALUE self, VALUE file) {
     state->debug_file = stderr;
   }
 
-  return Qnil;
+  return self;
 }
 
 
