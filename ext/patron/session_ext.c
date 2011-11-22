@@ -600,8 +600,8 @@ static VALUE session_handle_request(VALUE self, VALUE request) {
 /* call-seq:
  *    session.reset   -> session
  *
- * Reset the underlying cURL session. This effectively closes all open connections and
- * disables debug output.
+ * Reset the underlying cURL session. This effectively closes all open
+ * connections and disables debug output.
  */
 static VALUE session_reset(VALUE self) {
   struct curl_state *state;
@@ -705,6 +705,8 @@ void Init_session_ext() {
   rb_define_method(cSession, "interrupt",      session_interrupt,      0);
   rb_define_method(cSession, "enable_cookie_session", enable_cookie_session, 1);
   rb_define_method(cSession, "set_debug_file", set_debug_file, 1);
+  rb_define_alias(cSession, "urlencode", "escape");
+  rb_define_alias(cSession, "urldecode", "unescape");
 
   rb_define_const(cRequest, "AuthBasic",  INT2FIX(CURLAUTH_BASIC));
   rb_define_const(cRequest, "AuthDigest", INT2FIX(CURLAUTH_DIGEST));

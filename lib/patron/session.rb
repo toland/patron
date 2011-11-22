@@ -221,11 +221,5 @@ module Patron
       handle_request(req)
     end
 
-    private
-
-    def urlencode(str)
-      str.gsub(/[^a-zA-Z0-9_\.\-]/n) {|s| sprintf('%%%02x', s[0].ord) }
-    end
-
   end
 end
