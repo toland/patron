@@ -338,9 +338,17 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
   action = SYM2ID(rb_iv_get(request, "@action"));
   if (action == rb_intern("get")) {
+    VALUE data = rb_iv_get(request, "@upload_data");
     VALUE download_file = rb_iv_get(request, "@file_name");
 
     curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
+    if (!NIL_P(data)) {
+      long len = RSTRING_LEN(data);
+      state->upload_buf = StringValuePtr(data);
+      curl_easy_setopt(curl, CURLOPT_POST, 1);
+      curl_easy_setopt(curl, CURLOPT_POSTFIELDS, state->upload_buf);
+      curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
+    }
     if (!NIL_P(download_file)) {
       state->download_file = open_file(download_file, "w");
       curl_easy_setopt(curl, CURLOPT_WRITEDATA, state->download_file);
