@@ -120,6 +120,8 @@ module Patron
     # to the +url+ parameter. Any custom headers are merged with the contents
     # of the +headers+ instance variable. The results are returned in a
     # Response object.
+    # Notice: this method doesn't accept any +data+ argument: if you need to send data with
+    # a get request, please, use the #request method.
     def get(url, headers = {})
       request(:get, url, headers)
     end

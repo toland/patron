@@ -130,6 +130,14 @@ describe Patron::Session do
     body.header['destination'].first.should == "/test2"
   end
 
+  it "should upload data with :get" do
+    data = "upload data"
+    response = @session.request(:get, "/test", {}, :data => data)
+    body = YAML::load(response.body)
+    body.request_method.should == "GET"
+    body.header['content-length'].should == [data.size.to_s]
+  end
+
   it "should upload data with :put" do
     data = "upload data"
     response = @session.put("/test", data)
@@ -267,14 +275,14 @@ describe Patron::Session do
 
     body.request_method.should == "GET"
   end
-  
+
   it "should serialize query params and append them to the url" do
     response = @session.request(:get, "/test", {}, :query => {:foo => "bar"})
     request = YAML::load(response.body)
     request.parse
     (request.path + '?' + request.query_string).should == "/test?foo=bar"
   end
-  
+
   it "should merge parameters in the :query option with pre-existing query parameters" do
     response = @session.request(:get, "/test?foo=bar", {}, :query => {:baz => "quux"})
     request = YAML::load(response.body)
