@@ -345,9 +345,11 @@ static void set_options_from_request(VALUE self, VALUE request) {
     if (!NIL_P(data)) {
       long len = RSTRING_LEN(data);
       state->upload_buf = StringValuePtr(data);
-      curl_easy_setopt(curl, CURLOPT_POST, 1);
-      curl_easy_setopt(curl, CURLOPT_POSTFIELDS, state->upload_buf);
-      curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
+      curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
+      curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "GET");
+      curl_easy_setopt(curl, CURLOPT_READFUNCTION, &session_read_handler);
+      curl_easy_setopt(curl, CURLOPT_READDATA, &state->upload_buf);
+      curl_easy_setopt(curl, CURLOPT_INFILESIZE, len);
     }
     if (!NIL_P(download_file)) {
       state->download_file = open_file(download_file, "w");
