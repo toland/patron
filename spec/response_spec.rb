@@ -48,11 +48,15 @@ describe Patron::Response do
     response.headers['Content-Type'].should == 'image/png'
     response.body.encoding.should == Encoding::ASCII_8BIT
   end
-  
+
   it "should not allow a default charset to be nil" do
     Encoding.stub(:default_internal).and_return("UTF-8")
     expect {
       Patron::Response.new("url", "status", 0, "", "", nil)
     }.to_not raise_error
+  end
+
+  it "should be able to serialize and deserialize itself" do
+    Marshal.load(Marshal.dump(@request)).should eql(@request)
   end
 end

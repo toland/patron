@@ -97,4 +97,8 @@ describe Patron::Request do
     end
 
   end
+
+  it "should be able to serialize and deserialize itself" do
+    Marshal.load(Marshal.dump(@request)).should eql(@request)
+  end
 end

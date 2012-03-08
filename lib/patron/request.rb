@@ -152,5 +152,17 @@ module Patron
 
     alias_method :==, :eql?
 
+    def marshal_dump
+      [ @url, @username, @password, @file_name, @proxy, @proxy_type, @insecure,
+        @ignore_content_length, @multipart, @action, @timeout, @connect_timeout,
+        @max_redirects, @headers, @auth_type, @upload_data, @buffer_size ]
+    end
+
+    def marshal_load(data)
+      @url, @username, @password, @file_name, @proxy, @proxy_type, @insecure,
+      @ignore_content_length, @multipart, @action, @timeout, @connect_timeout,
+      @max_redirects, @headers, @auth_type, @upload_data, @buffer_size = data
+    end
+
   end
 end
