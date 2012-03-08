@@ -42,9 +42,19 @@ module Patron
       @max_redirects = -1
     end
 
-    attr_accessor :url, :username, :password, :file_name, :proxy, :proxy_type, :auth_type, :insecure, :ignore_content_length, :multipart
-    attr_reader :action, :timeout, :connect_timeout, :max_redirects, :headers, :buffer_size
-    attr_reader :auth_type
+    READER_VARS = [
+      :url, :username, :password, :file_name, :proxy, :proxy_type, :insecure,
+      :ignore_content_length, :multipart, :action, :timeout, :connect_timeout,
+      :max_redirects, :headers, :auth_type, :upload_data, :buffer_size
+    ]
+
+    WRITER_VARS = [
+      :url, :username, :password, :file_name, :proxy, :proxy_type, :insecure,
+      :ignore_content_length, :multipart
+    ]
+
+    attr_reader *READER_VARS
+    attr_writer *WRITER_VARS
 
     # Set the type of authentication to use for this request.
     #
@@ -75,10 +85,6 @@ module Patron
       else
         data
       end
-    end
-
-    def upload_data
-      @upload_data
     end
 
     def action=(new_action)
@@ -135,6 +141,16 @@ module Patron
       return nil if username.nil? || password.nil?
       "#{username}:#{password}"
     end
+
+    def eql?(request)
+      return false unless Request === request
+
+      READER_VARS.inject(true) do |memo, name|
+        memo && (self.send(name) == request.send(name))
+      end
+    end
+
+    alias_method :==, :eql?
 
   end
 end

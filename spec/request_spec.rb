@@ -83,4 +83,18 @@ describe Patron::Request do
     end
 
   end
+
+  describe :eql? do
+
+    it "should return true when two requests are equal" do
+      @request.should eql(Patron::Request.new)
+    end
+
+    it "should return false when two requests are not equal" do
+      req = Patron::Request.new
+      req.action = :post
+      @request.should_not eql(req)
+    end
+
+  end
 end
