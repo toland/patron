@@ -65,6 +65,14 @@ describe Patron::Session do
     FileUtils.rm tmpfile
   end
 
+  it "should download correctly(md5 ok) with get_file" do
+    tmpfile = "/tmp/picture"
+    response = @session.get_file "/picture", tmpfile
+    response.body.should be_nil
+    File.size(File.join(File.dirname(__FILE__),"../pic.png")).should == File.size(tmpfile)
+    FileUtils.rm tmpfile
+  end
+
   it "should include custom headers in a request" do
     response = @session.get("/test", {"User-Agent" => "PatronTest"})
     body = YAML::load(response.body)
