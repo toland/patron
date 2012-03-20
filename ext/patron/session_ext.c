@@ -352,7 +352,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
       curl_easy_setopt(curl, CURLOPT_INFILESIZE, len);
     }
     if (!NIL_P(download_file)) {
-      state->download_file = open_file(download_file, "w");
+      state->download_file = open_file(download_file, "wb");
       curl_easy_setopt(curl, CURLOPT_WRITEDATA, state->download_file);
     } else {
       state->download_file = NULL;
@@ -386,7 +386,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
         curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "POST");
       }
 
-      state->upload_file = open_file(filename, "r");
+      state->upload_file = open_file(filename, "rb");
       curl_easy_setopt(curl, CURLOPT_READDATA, state->upload_file);
     } else if (!NIL_P(multipart)) {
       if (action == rb_intern("post")) {
@@ -672,7 +672,7 @@ static VALUE set_debug_file(VALUE self, VALUE file) {
   session_close_debug_file(state);
 
   if(file_path != NULL && strlen(file_path) != 0) {
-    state->debug_file = open_file(file, "w");
+    state->debug_file = open_file(file, "wb");
   } else {
     state->debug_file = stderr;
   }
