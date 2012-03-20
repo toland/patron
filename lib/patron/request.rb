@@ -32,19 +32,29 @@ module Patron
   # used in every request.
   class Request
 
-    VALID_ACTIONS = [:get, :put, :post, :delete, :head, :copy]
+    VALID_ACTIONS = %w[GET PUT POST DELETE HEAD COPY]
 
     def initialize
-      @action = :get
+      @action = 'GET'
       @headers = {}
       @timeout = 0
       @connect_timeout = 0
       @max_redirects = -1
     end
 
-    attr_accessor :url, :username, :password, :file_name, :proxy, :proxy_type, :auth_type, :insecure, :ignore_content_length, :multipart
-    attr_reader :action, :timeout, :connect_timeout, :max_redirects, :headers, :buffer_size
-    attr_reader :auth_type
+    READER_VARS = [
+      :url, :username, :password, :file_name, :proxy, :proxy_type, :insecure,
+      :ignore_content_length, :multipart, :action, :timeout, :connect_timeout,
+      :max_redirects, :headers, :auth_type, :upload_data, :buffer_size
+    ]
+
+    WRITER_VARS = [
+      :url, :username, :password, :file_name, :proxy, :proxy_type, :insecure,
+      :ignore_content_length, :multipart
+    ]
+
+    attr_reader *READER_VARS
+    attr_writer *WRITER_VARS
 
     # Set the type of authentication to use for this request.
     #
@@ -71,22 +81,20 @@ module Patron
     def upload_data=(data)
       @upload_data = case data
       when Hash
-        self.multipart ? data : Util.build_query_string_from_hash(data, @action == :post)
+        self.multipart ? data : Util.build_query_string_from_hash(data, action == 'POST')
       else
         data
       end
     end
 
-    def upload_data
-      @upload_data
-    end
-
     def action=(new_action)
-      if !VALID_ACTIONS.include?(new_action)
+      action = new_action.to_s.upcase
+
+      if !VALID_ACTIONS.include?(action)
         raise ArgumentError, "Action must be one of #{VALID_ACTIONS.join(', ')}"
       end
 
-      @action = new_action
+      @action = action
     end
 
     def timeout=(new_timeout)
@@ -129,13 +137,31 @@ module Patron
       @buffer_size = buffer_size != nil ? buffer_size.to_i : nil
     end
 
-    def action_name
-      @action.to_s.upcase
-    end
-
     def credentials
       return nil if username.nil? || password.nil?
       "#{username}:#{password}"
+    end
+
+    def eql?(request)
+      return false unless Request === request
+
+      READER_VARS.inject(true) do |memo, name|
+        memo && (self.send(name) == request.send(name))
+      end
+    end
+
+    alias_method :==, :eql?
+
+    def marshal_dump
+      [ @url, @username, @password, @file_name, @proxy, @proxy_type, @insecure,
+        @ignore_content_length, @multipart, @action, @timeout, @connect_timeout,
+        @max_redirects, @headers, @auth_type, @upload_data, @buffer_size ]
+    end
+
+    def marshal_load(data)
+      @url, @username, @password, @file_name, @proxy, @proxy_type, @insecure,
+      @ignore_content_length, @multipart, @action, @timeout, @connect_timeout,
+      @max_redirects, @headers, @auth_type, @upload_data, @buffer_size = data
     end
 
   end

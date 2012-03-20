@@ -35,13 +35,13 @@ module Patron
       @status         = status
       @redirect_count = redirect_count
       @body           = body
-      
+
       @charset        = determine_charset(header_data, body) || default_charset
-      
+
       [url, header_data].each do |attr|
         convert_to_default_encoding!(attr)
       end
-      
+
       parse_headers(header_data)
       if @headers["Content-Type"] && @headers["Content-Type"][0, 5] == "text/"
         convert_to_default_encoding!(@body)
@@ -55,14 +55,22 @@ module Patron
       "#<Patron::Response @status_line='#{@status_line}'>"
     end
 
+    def marshal_dump
+      [@url, @status, @status_line, @redirect_count, @body, @headers, @charset]
+    end
+
+    def marshal_load(data)
+      @url, @status, @status_line, @redirect_count, @body, @headers, @charset = data
+    end
+
   private
 
     def determine_charset(header_data, body)
       header_data.match(charset_regex) || (body && body.match(charset_regex))
-      
+
       $1
     end
-    
+
     def charset_regex
       /(?:charset|encoding)="?([a-z0-9-]+)"?/i
     end
