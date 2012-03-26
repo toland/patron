@@ -56,6 +56,11 @@ describe Patron::Session do
     body.request_method.should == "GET"
   end
 
+  it 'should ignore #base_url when a full URL is provided' do
+    @session.base_url = "http://example.com:123"
+    lambda { @session.get("http://localhost:9001/test") }.should_not raise_error(URI::InvalidURIError)
+  end
+
   it "should download content with :get and a file path" do
     tmpfile = "/tmp/patron_test.yaml"
     response = @session.get_file "/test", tmpfile
