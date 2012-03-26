@@ -28,6 +28,7 @@ cwd = Pathname(__FILE__).dirname
 $:.unshift(cwd.to_s) unless $:.include?(cwd.to_s) || $:.include?(cwd.expand_path.to_s)
 
 require 'patron/session'
+require 'patron/version'
 
 module Patron #:nodoc:
   # Returns the version number of the Patron library as a string
