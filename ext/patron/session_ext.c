@@ -268,7 +268,14 @@ static int each_http_header(VALUE header_key, VALUE header_value, VALUE self) {
 
   if (rb_str_cmp(name, rb_str_new2("Accept-Encoding")) == 0) {
     if (rb_funcall(value, rb_intern("include?"), 1, rb_str_new2("gzip"))) {
-      curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "gzip");
+      #ifdef CURLOPT_ACCEPT_ENCODING
+        curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "gzip");
+      #elif CURLOPT_ENCODING
+        curl_easy_setopt(curl, CURLOPT_ENCODING, "gzip");
+      #else
+        rb_raise(rb_eArgError,
+                "The libcurl version installed doesn't support 'gzip'.");
+      #endif
     }
   }
 
