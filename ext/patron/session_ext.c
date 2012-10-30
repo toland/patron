@@ -270,7 +270,7 @@ static int each_http_header(VALUE header_key, VALUE header_value, VALUE self) {
     if (rb_funcall(value, rb_intern("include?"), 1, rb_str_new2("gzip"))) {
       #ifdef CURLOPT_ACCEPT_ENCODING
         curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "gzip");
-      #elif CURLOPT_ENCODING
+      #elif defined CURLOPT_ENCODING
         curl_easy_setopt(curl, CURLOPT_ENCODING, "gzip");
       #else
         rb_raise(rb_eArgError,
