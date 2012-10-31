@@ -260,9 +260,24 @@ static VALUE session_unescape(VALUE self, VALUE value) {
 /* Callback used to iterate over the HTTP headers and store them in an slist. */
 static int each_http_header(VALUE header_key, VALUE header_value, VALUE self) {
   struct curl_state *state = get_curl_state(self);
+  CURL* curl = state->handle;
+
   VALUE name = rb_obj_as_string(header_key);
   VALUE value = rb_obj_as_string(header_value);
   VALUE header_str = Qnil;
+
+  if (rb_str_cmp(name, rb_str_new2("Accept-Encoding")) == 0) {
+    if (rb_funcall(value, rb_intern("include?"), 1, rb_str_new2("gzip"))) {
+      #ifdef CURLOPT_ACCEPT_ENCODING
+        curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "gzip");
+      #elif defined CURLOPT_ENCODING
+        curl_easy_setopt(curl, CURLOPT_ENCODING, "gzip");
+      #else
+        rb_raise(rb_eArgError,
+                "The libcurl version installed doesn't support 'gzip'.");
+      #endif
+    }
+  }
 
   header_str = rb_str_plus(name, rb_str_new2(": "));
   header_str = rb_str_plus(header_str, value);
