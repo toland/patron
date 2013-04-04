@@ -340,7 +340,9 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE credentials           = Qnil;
   VALUE ignore_content_length = Qnil;
   VALUE insecure              = Qnil;
+  VALUE cacert                = Qnil;
   VALUE buffer_size           = Qnil;
+  VALUE action_name           = rb_iv_get(request, "@action");
 
   headers = rb_iv_get(request, "@headers");
   if (!NIL_P(headers)) {
@@ -351,7 +353,6 @@ static void set_options_from_request(VALUE self, VALUE request) {
     rb_hash_foreach(headers, each_http_header, self);
   }
 
-  VALUE action_name = rb_iv_get(request, "@action");
 
   action = rb_to_id(action_name);
   if (action == rb_intern("GET")) {
@@ -479,6 +480,11 @@ static void set_options_from_request(VALUE self, VALUE request) {
   if(!NIL_P(insecure)) {
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 1);
+  }
+
+  cacert = rb_iv_get(request, "@cacert");
+  if(!NIL_P(cacert)) {
+    curl_easy_setopt(curl, CURLOPT_CAINFO, StringValuePtr(cacert));
   }
 
   buffer_size = rb_iv_get(request, "@buffer_size");
