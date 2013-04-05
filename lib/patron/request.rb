@@ -45,12 +45,12 @@ module Patron
     READER_VARS = [
       :url, :username, :password, :file_name, :proxy, :proxy_type, :insecure,
       :ignore_content_length, :multipart, :action, :timeout, :connect_timeout,
-      :max_redirects, :headers, :auth_type, :upload_data, :buffer_size
+      :max_redirects, :headers, :auth_type, :upload_data, :buffer_size, :cacert
     ]
 
     WRITER_VARS = [
       :url, :username, :password, :file_name, :proxy, :proxy_type, :insecure,
-      :ignore_content_length, :multipart
+      :ignore_content_length, :multipart, :cacert
     ]
 
     attr_reader *READER_VARS
@@ -155,13 +155,13 @@ module Patron
     def marshal_dump
       [ @url, @username, @password, @file_name, @proxy, @proxy_type, @insecure,
         @ignore_content_length, @multipart, @action, @timeout, @connect_timeout,
-        @max_redirects, @headers, @auth_type, @upload_data, @buffer_size ]
+        @max_redirects, @headers, @auth_type, @upload_data, @buffer_size, @cacert ]
     end
 
     def marshal_load(data)
       @url, @username, @password, @file_name, @proxy, @proxy_type, @insecure,
       @ignore_content_length, @multipart, @action, @timeout, @connect_timeout,
-      @max_redirects, @headers, @auth_type, @upload_data, @buffer_size = data
+      @max_redirects, @headers, @auth_type, @upload_data, @buffer_size, @cacert = data
     end
 
   end

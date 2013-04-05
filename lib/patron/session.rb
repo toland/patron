@@ -68,6 +68,9 @@ module Patron
     # Does this session stricly verify SSL certificates?
     attr_accessor :insecure
 
+    # What cacert file should this session use to verify SSL certificates?
+    attr_accessor :cacert
+
     # Does this session ignore Content-Size headers?
     attr_accessor :ignore_content_length
 
@@ -204,6 +207,7 @@ module Patron
       req.proxy_type             = options.fetch :proxy_type,            self.proxy_type
       req.auth_type              = options.fetch :auth_type,             self.auth_type
       req.insecure               = options.fetch :insecure,              self.insecure
+      req.cacert                 = options.fetch :cacert,                self.cacert
       req.ignore_content_length  = options.fetch :ignore_content_length, self.ignore_content_length
       req.buffer_size            = options.fetch :buffer_size,           self.buffer_size
       req.multipart              = options[:multipart]
