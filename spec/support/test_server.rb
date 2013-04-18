@@ -24,6 +24,9 @@
 ## -------------------------------------------------------------------
 require 'yaml'
 require 'webrick'
+require 'webrick/https'
+require 'openssl'
+
 include WEBrick
 
 # This ugly little hack is necessary to make the specs pass when running
@@ -125,22 +128,32 @@ end
 
 class PatronTestServer
 
-  def self.start( log_file = nil )
-    new(log_file).start
+  def self.start( log_file = nil, ssl = false, port = 9001 )
+    new(log_file, ssl, port).start
   end
 
-  def initialize( log_file = nil )
+  def initialize( log_file = nil, ssl = false, port = 9001 )
     log_file ||= StringIO.new
     log = WEBrick::Log.new(log_file)
 
-    @server = WEBrick::HTTPServer.new(
-      :Port => 9001,
+    options = {
+      :Port => port,
       :Logger => log,
       :AccessLog => [
           [ log, WEBrick::AccessLog::COMMON_LOG_FORMAT ],
           [ log, WEBrick::AccessLog::REFERER_LOG_FORMAT ]
        ]
-    )
+    }
+
+    if ssl
+      options[:SSLEnable] = true
+      options[:SSLCertificate] = OpenSSL::X509::Certificate.new(File.open("spec/certs/cacert.pem").read)
+      options[:SSLPrivateKey] = OpenSSL::PKey::RSA.new(File.open("spec/certs/privkey.pem").read)
+      options[:SSLCertName] = [ ["CN", WEBrick::Utils::getservername ] ]
+    end
+
+    @server = WEBrick::HTTPServer.new(options)
+
     @server.mount("/test", TestServlet)
     @server.mount("/testpost", TestPostBodyServlet)
     @server.mount("/timeout", TimeoutServlet)
@@ -149,6 +162,7 @@ class PatronTestServer
     @server.mount("/setcookie", SetCookieServlet)
     @server.mount("/repetitiveheader", RepetitiveHeaderServlet)
     @server.mount("/wrongcontentlength", WrongContentLengthServlet)
+
   end
 
   def start
