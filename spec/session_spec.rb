@@ -84,6 +84,13 @@ describe Patron::Session do
     body.header["user-agent"].should == ["PatronTest"]
   end
 
+  it "should include default headers in a request, if they were defined" do
+    @session.headers = {"User-Agent" => "PatronTest"}
+    response = @session.get("/test")
+    body = YAML::load(response.body)
+    body.header["user-agent"].should == ["PatronTest"]
+  end
+
   it "should merge custom headers with session headers" do
     @session.headers["X-Test"] = "Testing"
     response = @session.get("/test", {"User-Agent" => "PatronTest"})
