@@ -59,7 +59,7 @@ module Patron
     attr_accessor :proxy_type
 
     # Standard set of headers that are used in all requests.
-    attr_reader :headers
+    attr_accessor :headers
 
     # Set the authentication type for the request.
     # @see Patron::Request#auth_type
