@@ -423,6 +423,20 @@ static void set_options_from_request(VALUE self, VALUE request) {
     } else {
       rb_raise(rb_eArgError, "Must provide either data or a filename when doing a PUT or POST");
     }
+
+  // support for data passed with a DELETE request (e.g.: used by elasticsearch)
+  } else if (action == rb_intern("DELETE")) {
+      VALUE data = rb_iv_get(request, "@upload_data");
+
+      if (!NIL_P(data)) {
+        long len = RSTRING_LEN(data);
+        state->upload_buf = StringValuePtr(data);
+        curl_easy_setopt(curl, CURLOPT_POST, 1);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, state->upload_buf);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
+      }
+      curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+
   } else if (action == rb_intern("HEAD")) {
     curl_easy_setopt(curl, CURLOPT_NOBODY, 1);
   } else {

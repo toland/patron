@@ -141,6 +141,8 @@ module Patron
     end
 
     # As #get but sends an HTTP DELETE request.
+    # Notice: this method doesn't accept any +data+ argument: if you need to send data with
+    # a delete request, please, use the #request method.
     def delete(url, headers = {})
       request(:delete, url, headers)
     end

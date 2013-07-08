@@ -166,6 +166,14 @@ describe Patron::Session do
     body.header['content-length'].should == [data.size.to_s]
   end
 
+  it "should upload data with :delete" do
+    data = "upload data"
+    response = @session.request(:delete, "/test", {}, :data => data)
+    body = YAML::load(response.body)
+    body.request_method.should == "DELETE"
+    body.header['content-length'].should == [data.size.to_s]
+  end
+
   it "should raise when no data is provided to :put" do
     lambda { @session.put("/test", nil) }.should raise_error(ArgumentError)
   end
