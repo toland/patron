@@ -493,7 +493,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
   insecure = rb_iv_get(request, "@insecure");
   if(!NIL_P(insecure)) {
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 1);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
   }
 
   cacert = rb_iv_get(request, "@cacert");
