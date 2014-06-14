@@ -259,6 +259,14 @@ describe Patron::Session do
     body.request_method.should == "GET"
   end
 
+  it "should work with different SSL versions" do
+    ['SSLv2', 'SSLv3', 'TLSv1'].each do |version|
+      @session.ssl_version = version
+      response = @session.get("/test")
+      response.status.should == 200
+    end
+  end
+
   # ------------------------------------------------------------------------
   describe 'when debug is enabled' do
     it 'it should not clobber stderr' do
