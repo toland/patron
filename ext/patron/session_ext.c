@@ -341,6 +341,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE ignore_content_length = Qnil;
   VALUE insecure              = Qnil;
   VALUE cacert                = Qnil;
+  VALUE ssl_version           = Qnil;
   VALUE buffer_size           = Qnil;
   VALUE action_name           = rb_iv_get(request, "@action");
 
@@ -471,7 +472,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
   proxy = rb_iv_get(request, "@proxy");
   if (!NIL_P(proxy)) {
-      curl_easy_setopt(curl, CURLOPT_PROXY, StringValuePtr(proxy));
+    curl_easy_setopt(curl, CURLOPT_PROXY, StringValuePtr(proxy));
   }
 
   proxy_type = rb_iv_get(request, "@proxy_type");
@@ -494,6 +495,18 @@ static void set_options_from_request(VALUE self, VALUE request) {
   if(!NIL_P(insecure)) {
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
+  }
+
+  ssl_version = rb_iv_get(request, "@ssl_version");
+  if(!NIL_P(ssl_version)) {
+    char* version = StringValuePtr(ssl_version);
+    if(strcmp(version, "SSLv2") == 0) {
+      curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_SSLv2);
+    } else if(strcmp(version, "SSLv3") == 0) {
+      curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_SSLv3);
+    } else if(strcmp(version, "TLSv1") == 0) {
+      curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1);
+    }
   }
 
   cacert = rb_iv_get(request, "@cacert");
@@ -766,4 +779,3 @@ void Init_session_ext() {
   rb_define_const(mProxyType, "SOCKS4A", INT2FIX(CURLPROXY_SOCKS4A));
   rb_define_const(mProxyType, "SOCKS5_HOSTNAME", INT2FIX(CURLPROXY_SOCKS5_HOSTNAME));
 }
-

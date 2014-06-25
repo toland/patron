@@ -45,12 +45,13 @@ module Patron
     READER_VARS = [
       :url, :username, :password, :file_name, :proxy, :proxy_type, :insecure,
       :ignore_content_length, :multipart, :action, :timeout, :connect_timeout,
-      :max_redirects, :headers, :auth_type, :upload_data, :buffer_size, :cacert
+      :max_redirects, :headers, :auth_type, :upload_data, :buffer_size, :cacert,
+      :ssl_version
     ]
 
     WRITER_VARS = [
       :url, :username, :password, :file_name, :proxy, :proxy_type, :insecure,
-      :ignore_content_length, :multipart, :cacert
+      :ignore_content_length, :multipart, :cacert, :ssl_version
     ]
 
     attr_reader *READER_VARS
