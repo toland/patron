@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    patron (0.4.19)
+    patron (0.4.20)
 
 GEM
   remote: https://rubygems.org/
