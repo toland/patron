@@ -354,9 +354,9 @@ static void set_options_from_request(VALUE self, VALUE request) {
     rb_hash_foreach(headers, each_http_header, self);
   }
 
+  action = SYM2ID(action_name);
 
-  action = rb_to_id(action_name);
-  if (action == rb_intern("GET")) {
+  if (action == rb_intern("get")) {
     VALUE data = rb_iv_get(request, "@upload_data");
     VALUE download_file = rb_iv_get(request, "@file_name");
 
@@ -376,7 +376,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
     } else {
       state->download_file = NULL;
     }
-  } else if (action == rb_intern("POST") || action == rb_intern("PUT")) {
+  } else if (action == rb_intern("post") || action == rb_intern("put")) {
     VALUE data = rb_iv_get(request, "@upload_data");
     VALUE filename = rb_iv_get(request, "@file_name");
     VALUE multipart = rb_iv_get(request, "@multipart");
@@ -386,7 +386,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
       state->upload_buf = StringValuePtr(data);
 
-      if (action == rb_intern("POST")) {
+      if (action == rb_intern("post")) {
         curl_easy_setopt(curl, CURLOPT_POST, 1);
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, state->upload_buf);
         curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
@@ -401,14 +401,14 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
       curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
 
-      if (action == rb_intern("POST")) {
+      if (action == rb_intern("post")) {
         curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "POST");
       }
 
       state->upload_file = open_file(filename, "rb");
       curl_easy_setopt(curl, CURLOPT_READDATA, state->upload_file);
     } else if (!NIL_P(multipart)) {
-      if (action == rb_intern("POST")) {
+      if (action == rb_intern("post")) {
         if(!NIL_P(data) && !NIL_P(filename)) {
           if (rb_type(data) == T_HASH && rb_type(filename) == T_HASH) {
             rb_hash_foreach(data, formadd_values, self);
@@ -426,7 +426,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
     }
 
   // support for data passed with a DELETE request (e.g.: used by elasticsearch)
-  } else if (action == rb_intern("DELETE")) {
+  } else if (action == rb_intern("delete")) {
       VALUE data = rb_iv_get(request, "@upload_data");
 
       if (!NIL_P(data)) {
@@ -438,9 +438,10 @@ static void set_options_from_request(VALUE self, VALUE request) {
       }
       curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
 
-  } else if (action == rb_intern("HEAD")) {
+  } else if (action == rb_intern("head")) {
     curl_easy_setopt(curl, CURLOPT_NOBODY, 1);
   } else {
+    VALUE action_name = rb_funcall(request, rb_intern("action_name"), 0);
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, StringValuePtr(action_name));
   }
 
