@@ -35,7 +35,7 @@ module Patron
     VALID_ACTIONS = %w[GET PUT POST DELETE HEAD COPY]
 
     def initialize
-      @action = 'GET'
+      @action = :get
       @headers = {}
       @timeout = 0
       @connect_timeout = 0
@@ -82,20 +82,17 @@ module Patron
     def upload_data=(data)
       @upload_data = case data
       when Hash
-        self.multipart ? data : Util.build_query_string_from_hash(data, action == 'POST')
+        self.multipart ? data : Util.build_query_string_from_hash(data, action == :post)
       else
         data
       end
     end
 
-    def action=(new_action)
-      action = new_action.to_s.upcase
-
-      if !VALID_ACTIONS.include?(action)
+    def action=(action)
+      if !VALID_ACTIONS.include?(action.to_s.upcase)
         raise ArgumentError, "Action must be one of #{VALID_ACTIONS.join(', ')}"
       end
-
-      @action = action
+      @action = action.downcase.to_sym
     end
 
     def timeout=(new_timeout)
@@ -141,6 +138,10 @@ module Patron
     def credentials
       return nil if username.nil? || password.nil?
       "#{username}:#{password}"
+    end
+
+    def action_name
+      @action.to_s.upcase
     end
 
     def eql?(request)
