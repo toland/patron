@@ -201,6 +201,7 @@ module Patron
       handle_request(req)
     end
 
+    # Build a request object that can be used in +handle_request+
     def build_request(action, url, headers, options = {})
       # If the Expect header isn't set uploads are really slow
       headers['Expect'] ||= ''
