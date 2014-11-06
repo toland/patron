@@ -197,42 +197,45 @@ module Patron
 
     # Send an HTTP request to the specified +url+.
     def request(action, url, headers, options = {})
-      # If the Expect header isn't set uploads are really slow
-      headers['Expect'] ||= ''
-
-      req = Request.new
-      req.action                 = action
-      req.headers                = self.headers.merge headers
-      req.timeout                = options.fetch :timeout,               self.timeout
-      req.connect_timeout        = options.fetch :connect_timeout,       self.connect_timeout
-      req.max_redirects          = options.fetch :max_redirects,         self.max_redirects
-      req.username               = options.fetch :username,              self.username
-      req.password               = options.fetch :password,              self.password
-      req.proxy                  = options.fetch :proxy,                 self.proxy
-      req.proxy_type             = options.fetch :proxy_type,            self.proxy_type
-      req.auth_type              = options.fetch :auth_type,             self.auth_type
-      req.insecure               = options.fetch :insecure,              self.insecure
-      req.ssl_version            = options.fetch :ssl_version,           self.ssl_version
-      req.cacert                 = options.fetch :cacert,                self.cacert
-      req.ignore_content_length  = options.fetch :ignore_content_length, self.ignore_content_length
-      req.buffer_size            = options.fetch :buffer_size,           self.buffer_size
-      req.multipart              = options[:multipart]
-      req.upload_data            = options[:data]
-      req.file_name              = options[:file]
-
-      base_url = self.base_url.to_s
-      url = url.to_s
-      raise ArgumentError, "Empty URL" if base_url.empty? && url.empty?
-      uri = URI.join(base_url, url)
-      query = uri.query.to_s.split('&')
-      query += options[:query].is_a?(Hash) ? Util.build_query_pairs_from_hash(options[:query]) : options[:query].to_s.split('&')
-      uri.query = query.join('&')
-      uri.query = nil if uri.query.empty?
-      url = uri.to_s
-      req.url = url
-
+      req = build_request(action, url, headers, options)
       handle_request(req)
     end
 
+    def build_request(action, url, headers, options = {})
+      # If the Expect header isn't set uploads are really slow
+      headers['Expect'] ||= ''
+
+      Request.new.tap do |req|
+        req.action                 = action
+        req.headers                = self.headers.merge headers
+        req.timeout                = options.fetch :timeout,               self.timeout
+        req.connect_timeout        = options.fetch :connect_timeout,       self.connect_timeout
+        req.max_redirects          = options.fetch :max_redirects,         self.max_redirects
+        req.username               = options.fetch :username,              self.username
+        req.password               = options.fetch :password,              self.password
+        req.proxy                  = options.fetch :proxy,                 self.proxy
+        req.proxy_type             = options.fetch :proxy_type,            self.proxy_type
+        req.auth_type              = options.fetch :auth_type,             self.auth_type
+        req.insecure               = options.fetch :insecure,              self.insecure
+        req.ssl_version            = options.fetch :ssl_version,           self.ssl_version
+        req.cacert                 = options.fetch :cacert,                self.cacert
+        req.ignore_content_length  = options.fetch :ignore_content_length, self.ignore_content_length
+        req.buffer_size            = options.fetch :buffer_size,           self.buffer_size
+        req.multipart              = options[:multipart]
+        req.upload_data            = options[:data]
+        req.file_name              = options[:file]
+
+        base_url = self.base_url.to_s
+        url = url.to_s
+        raise ArgumentError, "Empty URL" if base_url.empty? && url.empty?
+        uri = URI.join(base_url, url)
+        query = uri.query.to_s.split('&')
+        query += options[:query].is_a?(Hash) ? Util.build_query_pairs_from_hash(options[:query]) : options[:query].to_s.split('&')
+        uri.query = query.join('&')
+        uri.query = nil if uri.query.empty?
+        url = uri.to_s
+        req.url = url
+      end
+    end
   end
 end
