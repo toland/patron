@@ -87,12 +87,23 @@ module Patron
     private :handle_request, :enable_cookie_session, :set_debug_file
 
     # Create a new Session object.
-    def initialize
-      @headers = {}
-      @timeout = 5
-      @connect_timeout = 1
-      @max_redirects = 5
-      @auth_type = :basic
+    def initialize(args = {}, &block)
+
+      # Allows accessor args to be set via constructor hash. Ex:  {:base_url => 'www.home.com'}
+      args.each do |attribute, value|
+        self.send("#{attribute}=", value)
+      end
+
+      # Allows accessor args to be set via block.
+      if block_given?
+        yield self
+      end
+
+      @headers ||= {}
+      @timeout ||= 5
+      @connect_timeout ||= 1
+      @max_redirects ||= 5
+      @auth_type ||= :basic
     end
 
     # Turn on cookie handling for this session, storing them in memory by
