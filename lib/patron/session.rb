@@ -91,7 +91,7 @@ module Patron
 
       # Allows accessors to be set via constructor hash. Ex:  {:base_url => 'www.home.com'}
       args.each do |attribute, value|
-        self.send("#{attribute}=", value)
+        send("#{attribute}=", value)
       end
 
       # Allows accessors to be set via block.
