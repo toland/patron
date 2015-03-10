@@ -89,12 +89,12 @@ module Patron
     # Create a new Session object.
     def initialize(args = {}, &block)
 
-      # Allows accessor args to be set via constructor hash. Ex:  {:base_url => 'www.home.com'}
+      # Allows accessors to be set via constructor hash. Ex:  {:base_url => 'www.home.com'}
       args.each do |attribute, value|
         self.send("#{attribute}=", value)
       end
 
-      # Allows accessor args to be set via block.
+      # Allows accessors to be set via block.
       if block_given?
         yield self
       end
