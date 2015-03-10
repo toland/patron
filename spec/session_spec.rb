@@ -322,6 +322,73 @@ describe Patron::Session do
     "Basic " + Base64.encode64("#{user}:#{passwd}").strip
   end
 
+  describe 'when instantiating with hash arguments' do
+
+    let(:args) { {
+        :timeout => 10,
+        :base_url => 'http://localhost:9001',
+        :headers => {'User-Agent' => 'myapp/1.0'}
+    } }
+
+    let(:session) { Patron::Session.new(args) }
+
+    it 'sets the base_url' do
+      session.base_url.should == args[:base_url]
+    end
+
+    it 'sets timeout' do
+      session.timeout.should == args[:timeout]
+    end
+
+    it 'sets headers' do
+      session.headers.should == args[:headers]
+    end
+
+    context 'when given an incorrect accessor name' do
+      let(:args) { { :not_a_real_accessor => 'http://localhost:9001' }}
+      it 'raises no method error' do
+        expect { session }.to raise_error NoMethodError
+      end
+    end
+
+  end
+
+  describe 'when instantiating with a block' do
+    args = {
+        :timeout => 10,
+        :base_url => 'http://localhost:9001',
+        :headers => {'User-Agent' => 'myapp/1.0'}
+    }
+
+    session = Patron::Session.new do |patron|
+      patron.timeout = args[:timeout]
+      patron.base_url = args[:base_url]
+      patron.headers =  args[:headers]
+    end
+
+    it 'sets the base_url' do
+      session.base_url.should == args[:base_url]
+    end
+
+    it 'sets timeout' do
+      session.timeout.should == args[:timeout]
+    end
+
+    it 'sets headers' do
+      session.headers.should == args[:headers]
+    end
+
+    context 'when given an incorrect accessor name' do
+      it 'raises no method error' do
+        expect {
+          Patron::Session.new do |patron|
+            patron.timeoutttt = args[:timeout]
+          end
+        }.to raise_error NoMethodError
+      end
+    end
+  end
+
   # ------------------------------------------------------------------------
   describe 'when debug is enabled' do
     it 'it should not clobber stderr' do
