@@ -17,6 +17,23 @@ requests:
     sess.timeout = 10
     sess.base_url = "http://myserver.com:9900"
     sess.headers['User-Agent'] = 'myapp/1.0'
+
+You can set options with a hash in the constructor:
+
+    sess = Patron::Session.new({ :timeout => 10,
+                                 :base_url => 'http://myserver.com:9900',
+                                 :headers => {'User-Agent' => 'myapp/1.0'} } )
+
+Or the set options in a block:
+
+    sess = Patron::Session.new do |patron|
+        patron.timeout = 10
+        patron.base_url = 'http://myserver.com:9900'
+        patron.headers = {'User-Agent' => 'myapp/1.0'}
+    end
+
+Output debug log:
+
     sess.enable_debug "/tmp/patron.debug"
 
 The Session is used to make HTTP requests.
