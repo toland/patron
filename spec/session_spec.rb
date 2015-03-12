@@ -56,6 +56,12 @@ describe Patron::Session do
     body.request_method.should == "GET"
   end
 
+  it "should use full base url" do
+    @session.base_url = "http://localhost:9001/api/v1"
+    response = @session.get("/test")
+    response.url.should == "http://localhost:9001/api/v1/test"
+  end
+
   it 'should ignore #base_url when a full URL is provided' do
     @session.base_url = "http://example.com:123"
     lambda { @session.get("http://localhost:9001/test") }.should_not raise_error(URI::InvalidURIError)
