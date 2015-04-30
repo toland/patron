@@ -33,6 +33,11 @@ describe Patron::Session do
     @session = Patron::Session.new
     @session.base_url = "http://localhost:9001"
   end
+  
+  it "should work when forcing ipv4" do
+    @session.force_ipv4 = true
+    lambda { @session.get("/test") }.should_not raise_error
+  end
 
   it "should escape and unescape strings symetrically" do
     string = "foo~bar baz/"
