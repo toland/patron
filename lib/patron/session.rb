@@ -107,6 +107,7 @@ module Patron
       @connect_timeout ||= 1
       @max_redirects ||= 5
       @auth_type ||= :basic
+      @force_ipv4 ||= false
     end
 
     # Turn on cookie handling for this session, storing them in memory by
