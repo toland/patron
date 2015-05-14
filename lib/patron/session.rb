@@ -83,6 +83,9 @@ module Patron
 
     # Default encoding of responses. Used if no charset is provided by the host.
     attr_accessor :default_response_charset
+    
+    # Force curl to use IPv4
+    attr_accessor :force_ipv4
 
     private :handle_request, :enable_cookie_session, :set_debug_file
 
@@ -104,6 +107,7 @@ module Patron
       @connect_timeout ||= 1
       @max_redirects ||= 5
       @auth_type ||= :basic
+      @force_ipv4 ||= false
     end
 
     # Turn on cookie handling for this session, storing them in memory by
@@ -222,6 +226,7 @@ module Patron
         req.headers                = self.headers.merge headers
         req.timeout                = options.fetch :timeout,               self.timeout
         req.connect_timeout        = options.fetch :connect_timeout,       self.connect_timeout
+        req.force_ipv4             = options.fetch :force_ipv4,            self.force_ipv4
         req.max_redirects          = options.fetch :max_redirects,         self.max_redirects
         req.username               = options.fetch :username,              self.username
         req.password               = options.fetch :password,              self.password

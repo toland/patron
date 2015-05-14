@@ -46,12 +46,12 @@ module Patron
       :url, :username, :password, :file_name, :proxy, :proxy_type, :insecure,
       :ignore_content_length, :multipart, :action, :timeout, :connect_timeout,
       :max_redirects, :headers, :auth_type, :upload_data, :buffer_size, :cacert,
-      :ssl_version
+      :ssl_version, :force_ipv4
     ]
 
     WRITER_VARS = [
       :url, :username, :password, :file_name, :proxy, :proxy_type, :insecure,
-      :ignore_content_length, :multipart, :cacert, :ssl_version
+      :ignore_content_length, :multipart, :cacert, :ssl_version, :force_ipv4
     ]
 
     attr_reader *READER_VARS
@@ -110,7 +110,7 @@ module Patron
 
       @connect_timeout = new_timeout.to_i
     end
-
+    
     def max_redirects=(new_max_redirects)
       if new_max_redirects.to_i < -1
         raise ArgumentError, "Max redirects must be a positive integer, 0 or -1"

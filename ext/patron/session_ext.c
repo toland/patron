@@ -355,7 +355,9 @@ static void set_options_from_request(VALUE self, VALUE request) {
   }
 
   action = SYM2ID(action_name);
-
+  if(rb_iv_get(request, "@force_ipv4")) {
+    curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+  }
   if (action == rb_intern("get")) {
     VALUE data = rb_iv_get(request, "@upload_data");
     VALUE download_file = rb_iv_get(request, "@file_name");
