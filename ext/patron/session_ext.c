@@ -23,6 +23,9 @@
  *
 \* -------------------------------------------------------------------------- */
 #include <ruby.h>
+#if defined(USE_TBR) && defined(HAVE_THREAD_H)
+#include <ruby/thread.h>
+#endif
 #include <curl/curl.h>
 #include "membuffer.h"
 #include "sglib.h"  /* Simple Generic Library -> http://sglib.sourceforge.net */
@@ -595,11 +598,18 @@ static VALUE perform_request(VALUE self) {
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, body_buffer);
   }
 
-#if defined(HAVE_TBR) && defined(USE_TBR)
+#if (defined(HAVE_TBR) || defined(HAVE_TCWOGVL)) && defined(USE_TBR)
+#if defined(HAVE_TCWOGVL)
+  ret = (CURLcode) rb_thread_call_without_gvl(
+          (void *(*)(void *)) curl_easy_perform, curl,
+          RUBY_UBF_IO, 0
+        );
+#else
   ret = (CURLcode) rb_thread_blocking_region(
           (rb_blocking_function_t*) curl_easy_perform, curl,
           RUBY_UBF_IO, 0
         );
+#endif
 #else
   ret = curl_easy_perform(curl);
 #endif
