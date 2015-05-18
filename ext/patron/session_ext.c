@@ -112,7 +112,7 @@ struct curl_state_list {
   struct curl_state_list  *next;
 };
 
-#define CS_LIST_COMPARATOR(p, _state_) (p->state == _state_)
+#define CS_LIST_COMPARATOR(p, _state_) (p->state - _state_)
 
 static struct curl_state_list *cs_list = NULL;
 
@@ -131,9 +131,9 @@ static void cs_list_remove(struct curl_state *state) {
   struct curl_state_list *item = NULL;
 
   assert(state != NULL);
-  SGLIB_LIST_FIND_MEMBER(struct curl_state_list, cs_list, state, CS_LIST_COMPARATOR, next, item);
+
+  SGLIB_LIST_DELETE_IF_MEMBER(struct curl_state_list, cs_list, state, CS_LIST_COMPARATOR, next, item);
   if (item) {
-    SGLIB_LIST_DELETE(struct curl_state_list, cs_list, item, next);
     ruby_xfree(item);
   }
 }
