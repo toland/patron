@@ -245,7 +245,7 @@ module Patron
         base_url = self.base_url.to_s
         url = url.to_s
         raise ArgumentError, "Empty URL" if base_url.empty? && url.empty?
-        uri = URI.parse(File.join(base_url, url))
+        uri = URI.parse(base_url.empty? ? url : File.join(base_url, url))
         query = uri.query.to_s.split('&')
         query += options[:query].is_a?(Hash) ? Util.build_query_pairs_from_hash(options[:query]) : options[:query].to_s.split('&')
         uri.query = query.join('&')
