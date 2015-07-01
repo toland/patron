@@ -85,7 +85,7 @@ module Patron
     def parse_headers(header_data)
       @headers = {}
 
-      header_data.split(/\r\n/).each do |header|
+      header_data.split("\r\n").each do |header|
         if header =~ %r|^HTTP/1.[01]|
           @status_line = header.strip
         else
