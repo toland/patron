@@ -85,19 +85,19 @@ module Patron
     def parse_headers(header_data)
       @headers = {}
 
-      header_data.split("\r\n").each do |header|
-        if header =~ %r|^HTTP/1.[01]|
-          @status_line = header.strip
-        else
-          parts = header.split(':', 2)
-          unless parts.empty?
-            parts[1].strip! unless parts[1].nil?
-            if @headers.has_key?(parts[0])
-              @headers[parts[0]] = [@headers[parts[0]]] unless @headers[parts[0]].kind_of? Array
-              @headers[parts[0]] << parts[1]
-            else
-              @headers[parts[0]] = parts[1]
-            end
+      lines = header_data.split("\r\n")
+
+      @status_line = lines.shift
+
+      lines.each do |header|
+        parts = header.split(':', 2)
+        unless parts.empty?
+          parts[1].strip! unless parts[1].nil?
+          if @headers.has_key?(parts[0])
+            @headers[parts[0]] = [@headers[parts[0]]] unless @headers[parts[0]].kind_of? Array
+            @headers[parts[0]] << parts[1]
+          else
+            @headers[parts[0]] = parts[1]
           end
         end
       end
