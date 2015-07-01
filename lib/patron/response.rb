@@ -89,16 +89,18 @@ module Patron
 
       @status_line = lines.shift
 
-      lines.each do |header|
-        parts = header.split(':', 2)
-        unless parts.empty?
-          parts[1].strip! unless parts[1].nil?
-          if @headers.has_key?(parts[0])
-            @headers[parts[0]] = [@headers[parts[0]]] unless @headers[parts[0]].kind_of? Array
-            @headers[parts[0]] << parts[1]
-          else
-            @headers[parts[0]] = parts[1]
-          end
+      lines.each do |line|
+        break if line.empty?
+
+        hdr, val = line.split(":", 2)
+
+        val.strip! unless val.nil?
+
+        if @headers.key?(hdr)
+          @headers[hdr] = [@headers[hdr]] unless @headers[hdr].kind_of? Array
+          @headers[hdr] << val
+        else
+          @headers[hdr] = val
         end
       end
     end
