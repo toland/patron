@@ -22,7 +22,7 @@
 ##
 ## -------------------------------------------------------------------
 require 'rake/clean'
-require 'rake/rdoctask'
+require 'rdoc/task'
 require 'rake/extensiontask'
 require 'rspec/core/rake_task'
 require 'bundler'
