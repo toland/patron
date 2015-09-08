@@ -35,28 +35,28 @@ describe Patron::Response do
   it "should strip extra spaces from header values" do
     response = @session.get("/test")
     # All digits, no spaces
-    response.headers['Content-Length'].should match(/^\d+$/)
+    expect(response.headers['Content-Length']).to match(/^\d+$/)
   end
 
   it "should return an array of values when multiple header fields have same name" do
     response = @session.get("/repetitiveheader")
-    response.headers['Set-Cookie'].should == ["a=1","b=2"]
+    expect(response.headers['Set-Cookie']).to be == ["a=1","b=2"]
   end
 
   it "should works with non-text files" do
     response = @session.get("/picture")
-    response.headers['Content-Type'].should == 'image/png'
-    response.body.encoding.should == Encoding::ASCII_8BIT
+    expect(response.headers['Content-Type']).to be == 'image/png'
+    expect(response.body.encoding).to be == Encoding::ASCII_8BIT
   end
 
   it "should not allow a default charset to be nil" do
-    Encoding.stub(:default_internal).and_return("UTF-8")
+    allow(Encoding).to receive(:default_internal).and_return("UTF-8")
     expect {
       Patron::Response.new("url", "status", 0, "", "", nil)
     }.to_not raise_error
   end
 
   it "should be able to serialize and deserialize itself" do
-    Marshal.load(Marshal.dump(@request)).should eql(@request)
+    expect(Marshal.load(Marshal.dump(@request))).to eql(@request)
   end
 end

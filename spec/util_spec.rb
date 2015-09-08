@@ -24,14 +24,14 @@
 require File.expand_path("./spec") + '/spec_helper.rb'
 
 describe Patron::Util do
-  
+
   describe :build_query_pairs_from_hash do
     it "correctly serializes a simple hash" do
       hash = {:foo => "bar", "baz" => 42}
       array = Patron::Util.build_query_pairs_from_hash(hash)
-      array.size.should == 2
-      array.should include("foo=bar")
-      array.should include("baz=42")
+      expect(array.size).to be == 2
+      expect(array).to include("foo=bar")
+      expect(array).to include("baz=42")
     end
     it "correctly serializes a more complex hash" do
       hash = {
@@ -49,21 +49,21 @@ describe Patron::Util do
         }
       }
       array = Patron::Util.build_query_pairs_from_hash(hash)
-      array.size.should == 4
-      array.should include("foo=bar")
-      array.should include("baz[quux][zing][ying]=42")
-      array.should include("baz[blargh][spaz]=sox")
-      array.should include("baz[blargh][razz]=matazz")
+      expect(array.size).to be == 4
+      expect(array).to include("foo=bar")
+      expect(array).to include("baz[quux][zing][ying]=42")
+      expect(array).to include("baz[blargh][spaz]=sox")
+      expect(array).to include("baz[blargh][razz]=matazz")
     end
   end
-  
+
   describe :build_query_string_from_hash do
     it "correctly serializes a simple hash" do
       hash = {:foo => "bar", "baz" => 42}
       array = Patron::Util.build_query_string_from_hash(hash).split('&')
-      array.size.should == 2
-      array.should include("foo=bar")
-      array.should include("baz=42")
+      expect(array.size).to be == 2
+      expect(array).to include("foo=bar")
+      expect(array).to include("baz=42")
     end
     it "correctly serializes a more complex hash" do
       hash = {
@@ -81,12 +81,12 @@ describe Patron::Util do
         }
       }
       array = Patron::Util.build_query_string_from_hash(hash).split('&')
-      array.size.should == 4
-      array.should include("foo=bar")
-      array.should include("baz[quux][zing][ying]=42")
-      array.should include("baz[blargh][spaz]=sox")
-      array.should include("baz[blargh][razz]=matazz")
+      expect(array.size).to be == 4
+      expect(array).to include("foo=bar")
+      expect(array).to include("baz[quux][zing][ying]=42")
+      expect(array).to include("baz[blargh][spaz]=sox")
+      expect(array).to include("baz[blargh][razz]=matazz")
     end
   end
-  
+
 end
