@@ -59,11 +59,4 @@ end
 
 task :spec => [:compile]
 
-desc "Run specs with RCov"
-RSpec::Core::RakeTask.new('spec:rcov') do |t|
-  t.pattern = 'spec/**/*_spec.rb'
-  t.rcov = true
-  t.rcov_opts = %q(--sort coverage --comments --exclude "spec")
-end
-
 task :default => :spec
