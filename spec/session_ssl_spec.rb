@@ -244,8 +244,7 @@ describe Patron::Session do
     threads.each {|t| t.join }
   end
 
-  xit "should fail when insecure mode is off" do
-    # This spec fails, but I suspect that it is a setup problem.
+  it "should fail when insecure mode is off" do
     expect {
       @session.insecure = nil
       response = @session.get("/test")
