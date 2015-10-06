@@ -68,11 +68,18 @@ module Patron
     def determine_charset(header_data, body)
       header_data.match(charset_regex) || (body && body.match(charset_regex))
 
-      $1
+      charset = $1
+      validate_charset(charset) ? charset : nil
     end
 
     def charset_regex
       /(?:charset|encoding)="?([a-z0-9-]+)"?/i
+    end
+
+    def validate_charset(charset)
+      charset && Encoding.find(charset) && true
+    rescue ArgumentError
+      false
     end
 
     def convert_to_default_encoding!(str)

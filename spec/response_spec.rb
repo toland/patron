@@ -59,4 +59,30 @@ describe Patron::Response do
   it "should be able to serialize and deserialize itself" do
     expect(Marshal.load(Marshal.dump(@request))).to eql(@request)
   end
+
+  it "should encode body in the internal charset" do
+    allow(Encoding).to receive(:default_internal).and_return("UTF-8")
+
+    greek_encoding = Encoding.find("ISO-8859-7")
+    utf_encoding = Encoding.find("UTF-8")
+
+    headers = "HTTP/1.1 200 OK \r\nContent-Type: text/css\r\n"
+    body = "charset=ISO-8859-7 Ππ".encode(greek_encoding) # Greek alphabet
+
+    response = Patron::Response.new("url", "status", 0, headers, body, nil)
+
+    expect(response.body.encoding).to eql(utf_encoding)
+  end
+
+  it "should fallback to default charset when header or body charset is not valid" do
+    allow(Encoding).to receive(:default_internal).and_return("UTF-8")
+
+    encoding = Encoding.find("UTF-8")
+    headers = "HTTP/1.1 200 OK \r\nContent-Type: text/css\r\n"
+    body = "charset=invalid"
+
+    response = Patron::Response.new("url", "status", 0, headers, body, "UTF-8")
+
+    expect(response.body.encoding).to eql(encoding)
+  end
 end
