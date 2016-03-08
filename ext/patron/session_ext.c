@@ -647,6 +647,10 @@ static VALUE cleanup(VALUE self) {
     state->upload_file = NULL;
   }
 
+  if (state->post) {
+    curl_formfree(state->post);
+  }
+
   state->upload_buf = NULL;
 
   return Qnil;
