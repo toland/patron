@@ -215,7 +215,19 @@ module Patron
       req = build_request(action, url, headers, options)
       handle_request(req)
     end
-
+    
+    # Returns the class that will be used to build a Response
+    # from a Curl call.
+    #
+    # Primarily useful if you need a very lightweight Response
+    # object that does not have to perform all the parsing of
+    # various headers/status codes. The method must return
+    # a module that supports the same interface for +new+
+    # as ++Patron::Response++
+    def response_class
+      ::Patron::Response
+    end
+    
     # Build a request object that can be used in +handle_request+
     def build_request(action, url, headers, options = {})
       # If the Expect header isn't set uploads are really slow

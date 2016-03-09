@@ -537,7 +537,8 @@ static VALUE create_response(VALUE self, CURL* curl, VALUE header_buffer, VALUE 
   char* effective_url = NULL;
   long code = 0;
   long count = 0;
-
+  VALUE responseKlass = Qnil;
+  
   curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &effective_url);
   args[0] = rb_str_new2(effective_url);
 
@@ -550,8 +551,9 @@ static VALUE create_response(VALUE self, CURL* curl, VALUE header_buffer, VALUE 
   args[3] = header_buffer;
   args[4] = body_buffer;
   args[5] = rb_iv_get(self, "@default_response_charset");
-
-  return rb_class_new_instance(6, args, rb_const_get(mPatron, rb_intern("Response")));
+  
+  responseKlass = rb_funcall(self, rb_intern("response_class"), 0);
+  return rb_class_new_instance(6, args, responseKlass);
 }
 
 /* Raise an exception based on the Curl error code. */
