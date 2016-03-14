@@ -168,7 +168,14 @@ describe Patron::Session do
     expect(body.request_method).to be == "GET"
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
-
+  
+  it "should call to_s on the data being uploaded via GET if it is not already a String" do
+    data = 12345
+    response = @session.request(:get, "/test", {}, :data => data)
+    body = YAML::load(response.body)
+    expect(body.request_method).to be == "GET"
+  end
+  
   it "should upload data with :put" do
     data = "upload data"
     response = @session.put("/test", data)
@@ -204,7 +211,14 @@ describe Patron::Session do
     body = YAML::load(response.body)
     expect(body.header['transfer-encoding'].first).to be == "chunked"
   end
-
+  
+  it "should call to_s on the data being uploaded via POST if it is not already a String" do
+    data = 12345
+    response = @session.post("/testpost", data)
+    body = YAML::load(response.body)
+    expect(body['body']).to eq("12345")
+  end
+  
   it "should upload data with :post" do
     data = "upload data"
     response = @session.post("/test", data)
