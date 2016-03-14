@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    patron (0.4.20)
+    patron (0.5.1)
 
 GEM
   remote: https://rubygems.org/
@@ -42,4 +42,4 @@ DEPENDENCIES
   simplecov (>= 0.10.0)
 
 BUNDLED WITH
-   1.10.6
+   1.11.2
