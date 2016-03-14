@@ -347,6 +347,31 @@ describe Patron::Session do
     "Basic " + Base64.encode64("#{user}:#{passwd}").strip
   end
 
+  describe 'when using a subclass with a custom Response' do
+    
+    class CustomResponse
+      attr_reader :constructor_args
+      def initialize(*constructor_args)
+        @constructor_args = constructor_args
+      end
+    end
+    
+    class CustomizedSession < Patron::Session
+      def response_class
+        CustomResponse
+      end
+    end
+    
+    it 'instantiates the customized response object' do
+      @session = CustomizedSession.new
+      @session.base_url = "http://localhost:9001"
+      response = @session.request(:get, "/test", {}, :query => {:foo => "bar"})
+      
+      expect(response).to be_kind_of(CustomResponse)
+      expect(response.constructor_args.length).to eq(6)
+    end
+  end
+  
   describe 'when instantiating with hash arguments' do
 
     let(:args) { {
