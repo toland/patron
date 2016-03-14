@@ -367,6 +367,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
     curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
     if (!NIL_P(data)) {
+      data = rb_funcall(data, rb_intern("to_s"), 0);
       long len = RSTRING_LEN(data);
       state->upload_buf = StringValuePtr(data);
       curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
@@ -387,8 +388,8 @@ static void set_options_from_request(VALUE self, VALUE request) {
     VALUE multipart = rb_iv_get(request, "@multipart");
 
     if (!NIL_P(data) && NIL_P(multipart)) {
+      data = rb_funcall(data, rb_intern("to_s"), 0);
       long len = RSTRING_LEN(data);
-
       state->upload_buf = StringValuePtr(data);
 
       if (action == rb_intern("post")) {
