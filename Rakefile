@@ -22,10 +22,10 @@
 ##
 ## -------------------------------------------------------------------
 require 'rake/clean'
-require 'rdoc/task'
 require 'rake/extensiontask'
 require 'rspec/core/rake_task'
 require 'bundler'
+require 'yard'
 
 Rake::ExtensionTask.new do |ext|
   ext.name = 'session_ext'           # indicate the name of the extension.
@@ -43,12 +43,11 @@ task :shell => :compile do
   sh 'irb -I./lib -I./ext -r patron'
 end
 
-Rake::RDocTask.new do |rdoc|
-  rdoc.rdoc_dir = 'rdoc'
-  rdoc.title = 'Patron documentation'
-  rdoc.main = 'README.txt'
-  rdoc.rdoc_files.include('README.txt')
-  rdoc.rdoc_files.include('lib/**/*.rb')
+desc "Generate YARD documentation"
+YARD::Rake::YardocTask.new do |t|
+  t.files   = ['lib/**/*.rb', 'ext/**/*.c' ]
+  t.options = ['--markup markdown']
+  t.stats_options = ['--list-undoc']
 end
 
 desc "Run specs"
