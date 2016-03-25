@@ -36,55 +36,66 @@ module Patron
   # server. This is the primary API for Patron.
   class Session
 
-    # HTTP connection timeout in seconds. Defaults to 1 second.
+    # @return [Integer] HTTP connection timeout in seconds. Defaults to 1 second.
     attr_accessor :connect_timeout
 
-    # HTTP transaction timeout in seconds. Defaults to 5 seconds.
+    # @return [Integer] HTTP transaction timeout in seconds. Defaults to 5 seconds.
     attr_accessor :timeout
 
-    # Maximum number of times to follow redirects.
+    # Maximum number of redirects to follow
     # Set to 0 to disable and -1 to follow all redirects. Defaults to 5.
+    # @return [Integer]
     attr_accessor :max_redirects
 
-    # Prepended to the URL in all requests.
+    # @return [String] The URL to prepend to all requests.
     attr_accessor :base_url
 
-    # Username and password for http authentication
-    attr_accessor :username, :password
+    # Username for http authentication
+    # @return [String,nil] the HTTP basic auth username
+    attr_accessor :username
+    
+    # Password for http authentication
+    # @return [String,nil] the HTTP basic auth password
+    attr_accessor :password
 
-    # Proxy URL in cURL format ('hostname:8080')
+    # @return [String] Proxy URL in cURL format ('hostname:8080')
     attr_accessor :proxy
 
-    # Proxy type (default is HTTP), see constants under ProxyType for supported types.
+    # @return [Integer] Proxy type (default is HTTP)
+    # @see Patron::ProxyType
     attr_accessor :proxy_type
 
-    # Standard set of headers that are used in all requests.
+    # @return [Hash] A Hash of headers used in all requests.
     attr_accessor :headers
 
-    # Set the authentication type for the request.
+    # @return [Symbol] Set the authentication type for the request.
     # @see Patron::Request#auth_type
     attr_accessor :auth_type
 
-    # Does this session stricly verify SSL certificates?
+    # @return [Boolean] Must be set to `true` to disable SSL certificate verification
     attr_accessor :insecure
 
-    # Specifies the ssl version
+    # FIXME: return type?
+    # @return [String] The SSL version for the requests
     attr_accessor :ssl_version
 
-    # What cacert file should this session use to verify SSL certificates?
+    # @return [String] can be set to a path to the CA file used for certificate verification
     attr_accessor :cacert
 
-    # Does this session ignore Content-Size headers?
+    # @return [Boolean] whether Content-Range and Content-Length headers should be ignored
     attr_accessor :ignore_content_length
 
+    # @return [Integer, nil]
     # Set the buffer size for this request. This option will
     # only be set if buffer_size is non-nil
     attr_accessor :buffer_size
 
+    # @return [Unknown]
+    # FIXME: shoudl this be an HTTP charset name or a Ruby Encoding const?
     # Default encoding of responses. Used if no charset is provided by the host.
     attr_accessor :default_response_charset
     
-    # Force curl to use IPv4
+    # @return [Boolean] Force curl to use IPv4
     attr_accessor :force_ipv4
 
     # Support automatic Content-Encoding decompression and set liberal Accept-Encoding headers
@@ -93,6 +104,9 @@ module Patron
     private :handle_request, :enable_cookie_session, :set_debug_file
 
     # Create a new Session object.
+    #
+    # @param args[Hash] options for the Session (same names as the writable attributes of the Session)
+    # @yield self
     def initialize(args = {}, &block)
 
       # Allows accessors to be set via constructor hash. Ex:  {:base_url => 'www.home.com'}
@@ -114,8 +128,11 @@ module Patron
     end
 
     # Turn on cookie handling for this session, storing them in memory by
-    # default or in +file+ if specified. The +file+ must be readable and
+    # default or in +file+ if specified. The `file` must be readable and
     # writable. Calling multiple times will add more files.
+    #
+    # @param file[String] path to an existing cookie jar file, or nil to store cookies in memory
+    # @return self
     def handle_cookies(file = nil)
       if file
         path = Pathname(file).expand_path
@@ -130,57 +147,93 @@ module Patron
       self
     end
 
-    # Enable debug output to stderr or to specified +file+.
+    # Enable debug output to stderr or to specified `file`.
+    #
+    # @param file[String, nil] path to the file to write debug data to, or `nil` to print to `STDERR`
+    # @return self
     def enable_debug(file = nil)
       set_debug_file(file.to_s)
+      # FIXME: test for self-return
+      self
     end
 
-    ###################################################################
-    ### Standard HTTP methods
-    ###
-
-    # Retrieve the contents of the specified +url+ optionally sending the
+    # Retrieve the contents of the specified `url` optionally sending the
     # specified headers. If the +base_url+ varaible is set then it is prepended
     # to the +url+ parameter. Any custom headers are merged with the contents
     # of the +headers+ instance variable. The results are returned in a
     # Response object.
-    # Notice: this method doesn't accept any +data+ argument: if you need to send data with
-    # a get request, please, use the #request method.
+    # Notice: this method doesn't accept any `data` argument: if you need to send a request body
+    # with a GET request, when using ElasticSearch for example, please, use the #request method.
+    #
+    # @param url[String] the URL to fetch
+    # @param headers[Hash] the hash of header keys to values
+    # @return [Patron::Response]
     def get(url, headers = {})
       request(:get, url, headers)
     end
 
     # Retrieve the contents of the specified +url+ as with #get, but the
-    # content at the URL is downloaded directly into the specified file.
+    # content at the URL is downloaded directly into the specified file. The file will be accessed
+    # by libCURL bypassing the Ruby runtime entirely.
+    # FIXME: does the Response contain the body?
+    #
+    # @param url[String] the URL to fetch
+    # @param filename[String] path to the file to save the response body in
+    # @return [Patron::Response]
     def get_file(url, filename, headers = {})
       request(:get, url, headers, :file => filename)
     end
 
-    # As #get but sends an HTTP HEAD request.
+    # Same as #get but performs a HEAD request.
+    #
+    # @see #get
+    # @param url[String] the URL to fetch
+    # @param headers[Hash] the hash of header keys to values
+    # @return [Patron::Response]
     def head(url, headers = {})
       request(:head, url, headers)
     end
 
-    # As #get but sends an HTTP DELETE request.
-    # Notice: this method doesn't accept any +data+ argument: if you need to send data with
-    # a delete request, please, use the #request method.
+    # Same as #get but performs a DELETE request.
+    #
+    # Notice: this method doesn't accept any `data` argument: if you need to send data with
+    # a delete request (as might be needed for ElasticSearch), please, use the #request method.
+    #
+    # @param url[String] the URL to fetch
+    # @param headers[Hash] the hash of header keys to values
+    # @return [Patron::Response]
     def delete(url, headers = {})
       request(:delete, url, headers)
     end
 
-    # Uploads the passed +data+ to the specified +url+ using HTTP PUT. +data+
-    # must be a string.
+    # Uploads the passed `data` to the specified `url` using an HTTP PUT.
+    # FIXME: inconsistency with "post" - Hash not accepted
+    #
+    # @param url[String] the URL to fetch
+    # @param data[#to_s] an object that can be converted to a String to create the request body
+    # @param headers[Hash] the hash of header keys to values
+    # @return [Patron::Response]
     def put(url, data, headers = {})
       request(:put, url, headers, :data => data)
     end
 
-    # Uploads the contents of a file to the specified +url+ using HTTP PUT.
+    # Uploads the contents of `file` to the specified `url` using an HTTP PUT. The file will be
+    # sent "as-is" without any multipart encoding.
+    #
+    # @param url[String] the URL to fetch
+    # @param filename[String] path to the file to be uploaded
+    # @param headers[Hash] the hash of header keys to values
+    # @return [Patron::Response]
     def put_file(url, filename, headers = {})
       request(:put, url, headers, :file => filename)
     end
 
-    # Uploads the passed +data+ to the specified +url+ using HTTP POST. +data+
-    # can be a string or a hash.
+    # Uploads the passed `data` to the specified `url` using an HTTP POST.
+    #
+    # @param url[String] the URL to fetch
+    # @param data[Hash, #to_s] a Hash of form fields/values, or an object that can be converted to a String to create the request body
+    # @param headers[Hash] the hash of header keys to values
+    # @return [Patron::Response]
     def post(url, data, headers = {})
       if data.is_a?(Hash)
         data = data.map {|k,v| urlencode(k.to_s) + '=' + urlencode(v.to_s) }.join('&')
@@ -189,12 +242,26 @@ module Patron
       request(:post, url, headers, :data => data)
     end
 
-    # Uploads the contents of a file to the specified +url+ using HTTP POST.
+    # Uploads the contents of `file` to the specified `url` using an HTTP POST.
+    # The file will be sent "as-is" without any multipart encoding.
+    #
+    # @param url[String] the URL to fetch
+    # @param filename[String] path to the file to be uploaded
+    # @param headers[Hash] the hash of header keys to values
+    # @return [Patron::Response]
     def post_file(url, filename, headers = {})
       request(:post, url, headers, :file => filename)
     end
 
-    # Uploads the contents of a file and data to the specified +url+ using HTTP POST.
+    # Uploads the contents of `filename` to the specified `url` using an HTTP POST,
+    # in combination with given form fields passed in `data`.
+    # FIXME: how to upload multiple files? does data get cast to Hash or checked?
+    #
+    # @param url[String] the URL to fetch
+    # @param data[Hash] hash of the form fields
+    # @param filename[String] path to the file to be uploaded
+    # @param headers[Hash] the hash of header keys to values
+    # @return [Patron::Response]
     def post_multipart(url, data, filename, headers = {})
       request(:post, url, headers, {:data => data, :file => filename, :multipart => true})
     end
@@ -204,6 +271,11 @@ module Patron
     ###
 
     # Sends a WebDAV COPY request to the specified +url+.
+    #
+    # @param url[String] the URL to copy
+    # @param dest[String] the URL of the COPY destination
+    # @param headers[Hash] the hash of header keys to values
+    # @return [Patron::Response]
     def copy(url, dest, headers = {})
       headers['Destination'] = dest
       request(:copy, url, headers)
@@ -213,7 +285,14 @@ module Patron
     ### Basic API methods
     ###
 
-    # Send an HTTP request to the specified +url+.
+    # Send an HTTP request to the specified `url`.
+    #
+    # @param action[#to_s] the HTTP verb
+    # @param url[String] the URL for the request
+    # @param headers[Hash] headers to send along with the request
+    # @param options[Hash] any additonal setters to call on the Request
+    # @see Patron::Request
+    # @return [Patron::Response]
     def request(action, url, headers, options = {})
       req = build_request(action, url, headers, options)
       handle_request(req)
@@ -227,11 +306,15 @@ module Patron
     # various headers/status codes. The method must return
     # a module that supports the same interface for +new+
     # as ++Patron::Response++
+    #
+    # @return [#new] Returns any object that responds to `.new` with 6 arguments
+    # @see Patron::Response#initialize
     def response_class
       ::Patron::Response
     end
     
-    # Build a request object that can be used in +handle_request+
+    # Build a request object that can be used by `handle_request`
+    # FIXME: should this be public?
     def build_request(action, url, headers, options = {})
       # If the Expect header isn't set uploads are really slow
       headers['Expect'] ||= ''

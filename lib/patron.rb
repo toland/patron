@@ -31,7 +31,8 @@ require 'patron/session'
 require 'patron/version'
 
 module Patron #:nodoc:
-  # Returns the version number of the Patron library as a string
+  # Returns the version number of the gem
+  # @return [String]
   def self.version
     VERSION
   end
