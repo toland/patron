@@ -65,21 +65,22 @@ module Patron
     # @see Patron::ProxyType
     attr_accessor :proxy_type
 
-    # @return [Hash] A Hash of headers used in all requests.
+    # @return [Hash] headers used in all requests.
     attr_accessor :headers
 
-    # @return [Symbol] Set the authentication type for the request.
+    # @return [Symbol] the authentication type for the request (`:basic`, `:digest` or `:token`).
     # @see Patron::Request#auth_type
     attr_accessor :auth_type
 
-    # @return [Boolean] Must be set to `true` to disable SSL certificate verification
+    # @return [Boolean] `true` if SSL certificate verification is disabled.
+    # Please consider twice before using this option..
     attr_accessor :insecure
 
     # FIXME: return type?
-    # @return [String] The SSL version for the requests
+    # @return [String] the SSL version for the requests
     attr_accessor :ssl_version
 
-    # @return [String] can be set to a path to the CA file used for certificate verification
+    # @return [String] path to the CA file used for certificate verification, or `nil` if CURL default is used
     attr_accessor :cacert
 
     # @return [Boolean] whether Content-Range and Content-Length headers should be ignored
@@ -266,10 +267,8 @@ module Patron
       request(:post, url, headers, {:data => data, :file => filename, :multipart => true})
     end
 
-    ###################################################################
-    ### WebDAV methods
-    ###
 
+    # @!group WebDAV methods
     # Sends a WebDAV COPY request to the specified +url+.
     #
     # @param url[String] the URL to copy
@@ -280,11 +279,9 @@ module Patron
       headers['Destination'] = dest
       request(:copy, url, headers)
     end
-
-    ###################################################################
-    ### Basic API methods
-    ###
-
+    # @!endgroup
+    
+    # @!group Basic API methods
     # Send an HTTP request to the specified `url`.
     #
     # @param action[#to_s] the HTTP verb
@@ -353,5 +350,6 @@ module Patron
         req.url = url
       end
     end
+    # @!endgroup
   end
 end
