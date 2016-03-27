@@ -669,9 +669,7 @@ static VALUE cleanup(VALUE self) {
   return Qnil;
 }
 
-/* call-seq:
- *    session.handle_request( request )   -> response
- *
+/*
  * Peform the actual HTTP request by calling libcurl. Each filed in the
  * +request+ object will be used to set the appropriate option on the libcurl
  * library. After the request completes, a Response object will be created and
@@ -680,17 +678,25 @@ static VALUE cleanup(VALUE self) {
  * In the event of an error in the libcurl library, a Ruby exception will be
  * created and raised. The exception will return the libcurl error code and
  * error message.
+ *
+ * @param request[Patron::Request] the request to use when filling the CURL options
+ * @return [Patron::Response] the result of calling `response_class` on the Session
  */
 static VALUE session_handle_request(VALUE self, VALUE request) {
   set_options_from_request(self, request);
   return rb_ensure(&perform_request, self, &cleanup, self);
 }
 
-/* call-seq:
- *    session.reset   -> session
- *
+/*
+ * FIXME: figure out how this method should be used at all given Session is not multithreaded.
+ * FIXME: also: what is the difference with `interrupt()` and also relationship with `cleanup()`?
  * Reset the underlying cURL session. This effectively closes all open
- * connections and disables debug output.
+ * connections and disables debug output. There is no need to call this method
+ * manually after performing a request, since cleanup is performed automatically
+ * but the method can be used from another thread
+ * to abort a request currently in progress.
+ *
+ * @return self
  */
 static VALUE session_reset(VALUE self) {
   struct curl_state *state;
@@ -706,11 +712,10 @@ static VALUE session_reset(VALUE self) {
   return self;
 }
 
-/* call-seq:
- *    session.interrupt   -> session
- *
- * Interrupt any currently executing request. This will cause the current
+/* Interrupt any currently executing request. This will cause the current
  * request to error and raise an exception.
+ *
+ * @return [void] This method always raises
  */
 static VALUE session_interrupt(VALUE self) {
   struct curl_state *state = get_curl_state(self);
@@ -718,18 +723,21 @@ static VALUE session_interrupt(VALUE self) {
   return self;
 }
 
-/* call-seq:
- *    session.enable_cookie_session( file )   -> session
- *
+/* 
  * Turn on cookie handling for this session, storing them in memory by
- * default or in +file+ if specified. The +file+ must be readable and
+ * default or in +file+ if specified. The `file` must be readable and
  * writable. Calling multiple times will add more files.
+ * FIXME: what does the empty string actually do here?
+* 
+ * @param file[String] path to the existing cookie file, or nil to store in memory.
+*  @return self
  */
 static VALUE enable_cookie_session(VALUE self, VALUE file) {
   struct curl_state *state = get_curl_state(self);
   CURL* curl = state->handle;
   char* file_path = NULL;
 
+  // FIXME: http://websystemsengineering.blogspot.nl/2013/03/curloptcookiefile-vs-curloptcookiejar.html
   file_path = RSTRING_PTR(file);
   if (file_path != NULL && strlen(file_path) != 0) {
     curl_easy_setopt(curl, CURLOPT_COOKIEJAR, file_path);
@@ -739,10 +747,11 @@ static VALUE enable_cookie_session(VALUE self, VALUE file) {
   return self;
 }
 
-/* call-seq:
- *    session.set_debug_file( file )   -> session
- *
+/*
  * Enable debug output to stderr or to specified +file+.
+ *
+ * @param file[String, nil] path to the debug file, or nil to write to STDERR
+*  @return self
  */
 static VALUE set_debug_file(VALUE self, VALUE file) {
   struct curl_state *state = get_curl_state(self);
