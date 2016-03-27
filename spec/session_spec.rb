@@ -38,14 +38,30 @@ describe Patron::Session do
     @session.force_ipv4 = true
     expect { @session.get("/test") }.to_not raise_error
   end
-
-  it "should escape and unescape strings symetrically" do
-    string = "foo~bar baz/"
-    escaped = @session.escape(string)
-    unescaped = @session.unescape(escaped)
-    expect(unescaped).to be == string
+  
+  describe '.escape and #escape' do
+    it 'makes escape() and unescape() available on the class' do
+      string = "foo~bar baz/"
+      escaped = described_class.escape(string)
+      unescaped = described_class.unescape(escaped)
+      expect(unescaped).to be == string
+    end
+    
+    it "should escape and unescape strings symetrically" do
+      string = "foo~bar baz/"
+      escaped = @session.escape(string)
+      unescaped = @session.unescape(escaped)
+      expect(unescaped).to be == string
+    end
+  
+    it "should make e and unescape strings symetrically" do
+      string = "foo~bar baz/"
+      escaped = @session.escape(string)
+      unescaped = @session.unescape(escaped)
+      expect(unescaped).to be == string
+    end
   end
-
+  
   it "should raise an error when passed an invalid action" do
     expect { @session.request(:bogus, "/test", {}) }.to raise_error(ArgumentError)
   end
