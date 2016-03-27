@@ -217,10 +217,11 @@ static VALUE libcurl_version(VALUE klass) {
   return rb_str_new2(value);
 }
 
-/* call-seq:
- *    Session.escape( string )   -> escaped string
+/*
+ * Escapes the provided string using libCURL URL escaping functions.
  *
- * URL escapes the provided string.
+ * @param [String] value plain string to URL-escape
+*  @return [String] the escaped string
  */
 static VALUE session_escape(VALUE self, VALUE value) {
   
@@ -240,10 +241,11 @@ static VALUE session_escape(VALUE self, VALUE value) {
   return retval;
 }
 
-/* call-seq:
- *    Session.unescape( string )   -> unescaped string
+/*
+ * Unescapes the provided string using libCURL URL escaping functions.
  *
- * Unescapes the provided string.
+ * @param [String] value URL-encoded String to unescape
+*  @return [String] unescaped (decoded) string
  */
 static VALUE session_unescape(VALUE self, VALUE value) {
   VALUE string = StringValue(value);
@@ -723,13 +725,13 @@ static VALUE session_interrupt(VALUE self) {
   return self;
 }
 
-/* 
+/*
  * Turn on cookie handling for this session, storing them in memory by
  * default or in +file+ if specified. The `file` must be readable and
  * writable. Calling multiple times will add more files.
  * FIXME: what does the empty string actually do here?
 * 
- * @param file[String] path to the existing cookie file, or nil to store in memory.
+ * @param [String] file path to the existing cookie file, or nil to store in memory.
 *  @return self
  */
 static VALUE enable_cookie_session(VALUE self, VALUE file) {
@@ -750,7 +752,7 @@ static VALUE enable_cookie_session(VALUE self, VALUE file) {
 /*
  * Enable debug output to stderr or to specified +file+.
  *
- * @param file[String, nil] path to the debug file, or nil to write to STDERR
+ * @param [String, nil] file path to the debug file, or nil to write to STDERR
 *  @return self
  */
 static VALUE set_debug_file(VALUE self, VALUE file) {

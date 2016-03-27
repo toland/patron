@@ -136,6 +136,9 @@ module Patron
     # @return self
     def handle_cookies(file = nil)
       if file
+        # FIXME: this logic must be busted somewhere.
+        # path is initialized here, and if the file attribute is nil
+        # then `enable_cookie_session` is set to an empty string (nil.to_s).
         path = Pathname(file).expand_path
         unless File.exists?(file) and File.writable?(path.dirname)
           raise ArgumentError, "Can't create file #{path} (permission error)"
