@@ -111,9 +111,9 @@ module Patron
       @action = action.downcase.to_sym
     end
 
-    # FIXME: millis or secs?
     # Sets the read timeout for the CURL request, in milliseconds.
     #
+    # @todo millis or secs?
     # @param new_timeout[Integer] the number of milliseconds to wait before raising a timeout error
     def timeout=(new_timeout)
       if new_timeout && new_timeout.to_i < 1
@@ -123,7 +123,7 @@ module Patron
       @timeout = new_timeout.to_i
     end
 
-    # FIXME: millis or secs?
+    # @todo millis or secs?
     # Sets the connect timeout for the CURL request, in milliseconds.
     #
     # @param new_timeout[Integer] the number of milliseconds to wait before raising a timeout error
@@ -158,7 +158,7 @@ module Patron
       @headers = new_headers
     end
 
-    # FIXME: figure out what this does in Patron - with non-streaming situations etc
+    # @todo figure out what this does in Patron - with non-streaming situations etc
     # Sets the receive buffer size. If you use response streaming, this determines the maximum
     # amount of data that will be buffered before yielding it in the response.
     #

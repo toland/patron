@@ -76,7 +76,7 @@ module Patron
     # Please consider twice before using this option..
     attr_accessor :insecure
 
-    # FIXME: return type?
+    # @todo return type?
     # @return [String] the SSL version for the requests
     attr_accessor :ssl_version
 
@@ -92,7 +92,7 @@ module Patron
     attr_accessor :buffer_size
 
     # @return [Unknown]
-    # FIXME: shoudl this be an HTTP charset name or a Ruby Encoding const?
+    # @todo shoudl this be an HTTP charset name or a Ruby Encoding const?
     # Default encoding of responses. Used if no charset is provided by the host.
     attr_accessor :default_response_charset
     
@@ -136,7 +136,7 @@ module Patron
     # @return self
     def handle_cookies(file = nil)
       if file
-        # FIXME: this logic must be busted somewhere.
+        # @todo this logic must be busted somewhere.
         # path is initialized here, and if the file attribute is nil
         # then `enable_cookie_session` is set to an empty string (nil.to_s).
         path = Pathname(file).expand_path
@@ -157,7 +157,7 @@ module Patron
     # @return self
     def enable_debug(file = nil)
       set_debug_file(file.to_s)
-      # FIXME: test for self-return
+      # @todo test for self-return
       self
     end
 
@@ -179,7 +179,7 @@ module Patron
     # Retrieve the contents of the specified +url+ as with #get, but the
     # content at the URL is downloaded directly into the specified file. The file will be accessed
     # by libCURL bypassing the Ruby runtime entirely.
-    # FIXME: does the Response contain the body?
+    # @todo does the Response contain the body?
     #
     # @param url[String] the URL to fetch
     # @param filename[String] path to the file to save the response body in
@@ -211,7 +211,7 @@ module Patron
     end
 
     # Uploads the passed `data` to the specified `url` using an HTTP PUT.
-    # FIXME: inconsistency with "post" - Hash not accepted
+    # @todo inconsistency with "post" - Hash not accepted
     #
     # @param url[String] the URL to fetch
     # @param data[#to_s] an object that can be converted to a String to create the request body
@@ -259,7 +259,7 @@ module Patron
 
     # Uploads the contents of `filename` to the specified `url` using an HTTP POST,
     # in combination with given form fields passed in `data`.
-    # FIXME: how to upload multiple files? does data get cast to Hash or checked?
+    # @todo how to upload multiple files? does data get cast to Hash or checked?
     #
     # @param url[String] the URL to fetch
     # @param data[Hash] hash of the form fields
@@ -314,7 +314,7 @@ module Patron
     end
     
     # Build a request object that can be used by `handle_request`
-    # FIXME: should this be public?
+    # @todo should this be public?
     def build_request(action, url, headers, options = {})
       # If the Expect header isn't set uploads are really slow
       headers['Expect'] ||= ''
