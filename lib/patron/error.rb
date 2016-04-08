@@ -23,6 +23,7 @@
 ##
 ## -------------------------------------------------------------------
 
+
 module Patron
 
   # Base class for Patron exceptions.

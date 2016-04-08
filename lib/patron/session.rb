@@ -23,6 +23,7 @@
 ##
 ## -------------------------------------------------------------------
 
+
 require 'uri'
 require 'patron/error'
 require 'patron/request'

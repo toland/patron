@@ -22,6 +22,8 @@
 ## THE SOFTWARE.
 ##
 ## -------------------------------------------------------------------
+
+
 require 'pathname'
 
 cwd = Pathname(__FILE__).dirname
@@ -30,7 +32,7 @@ $:.unshift(cwd.to_s) unless $:.include?(cwd.to_s) || $:.include?(cwd.expand_path
 require 'patron/session'
 require 'patron/version'
 
-module Patron #:nodoc:
+module Patron
   # Returns the version number of the gem
   # @return [String]
   def self.version

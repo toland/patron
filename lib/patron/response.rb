@@ -23,6 +23,7 @@
 ##
 ## -------------------------------------------------------------------
 
+
 module Patron
 
   # Represents the response from the HTTP server.
