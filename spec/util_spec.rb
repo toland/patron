@@ -26,6 +26,7 @@ require File.expand_path("./spec") + '/spec_helper.rb'
 describe Patron::Util do
 
   describe :build_query_pairs_from_hash do
+    
     it "correctly serializes a simple hash" do
       hash = {:foo => "bar", "baz" => 42}
       array = Patron::Util.build_query_pairs_from_hash(hash)
@@ -33,6 +34,7 @@ describe Patron::Util do
       expect(array).to include("foo=bar")
       expect(array).to include("baz=42")
     end
+    
     it "correctly serializes a more complex hash" do
       hash = {
         :foo => "bar",

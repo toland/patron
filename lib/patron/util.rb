@@ -23,8 +23,6 @@
 ##
 ## -------------------------------------------------------------------
 
-require 'cgi'
-
 module Patron
   module Util
     extend self
@@ -34,7 +32,7 @@ module Patron
       recursive = Proc.new do |h, prefix|
         h.each_pair do |k,v|
           key = prefix == '' ? k : "#{prefix}[#{k}]"
-          v = CGI::escape(v.to_s) if escape_values
+          v = Patron::Session.escape(v.to_s) if escape_values
           v.is_a?(Hash) ? recursive.call(v, key) : pairs << "#{key}=#{v}"
         end
       end

@@ -223,16 +223,18 @@ static VALUE libcurl_version(VALUE klass) {
  * URL escapes the provided string.
  */
 static VALUE session_escape(VALUE self, VALUE value) {
-  struct curl_state *state = get_curl_state(self);
+  
   VALUE string = StringValue(value);
   char* escaped = NULL;
   VALUE retval = Qnil;
 
+  struct curl_state* state = curl_easy_init();
   escaped = curl_easy_escape(state->handle,
                              RSTRING_PTR(string),
                              (int) RSTRING_LEN(string));
 
   retval = rb_str_new2(escaped);
+  curl_easy_cleanup(state);
   curl_free(escaped);
 
   return retval;
@@ -244,11 +246,11 @@ static VALUE session_escape(VALUE self, VALUE value) {
  * Unescapes the provided string.
  */
 static VALUE session_unescape(VALUE self, VALUE value) {
-  struct curl_state *state = get_curl_state(self);
   VALUE string = StringValue(value);
   char* unescaped = NULL;
   VALUE retval = Qnil;
 
+  struct curl_state* state = curl_easy_init();
   unescaped = curl_easy_unescape(state->handle,
                                  RSTRING_PTR(string),
                                  (int) RSTRING_LEN(string),
@@ -256,6 +258,7 @@ static VALUE session_unescape(VALUE self, VALUE value) {
 
   retval = rb_str_new2(unescaped);
   curl_free(unescaped);
+  curl_easy_cleanup(state);
 
   return retval;
 }
@@ -777,8 +780,14 @@ void Init_session_ext() {
   cRequest = rb_define_class_under(mPatron, "Request", rb_cObject);
   rb_define_alloc_func(cSession, session_alloc);
 
+  // Make "escape" available both as a class method and as an instance method,
+  // to make it usable to the Util module which does not have access to
+  // the Session object internally
+  rb_define_singleton_method(cSession, "escape",   session_escape,         1);
   rb_define_method(cSession, "escape",         session_escape,         1);
+  rb_define_singleton_method(cSession, "unescape",   session_unescape,         1);
   rb_define_method(cSession, "unescape",       session_unescape,       1);
+
   rb_define_method(cSession, "handle_request", session_handle_request, 1);
   rb_define_method(cSession, "reset",          session_reset,          0);
   rb_define_method(cSession, "interrupt",      session_interrupt,      0);
