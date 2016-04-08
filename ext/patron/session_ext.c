@@ -206,10 +206,10 @@ static struct curl_state* get_curl_state(VALUE self) {
 /*----------------------------------------------------------------------------*/
 /* Method implementations                                                     */
 
-/* call-seq:
- *    Patron.libcurl_version   -> version string
- *
- * Returns the version of the embedded libcurl as a string.
+/*
+* Returns the version of the embedded libcurl.
+* 
+*  @return [String] libcurl version string
  */
 static VALUE libcurl_version(VALUE klass) {
   char* value = curl_version();
