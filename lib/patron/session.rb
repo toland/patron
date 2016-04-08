@@ -87,6 +87,9 @@ module Patron
     # Force curl to use IPv4
     attr_accessor :force_ipv4
 
+    # Support automatic Content-Encoding decompression and set liberal Accept-Encoding headers
+    attr_accessor :automatic_content_encoding
+    
     private :handle_request, :enable_cookie_session, :set_debug_file
 
     # Create a new Session object.
@@ -236,6 +239,7 @@ module Patron
       Request.new.tap do |req|
         req.action                 = action
         req.headers                = self.headers.merge headers
+        req.automatic_content_encoding = options.fetch :automatic_content_encoding, self.automatic_content_encoding
         req.timeout                = options.fetch :timeout,               self.timeout
         req.connect_timeout        = options.fetch :connect_timeout,       self.connect_timeout
         req.force_ipv4             = options.fetch :force_ipv4,            self.force_ipv4

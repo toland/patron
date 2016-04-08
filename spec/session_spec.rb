@@ -345,6 +345,17 @@ describe Patron::Session do
     expect(body.request_method).to be == "GET"
   end
 
+  it "should automatically decompress using Content-Encoding if requested" do
+    @session.automatic_content_encoding = true
+    response = @session.get('/gzip-compressed')
+    
+    expect(response.headers['Content-Length']).to eq('125')
+    
+    body = response.body
+    expect(body).to match(/Some highly compressible data/)
+    expect(body.bytesize).to eq(29696)
+  end
+  
   it "should serialize query params and append them to the url" do
     response = @session.request(:get, "/test", {}, :query => {:foo => "bar"})
     request = YAML::load(response.body)

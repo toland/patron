@@ -70,6 +70,29 @@ class TestServlet < HTTPServlet::AbstractServlet
   end
 end
 
+class GzipServlet < HTTPServlet::AbstractServlet
+
+  def do_GET(req,res)
+    raise "Need to have the right Accept-Encoding: header" unless req.header['Accept-Encoding']
+    
+    out = StringIO.new
+    z = Zlib::Deflate.new(Zlib::DEFAULT_COMPRESSION)
+    1024.times { 
+      out << z.deflate('Some highly compressible data')
+    }
+    out << z.finish
+    z.close
+    
+    content_length = out.size
+    # Content-Length gets set automatically by WEBrick, and if we do it manually
+    # here then two headers will be set.
+    # res.header['Content-Length'] = content_length
+    res.header['Content-Encoding'] = 'deflate'
+    res.header['Vary'] = 'Accept-Encoding'
+    res.body = out.string
+  end
+end
+
 class TimeoutServlet < HTTPServlet::AbstractServlet
   def do_GET(req,res)
     sleep(1.1)
@@ -83,15 +106,12 @@ class RedirectServlet < HTTPServlet::AbstractServlet
   end
 end
 
-
 class TestPostBodyServlet < HTTPServlet::AbstractServlet
   include RespondWith
   def do_POST(req, res)
     respond_with(:POST, {'body' => req.body, 'content_type' => req.content_type}, res)
   end
 end
-
-
 
 class SetCookieServlet < HTTPServlet::AbstractServlet
   def do_GET(req, res)
@@ -162,6 +182,7 @@ class PatronTestServer
     @server.mount("/setcookie", SetCookieServlet)
     @server.mount("/repetitiveheader", RepetitiveHeaderServlet)
     @server.mount("/wrongcontentlength", WrongContentLengthServlet)
+    @server.mount("/gzip-compressed", GzipServlet)
 
   end
 

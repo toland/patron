@@ -350,6 +350,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE ssl_version           = Qnil;
   VALUE buffer_size           = Qnil;
   VALUE action_name           = rb_iv_get(request, "@action");
+  VALUE a_c_encoding          = rb_iv_get(request, "@automatic_content_encoding");
 
   headers = rb_iv_get(request, "@headers");
   if (!NIL_P(headers)) {
@@ -457,6 +458,12 @@ static void set_options_from_request(VALUE self, VALUE request) {
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, state->headers);
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, state->error_buf);
 
+  // Enable automatic content-encoding support via gzip/deflate if set in the request,
+  // see https://curl.haxx.se/libcurl/c/CURLOPT_ACCEPT_ENCODING.html
+  if(RTEST(a_c_encoding)) {
+    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+  }
+  
   url = rb_iv_get(request, "@url");
   if (NIL_P(url)) {
     rb_raise(rb_eArgError, "Must provide a URL");
