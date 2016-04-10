@@ -100,7 +100,7 @@ module Patron
     # @return [Boolean] Force curl to use IPv4
     attr_accessor :force_ipv4
 
-    # Support automatic Content-Encoding decompression and set liberal Accept-Encoding headers
+    # @return [Boolean] Support automatic Content-Encoding decompression and set liberal Accept-Encoding headers
     attr_accessor :automatic_content_encoding
     
     private :handle_request, :enable_cookie_session, :set_debug_file
