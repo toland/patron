@@ -50,26 +50,25 @@ You can ship custom headers with a single request:
 
     sess.post("/foo/stuff", "some data", {"Content-Type" => "text/plain"})
 
-## Requirements
-
-You need a recent version of libcurl in order to install this gem. On MacOS X
-the provided libcurl is sufficient. You will have to install the libcurl
-development packages on Debian or Ubuntu. Other Linux systems are probably
-similar. Windows users are on your own. Good luck with that.
-
 ## Threading
 
-By itself, the `Patron::Session` objects are not multi-thread safe. At this time, Patron has
-no support for `curl_multi_*` family of functions for doing concurrent requests. However, the actual
-code that interacts with libCURL does unlock the RVM GIL, so using multiple `Session` objects in different
-threads is possible with a high degree of concurrency. For sharing a resource of sessions between threads
-we recommend using the [connection_pool](https://rubygems.org/gems/connection_pool) gem by Mike Perham.
+By itself, the `Patron::Session` objects are not thread safe (each `Session` holds a single `curl_state` pointer
+during the request/response cycle). At this time, Patron has no support for `curl_multi_*` family of functions 
+for doing concurrent requests. However, the actual code that interacts with libCURL does unlock the RVM GIL,
+so using multiple `Session` objects in different threads is possible with a high degree of concurrency.
+For sharing a resource of sessions between threads we recommend using the excellent [connection_pool](https://rubygems.org/gems/connection_pool) gem by Mike Perham.
 
     patron_pool = ConnectionPool.new(size: 5, timeout: 5) { Patron::Session.new }
     patron_pool.with do |session|
       session.get(...)
     end
 
+## Requirements
+
+You need a recent version of libcurl in order to install this gem. On MacOS X
+the provided libcurl is sufficient. You will have to install the libcurl
+development packages on Debian or Ubuntu. Other Linux systems are probably
+similar. Windows users are on your own. Good luck with that.
 
 ## Installation
 
