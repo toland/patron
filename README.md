@@ -57,6 +57,19 @@ the provided libcurl is sufficient. You will have to install the libcurl
 development packages on Debian or Ubuntu. Other Linux systems are probably
 similar. Windows users are on your own. Good luck with that.
 
+## Threading
+
+By itself, the `Patron::Session` objects are not multi-thread safe. At this time, Patron has
+no support for `curl_multi_*` family of functions for doing concurrent requests. However, the actual
+code that interacts with libCURL does unlock the RVM GIL, so using multiple `Session` objects in different
+threads is possible with a high degree of concurrency. For sharing a resource of sessions between threads
+we recommend using the [connection_pool](https://rubygems.org/gems/connection_pool) gem by Mike Perham.
+
+    patron_pool = ConnectionPool.new(size: 5, timeout: 5) { Patron::Session.new }
+    patron_pool.with do |session|
+      session.get(...)
+    end
+
 
 ## Installation
 
