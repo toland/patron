@@ -1,15 +1,10 @@
-# Ruby HTTP Client
-
-## SYNOPSIS
-
 Patron is a Ruby HTTP client library based on libcurl. It does not try to expose
 the full "power" (read complexity) of libcurl but instead tries to provide a
 sane API while taking advantage of libcurl under the hood.
 
+## Usage
 
-## USAGE
-
-Usage is very simple. First, you instantiate a Session object. You can set a few
+First, you instantiate a Session object. You can set a few
 default options on the Session instance that will be used by all subsequent
 requests:
 
@@ -55,10 +50,7 @@ You can ship custom headers with a single request:
 
     sess.post("/foo/stuff", "some data", {"Content-Type" => "text/plain"})
 
-That is pretty much all there is to it.
-
-
-## REQUIREMENTS
+## Requirements
 
 You need a recent version of libcurl in order to install this gem. On MacOS X
 the provided libcurl is sufficient. You will have to install the libcurl
@@ -66,7 +58,7 @@ development packages on Debian or Ubuntu. Other Linux systems are probably
 similar. Windows users are on your own. Good luck with that.
 
 
-## INSTALL
+## Installation
 
     sudo gem install patron
 
