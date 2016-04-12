@@ -112,10 +112,9 @@ module Patron
       @action = action.downcase.to_sym
     end
 
-    # Sets the read timeout for the CURL request, in milliseconds.
+    # Sets the read timeout for the CURL request, in seconds
     #
-    # @todo millis or secs?
-    # @param new_timeout[Integer] the number of milliseconds to wait before raising a timeout error
+    # @param new_timeout[Integer] the number of seconds to wait before raising a timeout error
     def timeout=(new_timeout)
       if new_timeout && new_timeout.to_i < 1
         raise ArgumentError, "Timeout must be a positive integer greater than 0"
@@ -124,10 +123,9 @@ module Patron
       @timeout = new_timeout.to_i
     end
 
-    # @todo millis or secs?
-    # Sets the connect timeout for the CURL request, in milliseconds.
+    # Sets the connect timeout for the CURL request, in seconds.
     #
-    # @param new_timeout[Integer] the number of milliseconds to wait before raising a timeout error
+    # @param new_timeout[Integer] the number of seconds to wait before raising a timeout error
     def connect_timeout=(new_timeout)
       if new_timeout && new_timeout.to_i < 1
         raise ArgumentError, "Timeout must be a positive integer greater than 0"
