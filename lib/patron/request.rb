@@ -157,11 +157,12 @@ module Patron
       @headers = new_headers
     end
 
-    # @todo figure out what this does in Patron - with non-streaming situations etc
-    # Sets the receive buffer size. If you use response streaming, this determines the maximum
-    # amount of data that will be buffered before yielding it in the response.
+    # Sets the receive buffer size. This is a recommendedation value, as CURL is not guaranteed to
+    # honor this value internally (see https://curl.haxx.se/libcurl/c/CURLOPT_BUFFERSIZE.html).
+    # By default, CURL uses the maximum possible buffer size, which will be the best especially
+    # for smaller and quickly-executing requests.
     #
-    # @param buffer_size[Integer,nil] the desired buffer size, or `nil` to disable buffering
+    # @param buffer_size[Integer,nil] the desired buffer size, or `nil` for automatic buffer size
     def buffer_size=(buffer_size)
       if buffer_size != nil && buffer_size.to_i < 1
         raise ArgumentError, "Buffer size must be a positive integer greater than 0 or nil"
