@@ -50,21 +50,14 @@ module Patron
     end
 
     attr_reader :url, :status, :status_line, :redirect_count, :body, :headers, :charset
-
+    
+    # Overridden so that the output is shorter and there is no response body printed
     def inspect
       # Avoid spamming the console with the header and body data
       "#<Patron::Response @status_line='#{@status_line}'>"
     end
 
-    def marshal_dump
-      [@url, @status, @status_line, @redirect_count, @body, @headers, @charset]
-    end
-
-    def marshal_load(data)
-      @url, @status, @status_line, @redirect_count, @body, @headers, @charset = data
-    end
-
-  private
+    private
 
     def determine_charset(header_data, body)
       header_data.match(charset_regex) || (body && body.match(charset_regex))
