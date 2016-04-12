@@ -187,7 +187,9 @@ module Patron
     # Retrieve the contents of the specified +url+ as with #get, but the
     # content at the URL is downloaded directly into the specified file. The file will be accessed
     # by libCURL bypassing the Ruby runtime entirely.
-    # @todo does the Response contain the body?
+    #
+    # Note that when using this option, the Response object will have ++nil++ as the body, and you
+    # will need to read your target file for access to the body string).
     #
     # @param url[String] the URL to fetch
     # @param filename[String] path to the file to save the response body in
