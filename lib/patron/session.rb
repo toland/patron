@@ -105,7 +105,7 @@ module Patron
     # @return [Boolean] Support automatic Content-Encoding decompression and set liberal Accept-Encoding headers
     attr_accessor :automatic_content_encoding
     
-    private :handle_request, :enable_cookie_session, :set_debug_file
+    private :handle_request, :add_cookie_file, :set_debug_file
 
     # Create a new Session object.
     #
@@ -135,22 +135,27 @@ module Patron
     # default or in +file+ if specified. The `file` must be readable and
     # writable. Calling multiple times will add more files.
     #
-    # @param file[String] path to an existing cookie jar file, or nil to store cookies in memory
+    # @todo the cookie jar and cookie file path options should be split
+    # @param file_path[String] path to an existing cookie jar file, or nil to store cookies in memory
     # @return self
-    def handle_cookies(file = nil)
-      if file
-        # @todo this logic must be busted somewhere.
-        # path is initialized here, and if the file attribute is nil
-        # then `enable_cookie_session` is set to an empty string (nil.to_s).
-        path = Pathname(file).expand_path
-        unless File.exists?(file) and File.writable?(path.dirname)
+    def handle_cookies(file_path = nil)
+      if file_path
+        path = Pathname(file_path).expand_path
+        
+        if !File.exists?(file_path) && !File.writable?(path.dirname)
           raise ArgumentError, "Can't create file #{path} (permission error)"
-        end
-        unless File.readable?(file) or File.writable?(path)
+        elsif File.exists?(file_path) && !File.writable?(file_path)
           raise ArgumentError, "Can't read or write file #{path} (permission error)"
         end
+      else
+        path = nil
       end
-      enable_cookie_session(path.to_s)
+      
+      # Apparently calling this with an empty string sets the cookie file,
+      # but calling it with a path to a writable file sets that file to be
+      # the cookie jar (new cookies are written there)
+      add_cookie_file(path.to_s)
+      
       self
     end
 

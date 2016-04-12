@@ -738,7 +738,7 @@ static VALUE session_interrupt(VALUE self) {
  * @param [String] file path to the existing cookie file, or nil to store in memory.
 *  @return self
  */
-static VALUE enable_cookie_session(VALUE self, VALUE file) {
+static VALUE add_cookie_file(VALUE self, VALUE file) {
   struct curl_state *state = get_curl_state(self);
   CURL* curl = state->handle;
   char* file_path = NULL;
@@ -814,7 +814,7 @@ void Init_session_ext() {
   rb_define_method(cSession, "handle_request", session_handle_request, 1);
   rb_define_method(cSession, "reset",          session_reset,          0);
   rb_define_method(cSession, "interrupt",      session_interrupt,      0);
-  rb_define_method(cSession, "enable_cookie_session", enable_cookie_session, 1);
+  rb_define_method(cSession, "add_cookie_file", add_cookie_file, 1);
   rb_define_method(cSession, "set_debug_file", set_debug_file, 1);
   rb_define_alias(cSession, "urlencode", "escape");
   rb_define_alias(cSession, "urldecode", "unescape");
