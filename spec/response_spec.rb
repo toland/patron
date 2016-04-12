@@ -1,3 +1,6 @@
+# -*- coding: UTF-8 -*-
+# Encoding pragma is needed for loading this test properly on Ruby < 2.0
+
 ## -------------------------------------------------------------------
 ##
 ## Copyright (c) 2009 Phillip Toland <phil.toland@gmail.com>
