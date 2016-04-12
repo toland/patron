@@ -38,6 +38,7 @@ static VALUE cSession = Qnil;
 static VALUE cRequest = Qnil;
 static VALUE ePatronError = Qnil;
 static VALUE eUnsupportedProtocol = Qnil;
+static VALUE eUnsupportedSSLVersion = Qnil;
 static VALUE eURLFormatError = Qnil;
 static VALUE eHostResolutionError = Qnil;
 static VALUE eConnectionFailed = Qnil;
@@ -206,10 +207,10 @@ static struct curl_state* get_curl_state(VALUE self) {
 /*----------------------------------------------------------------------------*/
 /* Method implementations                                                     */
 
-/* call-seq:
- *    Patron.libcurl_version   -> version string
- *
- * Returns the version of the embedded libcurl as a string.
+/*
+* Returns the version of the embedded libcurl.
+* 
+*  @return [String] libcurl version string
  */
 static VALUE libcurl_version(VALUE klass) {
   char* value = curl_version();
@@ -217,10 +218,11 @@ static VALUE libcurl_version(VALUE klass) {
   return rb_str_new2(value);
 }
 
-/* call-seq:
- *    Session.escape( string )   -> escaped string
+/*
+ * Escapes the provided string using libCURL URL escaping functions.
  *
- * URL escapes the provided string.
+ * @param [String] value plain string to URL-escape
+*  @return [String] the escaped string
  */
 static VALUE session_escape(VALUE self, VALUE value) {
   
@@ -240,10 +242,11 @@ static VALUE session_escape(VALUE self, VALUE value) {
   return retval;
 }
 
-/* call-seq:
- *    Session.unescape( string )   -> unescaped string
+/*
+ * Unescapes the provided string using libCURL URL escaping functions.
  *
- * Unescapes the provided string.
+ * @param [String] value URL-encoded String to unescape
+*  @return [String] unescaped (decoded) string
  */
 static VALUE session_unescape(VALUE self, VALUE value) {
   VALUE string = StringValue(value);
@@ -494,12 +497,12 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
   proxy_type = rb_iv_get(request, "@proxy_type");
   if (!NIL_P(proxy_type)) {
-    curl_easy_setopt(curl, CURLOPT_PROXYTYPE, FIX2INT(proxy_type));
+    curl_easy_setopt(curl, CURLOPT_PROXYTYPE, NUM2LONG(proxy_type));
   }
 
   credentials = rb_funcall(request, rb_intern("credentials"), 0);
   if (!NIL_P(credentials)) {
-    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, FIX2INT(rb_iv_get(request, "@auth_type")));
+    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, NUM2LONG(rb_iv_get(request, "@auth_type")));
     curl_easy_setopt(curl, CURLOPT_USERPWD, StringValuePtr(credentials));
   }
 
@@ -516,13 +519,16 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
   ssl_version = rb_iv_get(request, "@ssl_version");
   if(!NIL_P(ssl_version)) {
-    char* version = StringValuePtr(ssl_version);
+    VALUE ssl_version_str = rb_funcall(ssl_version, rb_intern("to_s"), 0);
+    char* version = StringValuePtr(ssl_version_str);
     if(strcmp(version, "SSLv2") == 0) {
       curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_SSLv2);
     } else if(strcmp(version, "SSLv3") == 0) {
       curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_SSLv3);
     } else if(strcmp(version, "TLSv1") == 0) {
       curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1);
+    } else {
+      rb_raise(eUnsupportedSSLVersion, "Unsupported SSL version: %s", version);
     }
   }
 
@@ -533,7 +539,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
   buffer_size = rb_iv_get(request, "@buffer_size");
   if (!NIL_P(buffer_size)) {
-     curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, FIX2INT(buffer_size));
+     curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, NUM2LONG(buffer_size));
   }
 
   if(state->debug_file) {
@@ -669,9 +675,7 @@ static VALUE cleanup(VALUE self) {
   return Qnil;
 }
 
-/* call-seq:
- *    session.handle_request( request )   -> response
- *
+/*
  * Peform the actual HTTP request by calling libcurl. Each filed in the
  * +request+ object will be used to set the appropriate option on the libcurl
  * library. After the request completes, a Response object will be created and
@@ -680,17 +684,25 @@ static VALUE cleanup(VALUE self) {
  * In the event of an error in the libcurl library, a Ruby exception will be
  * created and raised. The exception will return the libcurl error code and
  * error message.
+ *
+ * @param request[Patron::Request] the request to use when filling the CURL options
+ * @return [Patron::Response] the result of calling `response_class` on the Session
  */
 static VALUE session_handle_request(VALUE self, VALUE request) {
   set_options_from_request(self, request);
   return rb_ensure(&perform_request, self, &cleanup, self);
 }
 
-/* call-seq:
- *    session.reset   -> session
- *
+/*
+ * FIXME: figure out how this method should be used at all given Session is not multithreaded.
+ * FIXME: also: what is the difference with `interrupt()` and also relationship with `cleanup()`?
  * Reset the underlying cURL session. This effectively closes all open
- * connections and disables debug output.
+ * connections and disables debug output. There is no need to call this method
+ * manually after performing a request, since cleanup is performed automatically
+ * but the method can be used from another thread
+ * to abort a request currently in progress.
+ *
+ * @return self
  */
 static VALUE session_reset(VALUE self) {
   struct curl_state *state;
@@ -706,11 +718,10 @@ static VALUE session_reset(VALUE self) {
   return self;
 }
 
-/* call-seq:
- *    session.interrupt   -> session
- *
- * Interrupt any currently executing request. This will cause the current
+/* Interrupt any currently executing request. This will cause the current
  * request to error and raise an exception.
+ *
+ * @return [void] This method always raises
  */
 static VALUE session_interrupt(VALUE self) {
   struct curl_state *state = get_curl_state(self);
@@ -718,18 +729,21 @@ static VALUE session_interrupt(VALUE self) {
   return self;
 }
 
-/* call-seq:
- *    session.enable_cookie_session( file )   -> session
- *
+/*
  * Turn on cookie handling for this session, storing them in memory by
- * default or in +file+ if specified. The +file+ must be readable and
+ * default or in +file+ if specified. The `file` must be readable and
  * writable. Calling multiple times will add more files.
+ * FIXME: what does the empty string actually do here?
+* 
+ * @param [String] file path to the existing cookie file, or nil to store in memory.
+*  @return self
  */
-static VALUE enable_cookie_session(VALUE self, VALUE file) {
+static VALUE add_cookie_file(VALUE self, VALUE file) {
   struct curl_state *state = get_curl_state(self);
   CURL* curl = state->handle;
   char* file_path = NULL;
 
+  // FIXME: http://websystemsengineering.blogspot.nl/2013/03/curloptcookiefile-vs-curloptcookiejar.html
   file_path = RSTRING_PTR(file);
   if (file_path != NULL && strlen(file_path) != 0) {
     curl_easy_setopt(curl, CURLOPT_COOKIEJAR, file_path);
@@ -739,10 +753,11 @@ static VALUE enable_cookie_session(VALUE self, VALUE file) {
   return self;
 }
 
-/* call-seq:
- *    session.set_debug_file( file )   -> session
- *
+/*
  * Enable debug output to stderr or to specified +file+.
+ *
+ * @param [String, nil] file path to the debug file, or nil to write to STDERR
+*  @return self
  */
 static VALUE set_debug_file(VALUE self, VALUE file) {
   struct curl_state *state = get_curl_state(self);
@@ -774,6 +789,7 @@ void Init_session_ext() {
   ePatronError = rb_const_get(mPatron, rb_intern("Error"));
 
   eUnsupportedProtocol = rb_const_get(mPatron, rb_intern("UnsupportedProtocol"));
+  eUnsupportedSSLVersion = rb_const_get(mPatron, rb_intern("UnsupportedSSLVersion"));
   eURLFormatError = rb_const_get(mPatron, rb_intern("URLFormatError"));
   eHostResolutionError = rb_const_get(mPatron, rb_intern("HostResolutionError"));
   eConnectionFailed = rb_const_get(mPatron, rb_intern("ConnectionFailed"));
@@ -798,20 +814,20 @@ void Init_session_ext() {
   rb_define_method(cSession, "handle_request", session_handle_request, 1);
   rb_define_method(cSession, "reset",          session_reset,          0);
   rb_define_method(cSession, "interrupt",      session_interrupt,      0);
-  rb_define_method(cSession, "enable_cookie_session", enable_cookie_session, 1);
+  rb_define_method(cSession, "add_cookie_file", add_cookie_file, 1);
   rb_define_method(cSession, "set_debug_file", set_debug_file, 1);
   rb_define_alias(cSession, "urlencode", "escape");
   rb_define_alias(cSession, "urldecode", "unescape");
 
-  rb_define_const(cRequest, "AuthBasic",  INT2FIX(CURLAUTH_BASIC));
-  rb_define_const(cRequest, "AuthDigest", INT2FIX(CURLAUTH_DIGEST));
-  rb_define_const(cRequest, "AuthAny",    INT2FIX(CURLAUTH_ANY));
+  rb_define_const(cRequest, "AuthBasic",  LONG2NUM(CURLAUTH_BASIC));
+  rb_define_const(cRequest, "AuthDigest", LONG2NUM(CURLAUTH_DIGEST));
+  rb_define_const(cRequest, "AuthAny",    LONG2NUM(CURLAUTH_ANY));
 
   mProxyType = rb_define_module_under(mPatron, "ProxyType");
-  rb_define_const(mProxyType, "HTTP", INT2FIX(CURLPROXY_HTTP));
-  rb_define_const(mProxyType, "HTTP_1_0", INT2FIX(CURLPROXY_HTTP_1_0));
-  rb_define_const(mProxyType, "SOCKS4", INT2FIX(CURLPROXY_SOCKS4));
-  rb_define_const(mProxyType, "SOCKS5", INT2FIX(CURLPROXY_SOCKS5));
-  rb_define_const(mProxyType, "SOCKS4A", INT2FIX(CURLPROXY_SOCKS4A));
-  rb_define_const(mProxyType, "SOCKS5_HOSTNAME", INT2FIX(CURLPROXY_SOCKS5_HOSTNAME));
+  rb_define_const(mProxyType, "HTTP", LONG2NUM(CURLPROXY_HTTP));
+  rb_define_const(mProxyType, "HTTP_1_0", LONG2NUM(CURLPROXY_HTTP_1_0));
+  rb_define_const(mProxyType, "SOCKS4", LONG2NUM(CURLPROXY_SOCKS4));
+  rb_define_const(mProxyType, "SOCKS5", LONG2NUM(CURLPROXY_SOCKS5));
+  rb_define_const(mProxyType, "SOCKS4A", LONG2NUM(CURLPROXY_SOCKS4A));
+  rb_define_const(mProxyType, "SOCKS5_HOSTNAME", LONG2NUM(CURLPROXY_SOCKS5_HOSTNAME));
 }

@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    patron (0.5.1)
+    patron (0.6.0)
 
 GEM
   remote: https://rubygems.org/
@@ -30,6 +30,7 @@ GEM
       json (~> 1.8)
       simplecov-html (~> 0.10.0)
     simplecov-html (0.10.0)
+    yard (0.8.7.6)
 
 PLATFORMS
   ruby
@@ -40,6 +41,7 @@ DEPENDENCIES
   rake-compiler (>= 0.7.5)
   rspec (>= 2.3.0)
   simplecov (>= 0.10.0)
+  yard (~> 0.8)
 
 BUNDLED WITH
    1.11.2

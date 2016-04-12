@@ -21,6 +21,8 @@
 ## THE SOFTWARE.
 ##
 ## -------------------------------------------------------------------
+
+
 require File.expand_path("./spec") + '/spec_helper.rb'
 
 describe Patron::Util do

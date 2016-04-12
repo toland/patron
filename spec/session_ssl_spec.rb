@@ -21,6 +21,8 @@
 ## THE SOFTWARE.
 ##
 ## -------------------------------------------------------------------
+
+
 require File.expand_path("./spec") + '/spec_helper.rb'
 require 'webrick'
 require 'yaml'
@@ -267,6 +269,15 @@ describe Patron::Session do
     end
   end
 
+  it "should raise when an unsupported or unknown SSL version is requested" do
+    ['something', 1].each do |version|
+      @session.ssl_version = version
+      expect {
+        @session.get("/test")
+      }.to raise_error(Patron::UnsupportedSSLVersion)
+    end
+  end
+  
   # ------------------------------------------------------------------------
   describe 'when debug is enabled' do
     it 'it should not clobber stderr' do
