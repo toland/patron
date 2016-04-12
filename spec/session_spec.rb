@@ -288,6 +288,18 @@ describe Patron::Session do
     expect(body.header['authorization']).to be == [encode_authz("foo", "bar")]
   end
 
+  it "should store cookies across multiple requests" do
+    tf = Tempfile.new('cookiejar')
+    cookie_jar_path = tf.path
+    
+    @session.handle_cookies(cookie_jar_path)
+    response = @session.get("/setcookie").body
+    
+    cookie_jar_contents = tf.read
+    expect(cookie_jar_contents).not_to be_empty
+    expect(cookie_jar_contents).to include('Netscape HTTP Cookie File')
+  end
+  
   it "should handle cookies if set" do
     @session.handle_cookies
     response = @session.get("/setcookie").body
