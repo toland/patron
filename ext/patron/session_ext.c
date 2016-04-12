@@ -637,7 +637,9 @@ static VALUE perform_request(VALUE self) {
     VALUE header_str = membuffer_to_rb_str(header_buffer);
     VALUE body_str = Qnil;
     if (!state->download_file) { body_str = membuffer_to_rb_str(body_buffer); }
-
+    
+    curl_easy_setopt(curl, CURLOPT_COOKIELIST, "FLUSH"); // Flush cookies to the cookie jar
+    
     return create_response(self, curl, header_str, body_str);
   } else {
     rb_raise(select_error(ret), "%s", state->error_buf);
