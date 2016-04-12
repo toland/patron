@@ -28,6 +28,33 @@ module Patron
 
   # Represents the response from the HTTP server.
   class Response
+    # @return [String] the original URL used to perform the request (contains the final URL after redirects)
+    attr_reader :url
+
+    # @return [Fixnum] the HTTP status code of the final response after all the redirects
+    attr_reader :status
+
+    # @return [String] the complete status line (code and message)
+    attr_reader :status_line
+
+    # @return [Fixnum] how many redirects were followed when fulfilling this request
+    attr_reader :redirect_count
+
+    # @return [String, nil] the response body, or nil if the response was written directly to a file
+    attr_reader :body
+
+    # @return [Hash] the response headers. If there were multiple headers received for the same value
+    #   (like "Cookie"), the header values will be within an Array under the key for the header, in order.
+    attr_reader :headers
+
+    # @return [String] the recognized name of the charset for the response
+    attr_reader :charset
+
+    # Overridden so that the output is shorter and there is no response body printed
+    def inspect
+      # Avoid spamming the console with the header and body data
+      "#<Patron::Response @status_line='#{@status_line}'>"
+    end
 
     def initialize(url, status, redirect_count, header_data, body, default_charset = nil)
       # Don't let a response clear out the default charset, which would cause encoding to fail
@@ -47,14 +74,6 @@ module Patron
       if @headers["Content-Type"] && @headers["Content-Type"][0, 5] == "text/"
         convert_to_default_encoding!(@body)
       end
-    end
-
-    attr_reader :url, :status, :status_line, :redirect_count, :body, :headers, :charset
-    
-    # Overridden so that the output is shorter and there is no response body printed
-    def inspect
-      # Avoid spamming the console with the header and body data
-      "#<Patron::Response @status_line='#{@status_line}'>"
     end
 
     private
