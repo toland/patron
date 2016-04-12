@@ -269,6 +269,15 @@ describe Patron::Session do
     end
   end
 
+  it "should raise when an unsupported or unknown SSL version is requested" do
+    ['something', 1].each do |version|
+      @session.ssl_version = version
+      expect {
+        @session.get("/test")
+      }.to raise_error(Patron::UnsupportedSSLVersion)
+    end
+  end
+  
   # ------------------------------------------------------------------------
   describe 'when debug is enabled' do
     it 'it should not clobber stderr' do

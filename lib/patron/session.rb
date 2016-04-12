@@ -77,8 +77,8 @@ module Patron
     # Please consider twice before using this option..
     attr_accessor :insecure
 
-    # @todo return type?
-    # @return [String] the SSL version for the requests
+    # @return [String] the SSL version for the requests, or nil if all versions are permitted
+    # The supported values are nil, "SSLv2", "SSLv3", and "TLSv1".
     attr_accessor :ssl_version
 
     # @return [String] path to the CA file used for certificate verification, or `nil` if CURL default is used

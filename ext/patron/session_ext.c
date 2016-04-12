@@ -38,6 +38,7 @@ static VALUE cSession = Qnil;
 static VALUE cRequest = Qnil;
 static VALUE ePatronError = Qnil;
 static VALUE eUnsupportedProtocol = Qnil;
+static VALUE eUnsupportedSSLVersion = Qnil;
 static VALUE eURLFormatError = Qnil;
 static VALUE eHostResolutionError = Qnil;
 static VALUE eConnectionFailed = Qnil;
@@ -518,13 +519,16 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
   ssl_version = rb_iv_get(request, "@ssl_version");
   if(!NIL_P(ssl_version)) {
-    char* version = StringValuePtr(ssl_version);
+    VALUE ssl_version_str = rb_funcall(ssl_version, rb_intern("to_s"), 0);
+    char* version = StringValuePtr(ssl_version_str);
     if(strcmp(version, "SSLv2") == 0) {
       curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_SSLv2);
     } else if(strcmp(version, "SSLv3") == 0) {
       curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_SSLv3);
     } else if(strcmp(version, "TLSv1") == 0) {
       curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1);
+    } else {
+      rb_raise(eUnsupportedSSLVersion, "Unsupported SSL version: %s", version);
     }
   }
 
@@ -785,6 +789,7 @@ void Init_session_ext() {
   ePatronError = rb_const_get(mPatron, rb_intern("Error"));
 
   eUnsupportedProtocol = rb_const_get(mPatron, rb_intern("UnsupportedProtocol"));
+  eUnsupportedSSLVersion = rb_const_get(mPatron, rb_intern("UnsupportedSSLVersion"));
   eURLFormatError = rb_const_get(mPatron, rb_intern("URLFormatError"));
   eHostResolutionError = rb_const_get(mPatron, rb_intern("HostResolutionError"));
   eConnectionFailed = rb_const_get(mPatron, rb_intern("ConnectionFailed"));

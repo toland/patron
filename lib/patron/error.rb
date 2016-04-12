@@ -29,9 +29,12 @@ module Patron
   # Base class for Patron exceptions.
   class Error < StandardError; end
 
-  # Gets raised when tThe URL you passed to Patron used a protocol that it does not support.
+  # Gets raised when the URL passed to Patron used a protocol that it does not support.
   # This most likely the result of a misspelled protocol string.
   class UnsupportedProtocol   < Error; end
+
+  # Gets raised when a request is attempted with an unsupported SSL version.
+  class UnsupportedSSLVersion < Error; end
 
   # Gets raised when the URL was not properly formatted.
   class URLFormatError        < Error; end
