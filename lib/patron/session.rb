@@ -92,9 +92,11 @@ module Patron
     # only be set if buffer_size is non-nil
     attr_accessor :buffer_size
 
-    # @return [Unknown]
-    # @todo shoudl this be an HTTP charset name or a Ruby Encoding const?
-    # Default encoding of responses. Used if no charset is provided by the host.
+    # @return [String, nil]
+    # Sets the name of the charset to assume for the response. The argument should be a String that
+    # is an acceptable argument for `Encoding.find()` in Ruby. The variable will only be used if the
+    # response does not specify a charset in it's `Content-Type` header already, if it does that charset
+    # will take precedence.
     attr_accessor :default_response_charset
     
     # @return [Boolean] Force curl to use IPv4
