@@ -497,12 +497,12 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
   proxy_type = rb_iv_get(request, "@proxy_type");
   if (!NIL_P(proxy_type)) {
-    curl_easy_setopt(curl, CURLOPT_PROXYTYPE, FIX2INT(proxy_type));
+    curl_easy_setopt(curl, CURLOPT_PROXYTYPE, NUM2LONG(proxy_type));
   }
 
   credentials = rb_funcall(request, rb_intern("credentials"), 0);
   if (!NIL_P(credentials)) {
-    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, FIX2INT(rb_iv_get(request, "@auth_type")));
+    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, NUM2LONG(rb_iv_get(request, "@auth_type")));
     curl_easy_setopt(curl, CURLOPT_USERPWD, StringValuePtr(credentials));
   }
 
@@ -539,7 +539,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
   buffer_size = rb_iv_get(request, "@buffer_size");
   if (!NIL_P(buffer_size)) {
-     curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, FIX2INT(buffer_size));
+     curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, NUM2LONG(buffer_size));
   }
 
   if(state->debug_file) {
@@ -819,15 +819,15 @@ void Init_session_ext() {
   rb_define_alias(cSession, "urlencode", "escape");
   rb_define_alias(cSession, "urldecode", "unescape");
 
-  rb_define_const(cRequest, "AuthBasic",  INT2FIX(CURLAUTH_BASIC));
-  rb_define_const(cRequest, "AuthDigest", INT2FIX(CURLAUTH_DIGEST));
-  rb_define_const(cRequest, "AuthAny",    INT2FIX(CURLAUTH_ANY));
+  rb_define_const(cRequest, "AuthBasic",  LONG2NUM(CURLAUTH_BASIC));
+  rb_define_const(cRequest, "AuthDigest", LONG2NUM(CURLAUTH_DIGEST));
+  rb_define_const(cRequest, "AuthAny",    LONG2NUM(CURLAUTH_ANY));
 
   mProxyType = rb_define_module_under(mPatron, "ProxyType");
-  rb_define_const(mProxyType, "HTTP", INT2FIX(CURLPROXY_HTTP));
-  rb_define_const(mProxyType, "HTTP_1_0", INT2FIX(CURLPROXY_HTTP_1_0));
-  rb_define_const(mProxyType, "SOCKS4", INT2FIX(CURLPROXY_SOCKS4));
-  rb_define_const(mProxyType, "SOCKS5", INT2FIX(CURLPROXY_SOCKS5));
-  rb_define_const(mProxyType, "SOCKS4A", INT2FIX(CURLPROXY_SOCKS4A));
-  rb_define_const(mProxyType, "SOCKS5_HOSTNAME", INT2FIX(CURLPROXY_SOCKS5_HOSTNAME));
+  rb_define_const(mProxyType, "HTTP", LONG2NUM(CURLPROXY_HTTP));
+  rb_define_const(mProxyType, "HTTP_1_0", LONG2NUM(CURLPROXY_HTTP_1_0));
+  rb_define_const(mProxyType, "SOCKS4", LONG2NUM(CURLPROXY_SOCKS4));
+  rb_define_const(mProxyType, "SOCKS5", LONG2NUM(CURLPROXY_SOCKS5));
+  rb_define_const(mProxyType, "SOCKS4A", LONG2NUM(CURLPROXY_SOCKS4A));
+  rb_define_const(mProxyType, "SOCKS5_HOSTNAME", LONG2NUM(CURLPROXY_SOCKS5_HOSTNAME));
 }
