@@ -220,9 +220,10 @@ module Patron
       request(:delete, url, headers)
     end
 
-    # Uploads the passed `data` to the specified `url` using an HTTP PUT.
-    # @todo inconsistency with "post" - Hash not accepted
+    # Uploads the passed `data` to the specified `url` using an HTTP PUT. Note that
+    # unline ++post++, a Hash is not accepted as the ++data++ argument.
     #
+    # @todo inconsistency with "post" - Hash not accepted
     # @param url[String] the URL to fetch
     # @param data[#to_s] an object that can be converted to a String to create the request body
     # @param headers[Hash] the hash of header keys to values
@@ -269,7 +270,6 @@ module Patron
 
     # Uploads the contents of `filename` to the specified `url` using an HTTP POST,
     # in combination with given form fields passed in `data`.
-    # @todo how to upload multiple files? does data get cast to Hash or checked?
     #
     # @param url[String] the URL to fetch
     # @param data[Hash] hash of the form fields
