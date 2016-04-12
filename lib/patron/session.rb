@@ -161,11 +161,11 @@ module Patron
 
     # Enable debug output to stderr or to specified `file`.
     #
+    # @todo Change to an assignment of an IO object
     # @param file[String, nil] path to the file to write debug data to, or `nil` to print to `STDERR`
     # @return self
     def enable_debug(file = nil)
       set_debug_file(file.to_s)
-      # @todo test for self-return
       self
     end
 

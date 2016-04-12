@@ -473,10 +473,12 @@ describe Patron::Session do
     it 'it should not clobber stderr' do
       rdev = STDERR.stat.rdev
 
-      @session.enable_debug
+      retval = @session.enable_debug
+      expect(retval).to eq(@session)
       expect(STDERR.stat.rdev).to be == rdev
 
-      @session.enable_debug
+      retval = @session.enable_debug
+      expect(retval).to eq(@session)
       expect(STDERR.stat.rdev).to be == rdev
     end
   end
