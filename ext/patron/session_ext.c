@@ -274,7 +274,8 @@ static int each_http_header(VALUE header_key, VALUE header_value, VALUE self) {
   VALUE name = rb_obj_as_string(header_key);
   VALUE value = rb_obj_as_string(header_value);
   VALUE header_str = Qnil;
-
+  
+  // TODO: see how to combine this with automatic_content_encoding
   if (rb_str_cmp(name, rb_str_new2("Accept-Encoding")) == 0) {
     if (rb_funcall(value, rb_intern("include?"), 1, rb_str_new2("gzip"))) {
       #ifdef CURLOPT_ACCEPT_ENCODING
@@ -464,7 +465,14 @@ static void set_options_from_request(VALUE self, VALUE request) {
   // Enable automatic content-encoding support via gzip/deflate if set in the request,
   // see https://curl.haxx.se/libcurl/c/CURLOPT_ACCEPT_ENCODING.html
   if(RTEST(a_c_encoding)) {
-    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+    #ifdef CURLOPT_ACCEPT_ENCODING
+      curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+    #elif defined CURLOPT_ENCODING
+      curl_easy_setopt(curl, CURLOPT_ENCODING, "");
+    #else
+      rb_raise(rb_eArgError,
+        "The libcurl version installed doesn't support automatic content negotiation");
+    #endif
   }
   
   url = rb_iv_get(request, "@url");
