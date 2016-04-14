@@ -274,7 +274,8 @@ static int each_http_header(VALUE header_key, VALUE header_value, VALUE self) {
   VALUE name = rb_obj_as_string(header_key);
   VALUE value = rb_obj_as_string(header_value);
   VALUE header_str = Qnil;
-
+  
+  // TODO: see how to combine this with automatic_content_encoding
   if (rb_str_cmp(name, rb_str_new2("Accept-Encoding")) == 0) {
     if (rb_funcall(value, rb_intern("include?"), 1, rb_str_new2("gzip"))) {
       #ifdef CURLOPT_ACCEPT_ENCODING
