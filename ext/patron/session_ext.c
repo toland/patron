@@ -464,7 +464,14 @@ static void set_options_from_request(VALUE self, VALUE request) {
   // Enable automatic content-encoding support via gzip/deflate if set in the request,
   // see https://curl.haxx.se/libcurl/c/CURLOPT_ACCEPT_ENCODING.html
   if(RTEST(a_c_encoding)) {
-    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+    #ifdef CURLOPT_ACCEPT_ENCODING
+      curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+    #elif defined CURLOPT_ENCODING
+      curl_easy_setopt(curl, CURLOPT_ENCODING, "");
+    #else
+      rb_raise(rb_eArgError,
+        "The libcurl version installed doesn't support automatic content negotiation");
+    #endif
   }
   
   url = rb_iv_get(request, "@url");
