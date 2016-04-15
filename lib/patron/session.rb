@@ -232,6 +232,18 @@ module Patron
       request(:put, url, headers, :data => data)
     end
 
+    # Uploads the passed `data` to the specified `url` using an HTTP PATCH. Note that
+    # unline ++post++, a Hash is not accepted as the ++data++ argument.
+    #
+    # @todo inconsistency with "post" - Hash not accepted
+    # @param url[String] the URL to fetch
+    # @param data[#to_s] an object that can be converted to a String to create the request body
+    # @param headers[Hash] the hash of header keys to values
+    # @return [Patron::Response]
+    def patch(url, data, headers = {})
+      request(:patch, url, headers, :data => data)
+    end
+
     # Uploads the contents of `file` to the specified `url` using an HTTP PUT. The file will be
     # sent "as-is" without any multipart encoding.
     #
