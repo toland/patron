@@ -115,6 +115,13 @@ class TestPostBodyServlet < HTTPServlet::AbstractServlet
   end
 end
 
+class TestPatchBodyServlet < HTTPServlet::AbstractServlet
+  include RespondWith
+  def do_PATCH(req, res)
+    respond_with(:PATCH, {'body' => req.body, 'content_type' => req.content_type}, res)
+  end
+end
+
 class SetCookieServlet < HTTPServlet::AbstractServlet
   def do_GET(req, res)
     res['Set-Cookie'] = "session_id=foo123"
@@ -178,6 +185,7 @@ class PatronTestServer
 
     @server.mount("/test", TestServlet)
     @server.mount("/testpost", TestPostBodyServlet)
+    @server.mount("/testpatch", TestPatchBodyServlet)
     @server.mount("/timeout", TimeoutServlet)
     @server.mount("/redirect", RedirectServlet)
     @server.mount("/picture", PictureServlet)
@@ -185,7 +193,6 @@ class PatronTestServer
     @server.mount("/repetitiveheader", RepetitiveHeaderServlet)
     @server.mount("/wrongcontentlength", WrongContentLengthServlet)
     @server.mount("/gzip-compressed", GzipServlet)
-
   end
 
   def start

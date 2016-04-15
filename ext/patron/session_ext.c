@@ -390,11 +390,19 @@ static void set_options_from_request(VALUE self, VALUE request) {
     } else {
       state->download_file = NULL;
     }
-  } else if (action == rb_intern("post") || action == rb_intern("put")) {
+  } else if (action == rb_intern("post") || action == rb_intern("put") || action == rb_intern("patch")) {
     VALUE data = rb_iv_get(request, "@upload_data");
     VALUE filename = rb_iv_get(request, "@file_name");
     VALUE multipart = rb_iv_get(request, "@multipart");
 
+    if (action == rb_intern("post")) {
+      curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "POST");
+    } else if (action == rb_intern("put")) {
+      curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+    } else if (action == rb_intern("patch")) {
+      curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
+    }
+    
     if (!NIL_P(data) && NIL_P(multipart)) {
       data = rb_funcall(data, rb_intern("to_s"), 0);
       long len = RSTRING_LEN(data);
@@ -414,10 +422,6 @@ static void set_options_from_request(VALUE self, VALUE request) {
       set_chunked_encoding(state);
 
       curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
-
-      if (action == rb_intern("post")) {
-        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "POST");
-      }
 
       state->upload_file = open_file(filename, "rb");
       curl_easy_setopt(curl, CURLOPT_READDATA, state->upload_file);
