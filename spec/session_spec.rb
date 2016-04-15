@@ -202,6 +202,13 @@ describe Patron::Session do
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
 
+  it "should upload data with :patch" do
+    data = "upload data"
+    response = @session.patch("/testpatch", data)
+    body = YAML::load(response.body)
+    expect(body["body"]).to eq("upload data")
+  end
+
   it "should upload data with :delete" do
     data = "upload data"
     response = @session.request(:delete, "/test", {}, :data => data)
@@ -245,7 +252,7 @@ describe Patron::Session do
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
 
-  it "should post a hash of arguments as a urlencoded form" do
+  it "should POST a hash of arguments as a urlencoded form" do
     data = {:foo => 123, 'baz' => '++hello world++'}
     response = @session.post("/testpost", data)
     body = YAML::load(response.body)

@@ -34,7 +34,7 @@ module Patron
   class Request
 
     # Contains the valid HTTP verbs that can be used to perform requests
-    VALID_ACTIONS = %w[GET PUT POST DELETE HEAD COPY]
+    VALID_ACTIONS = %w[GET PUT POST DELETE HEAD COPY PATCH]
 
     # Initializes a new Request, which defaults to the GET HTTP verb and
     # has it's timeouts set to 0
