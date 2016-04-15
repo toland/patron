@@ -353,10 +353,10 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE cacert                = Qnil;
   VALUE ssl_version           = Qnil;
   VALUE buffer_size           = Qnil;
-  VALUE action_name           = rb_iv_get(request, "@action");
-  VALUE a_c_encoding          = rb_iv_get(request, "@automatic_content_encoding");
+  VALUE action_name           = rb_funcall(request, rb_intern("action"), 0);
+  VALUE a_c_encoding          = rb_funcall(request, rb_intern("automatic_content_encoding"), 0);
 
-  headers = rb_iv_get(request, "@headers");
+  headers = rb_funcall(request, rb_intern("headers"), 0);
   if (!NIL_P(headers)) {
     if (rb_type(headers) != T_HASH) {
       rb_raise(rb_eArgError, "Headers must be passed in a hash.");
@@ -366,12 +366,12 @@ static void set_options_from_request(VALUE self, VALUE request) {
   }
 
   action = SYM2ID(action_name);
-  if(rb_iv_get(request, "@force_ipv4")) {
+  if(rb_funcall(request, rb_intern("force_ipv4"), 0)) {
     curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
   }
   if (action == rb_intern("get")) {
-    VALUE data = rb_iv_get(request, "@upload_data");
-    VALUE download_file = rb_iv_get(request, "@file_name");
+    VALUE data = rb_funcall(request, rb_intern("upload_data"), 0);
+    VALUE download_file = rb_funcall(request, rb_intern("file_name"), 0);
 
     curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
     if (!NIL_P(data)) {
@@ -391,9 +391,9 @@ static void set_options_from_request(VALUE self, VALUE request) {
       state->download_file = NULL;
     }
   } else if (action == rb_intern("post") || action == rb_intern("put")) {
-    VALUE data = rb_iv_get(request, "@upload_data");
-    VALUE filename = rb_iv_get(request, "@file_name");
-    VALUE multipart = rb_iv_get(request, "@multipart");
+    VALUE data = rb_funcall(request, rb_intern("upload_data"), 0);
+    VALUE filename = rb_funcall(request, rb_intern("file_name"), 0);
+    VALUE multipart = rb_funcall(request, rb_intern("multipart"), 0);
 
     if (!NIL_P(data) && NIL_P(multipart)) {
       data = rb_funcall(data, rb_intern("to_s"), 0);
@@ -441,8 +441,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
   // support for data passed with a DELETE request (e.g.: used by elasticsearch)
   } else if (action == rb_intern("delete")) {
-      VALUE data = rb_iv_get(request, "@upload_data");
-
+      VALUE data = rb_funcall(request, rb_intern("upload_data"), 0);
       if (!NIL_P(data)) {
         long len = RSTRING_LEN(data);
         state->upload_buf = StringValuePtr(data);
@@ -475,57 +474,58 @@ static void set_options_from_request(VALUE self, VALUE request) {
     #endif
   }
   
-  url = rb_iv_get(request, "@url");
+  url = rb_funcall(request, rb_intern("url"), 0);
   if (NIL_P(url)) {
     rb_raise(rb_eArgError, "Must provide a URL");
   }
   curl_easy_setopt(curl, CURLOPT_URL, StringValuePtr(url));
 
-  timeout = rb_iv_get(request, "@timeout");
+  timeout = rb_funcall(request, rb_intern("timeout"), 0);
   if (!NIL_P(timeout)) {
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, FIX2INT(timeout));
   }
 
-  timeout = rb_iv_get(request, "@connect_timeout");
+  timeout = rb_funcall(request, rb_intern("connect_timeout"), 0);
   if (!NIL_P(timeout)) {
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, FIX2INT(timeout));
   }
 
-  redirects = rb_iv_get(request, "@max_redirects");
+  redirects = rb_funcall(request, rb_intern("max_redirects"), 0);
   if (!NIL_P(redirects)) {
     int r = FIX2INT(redirects);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, r == 0 ? 0 : 1);
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, r);
   }
 
-  proxy = rb_iv_get(request, "@proxy");
+  proxy = rb_funcall(request, rb_intern("proxy"), 0);
   if (!NIL_P(proxy)) {
     curl_easy_setopt(curl, CURLOPT_PROXY, StringValuePtr(proxy));
   }
 
-  proxy_type = rb_iv_get(request, "@proxy_type");
+  proxy_type = rb_funcall(request, rb_intern("proxy_type"), 0);
   if (!NIL_P(proxy_type)) {
     curl_easy_setopt(curl, CURLOPT_PROXYTYPE, NUM2LONG(proxy_type));
   }
 
   credentials = rb_funcall(request, rb_intern("credentials"), 0);
   if (!NIL_P(credentials)) {
-    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, NUM2LONG(rb_iv_get(request, "@auth_type")));
+    VALUE auth_type = rb_funcall(request, rb_intern("auth_type"), 0);
+    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, NUM2LONG(auth_type));
     curl_easy_setopt(curl, CURLOPT_USERPWD, StringValuePtr(credentials));
   }
 
-  ignore_content_length = rb_iv_get(request, "@ignore_content_length");
+  ignore_content_length = rb_funcall(request, rb_intern("ignore_content_length"), 0);
   if (!NIL_P(ignore_content_length)) {
     curl_easy_setopt(curl, CURLOPT_IGNORE_CONTENT_LENGTH, 1);
   }
 
-  insecure = rb_iv_get(request, "@insecure");
+  insecure = rb_funcall(request, rb_intern("insecure"), 0);
   if(!NIL_P(insecure)) {
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
   }
 
-  ssl_version = rb_iv_get(request, "@ssl_version");
+  ssl_version = rb_funcall(request, rb_intern("ssl_version"), 0);
   if(!NIL_P(ssl_version)) {
     VALUE ssl_version_str = rb_funcall(ssl_version, rb_intern("to_s"), 0);
     char* version = StringValuePtr(ssl_version_str);
@@ -540,12 +540,12 @@ static void set_options_from_request(VALUE self, VALUE request) {
     }
   }
 
-  cacert = rb_iv_get(request, "@cacert");
+  cacert = rb_funcall(request, rb_intern("cacert"), 0);
   if(!NIL_P(cacert)) {
     curl_easy_setopt(curl, CURLOPT_CAINFO, StringValuePtr(cacert));
   }
 
-  buffer_size = rb_iv_get(request, "@buffer_size");
+  buffer_size = rb_funcall(request, rb_intern("buffer_size"), 0);
   if (!NIL_P(buffer_size)) {
      curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, NUM2LONG(buffer_size));
   }
@@ -575,7 +575,7 @@ static VALUE create_response(VALUE self, CURL* curl, VALUE header_buffer, VALUE 
 
   args[3] = header_buffer;
   args[4] = body_buffer;
-  args[5] = rb_iv_get(self, "@default_response_charset");
+  args[5] = rb_funcall(self, rb_intern("default_response_charset"), 0);
   
   responseKlass = rb_funcall(self, rb_intern("response_class"), 0);
   return rb_class_new_instance(6, args, responseKlass);
