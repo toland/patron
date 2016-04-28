@@ -194,6 +194,18 @@ describe Patron::Session do
     expect(body.request_method).to be == "GET"
   end
   
+  it "should upload data with :get" do
+    # Sending a request body with a GET request is a technique seldom used,
+    # but it does get used nevertheless - for instance, it is a usual
+    # practice when interacting with an ElasticSearch cluster where
+    # you can have very deeply going queries, which are still technically GETs
+    data = SecureRandom.random_bytes(1024 * 24)
+    response = @session.request(:get, "/test", {}, :data => data)
+    body = YAML::load(response.body)
+    expect(body.request_method).to be == "GET"
+    expect(body.header['content-length']).to be == [data.size.to_s]
+  end
+  
   it "should upload data with :put" do
     data = SecureRandom.random_bytes(1024 * 24)
     response = @session.put("/test", data)

@@ -77,19 +77,6 @@ static size_t session_write_handler(char* stream, size_t size, size_t nmemb, mem
   return size * nmemb;
 }
 
-static size_t session_read_handler(char* stream, size_t size, size_t nmemb, char **buffer) {
-  size_t result = 0;
-
-  if (buffer != NULL && *buffer != NULL) {
-    size_t len = size * nmemb;
-    char *s1 = strncpy(stream, *buffer, len);
-    result = strlen(s1);
-    *buffer += result;
-  }
-
-  return result;
-}
-
 /* A non-zero return value from the progress handler will terminate the current
  * request. We use this fact in order to interrupt any request when either the
  * user calls the "interrupt" method on the session or when the Ruby interpreter
@@ -319,6 +306,16 @@ static int formadd_files(VALUE data_key, VALUE data_value, VALUE self) {
   return 0;
 }
 
+// Set the given char pointer and it's length to be the CURL request body
+static void set_curl_request_body(CURL* curl, char* buf, curl_off_t len) {
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, buf);
+  #ifdef CURLOPT_POSTFIELDSIZE_LARGE
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, len);
+  #else
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
+  #endif
+}
+
 static void set_chunked_encoding(struct curl_state *state) {
   state->headers = curl_slist_append(state->headers, "Transfer-Encoding: chunked");
 }
@@ -378,11 +375,8 @@ static void set_options_from_request(VALUE self, VALUE request) {
       data = rb_funcall(data, rb_intern("to_s"), 0);
       long len = RSTRING_LEN(data);
       state->upload_buf = StringValuePtr(data);
-      curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
+      set_curl_request_body(curl, state->upload_buf, len);
       curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "GET");
-      curl_easy_setopt(curl, CURLOPT_READFUNCTION, &session_read_handler);
-      curl_easy_setopt(curl, CURLOPT_READDATA, &state->upload_buf);
-      curl_easy_setopt(curl, CURLOPT_INFILESIZE, len);
     }
     if (!NIL_P(download_file)) {
       state->download_file = open_file(download_file, "wb");
@@ -405,20 +399,12 @@ static void set_options_from_request(VALUE self, VALUE request) {
     
     if (!NIL_P(data) && NIL_P(multipart)) {
       data = rb_funcall(data, rb_intern("to_s"), 0);
-      long len = RSTRING_LEN(data);
-      state->upload_buf = StringValuePtr(data);
-
       if (action == rb_intern("post")) {
         curl_easy_setopt(curl, CURLOPT_POST, 1);
       }
-      curl_easy_setopt(curl, CURLOPT_POSTFIELDS, state->upload_buf);
-
-      #ifdef CURLOPT_POSTFIELDSIZE_LARGE
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)len);
-      #else
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (curl_off_t)len);
-      #endif
-
+      long len = RSTRING_LEN(data);
+      state->upload_buf = StringValuePtr(data);
+      set_curl_request_body(curl, state->upload_buf, len);
     } else if (!NIL_P(filename) && NIL_P(multipart)) {
       set_chunked_encoding(state);
 
