@@ -410,14 +410,15 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
       if (action == rb_intern("post")) {
         curl_easy_setopt(curl, CURLOPT_POST, 1);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, state->upload_buf);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
-      } else {
-        curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
-        curl_easy_setopt(curl, CURLOPT_READFUNCTION, &session_read_handler);
-        curl_easy_setopt(curl, CURLOPT_READDATA, &state->upload_buf);
-        curl_easy_setopt(curl, CURLOPT_INFILESIZE, len);
       }
+      curl_easy_setopt(curl, CURLOPT_POSTFIELDS, state->upload_buf);
+
+      #ifdef CURLOPT_POSTFIELDSIZE_LARGE
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)len);
+      #else
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (curl_off_t)len);
+      #endif
+
     } else if (!NIL_P(filename) && NIL_P(multipart)) {
       set_chunked_encoding(state);
 

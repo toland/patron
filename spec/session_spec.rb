@@ -195,7 +195,7 @@ describe Patron::Session do
   end
   
   it "should upload data with :put" do
-    data = "upload data"
+    data = SecureRandom.random_bytes(1024 * 24)
     response = @session.put("/test", data)
     body = YAML::load(response.body)
     expect(body.request_method).to be == "PUT"
