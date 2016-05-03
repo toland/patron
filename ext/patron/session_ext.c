@@ -669,6 +669,8 @@ static VALUE cleanup(VALUE self) {
 
   if (state->post) {
     curl_formfree(state->post);
+    state->post = NULL;
+    state->last = NULL;
   }
 
   state->upload_buf = NULL;
