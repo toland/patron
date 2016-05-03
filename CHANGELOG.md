@@ -1,3 +1,7 @@
+### 0.6.4
+
+* Fix segfault when attempting multiple post requests with multipart (#119)
+
 ### 0.6.3
 
 * Fix timeout when uploading a body using all verbs except POST
