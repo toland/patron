@@ -50,6 +50,33 @@ You can ship custom headers with a single request:
 
     sess.post("/foo/stuff", "some data", {"Content-Type" => "text/plain"})
 
+## Known issues
+
+Currently, [an issue is at play](https://github.com/curl/curl/issues/788) with OSX builds of `curl` which use Apple's SecureTransport. Such builds (which Patron is linking to), are causing segfaults when performing HTTPS requests in forked subprocesses. If you need to check whether your
+system is affected, run the Patron test suite by performing
+
+    $ bundle install && bundle exec rspec
+
+in the Patron install directory. Most default curl configurations on OSX (both
+the Apple-shipped version and the version available via Homebrew) are linked to
+SecureTransport and are likely to be affected. This issue may also manifest in
+forking webserver implementations (such as Unicorn or Passenger) and in forking
+job execution engines (such as resque), so even though you may not be using
+`fork()` directly your server engine might be doing it for you.
+
+To circumvent the issue, you need to build `curl` with OpenSSL via homebrew.
+When doing so, `curl` will use openssl as it's SSL driver. You also need to
+change the Patron compile flag:
+
+
+    $ brew install curl --with-openssl && \
+        gem install patron --with-curl-config=/usr/local/opt/curl/bin/curl-config
+
+You can also save this parameter for all future Bundler-driven gem installs by
+setting this flag in Bundler proper:
+
+    $ bundle config build.patron --with-curl-config=/usr/local/opt/curl/bin/curl-config
+
 ## Threading
 
 By itself, the `Patron::Session` objects are not thread safe (each `Session` holds a single `curl_state` pointer
