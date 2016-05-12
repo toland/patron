@@ -1,5 +1,6 @@
 ### 0.6.4
 
+* Explain a segfault with SSL in forked processes on OSX, document the way to avoid the issue
 * Fix segfault when attempting multiple post requests with multipart (#119)
 
 ### 0.6.3
