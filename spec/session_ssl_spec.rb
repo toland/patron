@@ -52,6 +52,28 @@ describe Patron::Session do
     FileUtils.rm tmpfile
   end
 
+  # See https://github.com/curl/curl/issues/788
+  # Basically any HTTPS operation crashes on OSX with securetransport-enabled libCURL
+  it "should download content in a forked subprocess" do
+    # To trigger the bug, we need to perform a request in the master process first
+    tmpfile = "/tmp/patron_test.yaml"
+    @session.get_file "/test2", tmpfile
+    File.unlink(tmpfile)
+    
+    # and this one segfaults
+    pid = fork do
+      tmpfile = "/tmp/patron_test.yaml"
+      response = @session.get_file "/test", tmpfile
+      expect(response.body).to be_nil
+      body = YAML::load_file(tmpfile)
+      expect(body.request_method).to be == "GET"
+      FileUtils.rm tmpfile
+    end
+    
+    exit_pid, status = Process.wait2(pid)
+    expect(status.exitstatus).to be_zero
+  end
+  
   it "should download correctly(md5 ok) with get_file" do
     tmpfile = "/tmp/picture"
     response = @session.get_file "/picture", tmpfile

@@ -28,7 +28,10 @@ require 'rbconfig'
 
 dir_config('curl')
 
-if find_executable('curl-config')
+if curl_config_path = with_config('curl-config')
+  $CFLAGS << " #{`#{curl_config_path} --cflags`.strip}"
+  $LIBS << " #{`#{curl_config_path} --libs`.strip}"
+elsif find_executable('curl-config')
   $CFLAGS << " #{`curl-config --cflags`.strip}"
   $LIBS << " #{`curl-config --libs`.strip}"
 elsif !have_library('curl') or !have_header('curl/curl.h')
