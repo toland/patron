@@ -28,6 +28,8 @@ module Patron
 
   # Represents the response from the HTTP server.
   class Response
+    include ResponseDecoding
+    
     # @return [String] the original URL used to perform the request (contains the final URL after redirects)
     attr_reader :url
 
@@ -40,14 +42,16 @@ module Patron
     # @return [Fixnum] how many redirects were followed when fulfilling this request
     attr_reader :redirect_count
 
-    # @return [String, nil] the response body, or nil if the response was written directly to a file
+    # @return [String, nil] the response body as a String encoded as `Encoding::BINARY` or
+    #           or `nil` if the response was written directly to a file
     attr_reader :body
-
+    
     # @return [Hash] the response headers. If there were multiple headers received for the same value
     #   (like "Cookie"), the header values will be within an Array under the key for the header, in order.
     attr_reader :headers
 
-    # @return [String] the recognized name of the charset for the response
+    # @return [String] the recognized name of the charset for the response. The name is not checked
+    #    to be a valid charset name, just stored. To check the charset for validity, use #body_decodable?
     attr_reader :charset
 
     # Overridden so that the output is shorter and there is no response body printed
@@ -56,24 +60,15 @@ module Patron
       "#<Patron::Response @status_line='#{@status_line}'>"
     end
 
-    def initialize(url, status, redirect_count, header_data, body, default_charset = nil)
-      # Don't let a response clear out the default charset, which would cause encoding to fail
-      default_charset = "ASCII-8BIT" unless default_charset
-      @url            = url
+    def initialize(url, status, redirect_count, raw_header_data, body, default_charset = nil)
+      @url            = url.force_encoding(Encoding::ASCII) # the URL is always an ASCII subset, _always_.
       @status         = status
       @redirect_count = redirect_count
-      @body           = body
+      @body           = body.force_encoding(Encoding::BINARY) if body
 
-      @charset        = determine_charset(header_data, body) || default_charset
-
-      [url, header_data].each do |attr|
-        convert_to_default_encoding!(attr)
-      end
-
+      header_data = decode_header_data(raw_header_data)
       parse_headers(header_data)
-      if @headers["Content-Type"] && @headers["Content-Type"][0, 5] == "text/"
-        convert_to_default_encoding!(@body)
-      end
+      @charset = charset_from_content_type
     end
 
     # Tells whether the HTTP response code is less than 400
@@ -92,28 +87,58 @@ module Patron
     
     private
 
-    def determine_charset(header_data, body)
-      header_data.match(charset_regex) || (body && body.match(charset_regex))
-
-      charset = $1
-      validate_charset(charset) ? charset : nil
+    # Returns the response body converted into the Ruby process internal encoding (the one set as `Encoding.default_internal`).
+    # As the response gets returned, the response body is not assumed to be in any encoding whatsoever - it will be explicitly
+    # set to `Encoding::BINARY` (as if you were reading a file in binary mode).
+    #
+    # When you call `decoded_body`, the method will
+    # look at the `Content-Type` response header, and check if that header specified a charset. If it did, the method will then
+    # check whether the specified charset is valid (whether it is possible to find a matching `Encoding` class in the VM).
+    # Once that succeeds, the method will check whether the response body _is_ in the encoding that the server said it is.
+    #
+    # This might not be the case - you can, for instance, easily serve an HTML document with a UTF-8 header (with the header
+    # being configured somewhere on the webserver level) and then have the actual HTML document override it with a
+    # `meta` element  or `charset` containing an overriding charset. However, parsing the response body is outside of scope for
+    # Patron, so if this situation happens (the server sets a charset in the header but this header does not match what the server
+    # actually sends in the body) you will get an exception stating this is a problem.
+    #
+    # The next step is actually converting the body to the internal Ruby encoding. That stage may raise an exception as well, if
+    # you are using an internal encoding which can't represent the response body faithfully. For example, if you run Ruby with
+    # a CJK internal encoding, and the response you are trying to decode uses Greek characters and is UTF-8, you are going to
+    # get an exception since it is impossible to coerce those characters to your internal encoding.
+    #
+    # @raise {Patron::HeaderCharsetInvalid} when the server supplied a wrong or incorrect charset, {Patron::NonRepresentableBody}
+    #    when unable to decode the body into the current process encoding.
+    # @return [String, nil]
+    def decoded_body
+      return unless @body
+      @decoded_body ||= decode_body(true)
     end
-
-    def charset_regex
-      /(?:charset|encoding)="?([a-z0-9-]+)"?/i
+    
+    # Works the same as `decoded_body`, with one substantial difference: characters which can't be represented
+    # in your process' default encoding are going to be replaced with question marks. This can be used for raising
+    # errors when you receive responses which indicate errors on the server you are calling. For example, if you expect
+    # a binary download, and the server sends you an error message and you don't really want to bother figuring out
+    # the encoding it has - but you need to append this response to an error log or similar.
+    #
+    # @see Patron::Response#decoded_body
+    # @return [String, nil]
+    def inspectable_body
+      return unless @body
+      @inspectable_body ||= decode_body(false)
     end
-
-    def validate_charset(charset)
-      charset && Encoding.find(charset) && true
-    rescue ArgumentError
+    
+    # Tells whether the response body can be decoded losslessly into the curren internal encoding
+    #
+    # @return [Boolean] true if the body is decodable, false if otherwise
+    def body_decodable?
+      return true if @body.nil?
+      return true if decoded_body
+    rescue HeaderCharsetInvalid, NonRepresentableBody
       false
     end
-
-    def convert_to_default_encoding!(str)
-      if str.respond_to?(:encode) && Encoding.default_internal
-        str.force_encoding(charset).encode!(Encoding.default_internal)
-      end
-    end
+    
+    private
 
     # Called by the C code to parse and set the headers
     def parse_headers(header_data)
@@ -138,6 +163,5 @@ module Patron
         end
       end
     end
-
   end
 end
