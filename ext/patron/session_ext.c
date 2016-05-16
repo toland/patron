@@ -354,7 +354,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE a_c_encoding          = rb_funcall(request, rb_intern("automatic_content_encoding"), 0);
 
   headers = rb_funcall(request, rb_intern("headers"), 0);
-  if (!NIL_P(headers)) {
+  if (RTEST(headers)) {
     if (rb_type(headers) != T_HASH) {
       rb_raise(rb_eArgError, "Headers must be passed in a hash.");
     }
@@ -371,14 +371,14 @@ static void set_options_from_request(VALUE self, VALUE request) {
     VALUE download_file = rb_funcall(request, rb_intern("file_name"), 0);
 
     curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
-    if (!NIL_P(data)) {
+    if (RTEST(data)) {
       data = rb_funcall(data, rb_intern("to_s"), 0);
       long len = RSTRING_LEN(data);
       state->upload_buf = StringValuePtr(data);
       set_curl_request_body(curl, state->upload_buf, len);
       curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "GET");
     }
-    if (!NIL_P(download_file)) {
+    if (RTEST(download_file)) {
       state->download_file = open_file(download_file, "wb");
       curl_easy_setopt(curl, CURLOPT_WRITEDATA, state->download_file);
     } else {
@@ -397,7 +397,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
       curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
     }
     
-    if (!NIL_P(data) && NIL_P(multipart)) {
+    if (RTEST(data) && !RTEST(multipart)) {
       data = rb_funcall(data, rb_intern("to_s"), 0);
       if (action == rb_intern("post")) {
         curl_easy_setopt(curl, CURLOPT_POST, 1);
@@ -405,16 +405,16 @@ static void set_options_from_request(VALUE self, VALUE request) {
       long len = RSTRING_LEN(data);
       state->upload_buf = StringValuePtr(data);
       set_curl_request_body(curl, state->upload_buf, len);
-    } else if (!NIL_P(filename) && NIL_P(multipart)) {
+    } else if (RTEST(filename) && !RTEST(multipart)) {
       set_chunked_encoding(state);
 
       curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
 
       state->upload_file = open_file(filename, "rb");
       curl_easy_setopt(curl, CURLOPT_READDATA, state->upload_file);
-    } else if (!NIL_P(multipart)) {
+    } else if (RTEST(multipart)) {
       if (action == rb_intern("post")) {
-        if(!NIL_P(data) && !NIL_P(filename)) {
+        if(RTEST(data) && RTEST(filename)) {
           if (rb_type(data) == T_HASH && rb_type(filename) == T_HASH) {
             rb_hash_foreach(data, formadd_values, self);
             rb_hash_foreach(filename, formadd_files, self);
@@ -433,7 +433,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
   // support for data passed with a DELETE request (e.g.: used by elasticsearch)
   } else if (action == rb_intern("delete")) {
       VALUE data = rb_funcall(request, rb_intern("upload_data"), 0);
-      if (!NIL_P(data)) {
+      if (RTEST(data)) {
         long len = RSTRING_LEN(data);
         state->upload_buf = StringValuePtr(data);
         curl_easy_setopt(curl, CURLOPT_POST, 1);
@@ -466,58 +466,58 @@ static void set_options_from_request(VALUE self, VALUE request) {
   }
   
   url = rb_funcall(request, rb_intern("url"), 0);
-  if (NIL_P(url)) {
+  if (!RTEST(url)) {
     rb_raise(rb_eArgError, "Must provide a URL");
   }
   curl_easy_setopt(curl, CURLOPT_URL, StringValuePtr(url));
 
   timeout = rb_funcall(request, rb_intern("timeout"), 0);
-  if (!NIL_P(timeout)) {
+  if (RTEST(timeout)) {
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, FIX2INT(timeout));
   }
 
   timeout = rb_funcall(request, rb_intern("connect_timeout"), 0);
-  if (!NIL_P(timeout)) {
+  if (RTEST(timeout)) {
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, FIX2INT(timeout));
   }
 
   redirects = rb_funcall(request, rb_intern("max_redirects"), 0);
-  if (!NIL_P(redirects)) {
+  if (RTEST(redirects)) {
     int r = FIX2INT(redirects);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, r == 0 ? 0 : 1);
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, r);
   }
 
   proxy = rb_funcall(request, rb_intern("proxy"), 0);
-  if (!NIL_P(proxy)) {
+  if (RTEST(proxy)) {
     curl_easy_setopt(curl, CURLOPT_PROXY, StringValuePtr(proxy));
   }
 
   proxy_type = rb_funcall(request, rb_intern("proxy_type"), 0);
-  if (!NIL_P(proxy_type)) {
+  if (RTEST(proxy_type)) {
     curl_easy_setopt(curl, CURLOPT_PROXYTYPE, NUM2LONG(proxy_type));
   }
 
   credentials = rb_funcall(request, rb_intern("credentials"), 0);
-  if (!NIL_P(credentials)) {
+  if (RTEST(credentials)) {
     VALUE auth_type = rb_funcall(request, rb_intern("auth_type"), 0);
     curl_easy_setopt(curl, CURLOPT_HTTPAUTH, NUM2LONG(auth_type));
     curl_easy_setopt(curl, CURLOPT_USERPWD, StringValuePtr(credentials));
   }
 
   ignore_content_length = rb_funcall(request, rb_intern("ignore_content_length"), 0);
-  if (!NIL_P(ignore_content_length)) {
+  if (RTEST(ignore_content_length)) {
     curl_easy_setopt(curl, CURLOPT_IGNORE_CONTENT_LENGTH, 1);
   }
 
   insecure = rb_funcall(request, rb_intern("insecure"), 0);
-  if(!NIL_P(insecure)) {
+  if(RTEST(insecure)) {
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
   }
 
   ssl_version = rb_funcall(request, rb_intern("ssl_version"), 0);
-  if(!NIL_P(ssl_version)) {
+  if(RTEST(ssl_version)) {
     VALUE ssl_version_str = rb_funcall(ssl_version, rb_intern("to_s"), 0);
     char* version = StringValuePtr(ssl_version_str);
     if(strcmp(version, "SSLv2") == 0) {
@@ -532,12 +532,12 @@ static void set_options_from_request(VALUE self, VALUE request) {
   }
 
   cacert = rb_funcall(request, rb_intern("cacert"), 0);
-  if(!NIL_P(cacert)) {
+  if(RTEST(cacert)) {
     curl_easy_setopt(curl, CURLOPT_CAINFO, StringValuePtr(cacert));
   }
 
   buffer_size = rb_funcall(request, rb_intern("buffer_size"), 0);
-  if (!NIL_P(buffer_size)) {
+  if (RTEST(buffer_size)) {
      curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, NUM2LONG(buffer_size));
   }
 
