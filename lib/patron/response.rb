@@ -76,6 +76,20 @@ module Patron
       end
     end
 
+    # Tells whether the HTTP response code is less than 400
+    #
+    # @return [Boolean]
+    def ok?
+      !error?
+    end
+    
+    # Tells whether the HTTP response code is larger than 399
+    #
+    # @return [Boolean]
+    def error?
+      status >= 400
+    end
+    
     private
 
     def determine_charset(header_data, body)

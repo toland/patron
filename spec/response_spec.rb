@@ -37,6 +37,34 @@ describe Patron::Response do
     @session.base_url = "http://localhost:9001"
   end
 
+  it 'recovers the status code' do
+    response = @session.get("/repetitiveheader")
+    expect(response.status).to be_kind_of(Fixnum)
+    expect(response.status).to eq(200)
+  end
+  
+  it 'saves the definitive URL in the url attribute' do
+    headers = "HTTP/1.1 200 OK \r\nContent-Type: text/plain\r\n"
+    response = Patron::Response.new("http://example.com/url", 200, 0, headers, '', "UTF-8")
+    expect(response.url).to eq("http://example.com/url")
+  end
+  
+  it 'parses the status code and supports ok? and error?' do
+    headers = "HTTP/1.1 200 OK \r\nContent-Type: text/plain\r\n"
+    body = "abc"
+    response = Patron::Response.new("url", 200, 0, headers, body, "UTF-8")
+    expect(response.status).to eq(200)
+    expect(response).to be_ok
+    expect(response).not_to be_error
+    
+    headers = "HTTP/1.1 400 Bad Request \r\nContent-Type: text/plain\r\n"
+    body = "abc"
+    response = Patron::Response.new("url", 400, 0, headers, body, "UTF-8")
+    expect(response.status).to eq(400)
+    expect(response).not_to be_ok
+    expect(response).to be_error
+  end
+  
   it "should strip extra spaces from header values" do
     response = @session.get("/test")
     # All digits, no spaces
