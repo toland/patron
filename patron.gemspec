@@ -24,5 +24,10 @@ Gem::Specification.new do |s|
   s.executables  = `git ls-files`.split("\n").map{|f| f =~ /^bin\/(.*)/ ? $1 : nil}.compact
   s.require_paths = ["lib", "ext"]
   s.extensions   = ["ext/patron/extconf.rb"]
-end
+  s.post_install_message = %q{
+Thank you for installing Patron. On OSX, make sure you are using libCURL with OpenSSL.
+SecureTransport-based builds might cause crashes in forking environments.
 
+For more info see https://github.com/curl/curl/issues/788"
+}
+end
