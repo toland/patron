@@ -28,6 +28,6 @@ Gem::Specification.new do |s|
 Thank you for installing Patron. On OSX, make sure you are using libCURL with OpenSSL.
 SecureTransport-based builds might cause crashes in forking environments.
 
-For more info see https://github.com/curl/curl/issues/788"
+For more info see https://github.com/curl/curl/issues/788
 }
 end
