@@ -39,6 +39,8 @@ $:.unshift(File.dirname(__FILE__) + '/../lib')
 $:.unshift(File.dirname(__FILE__) + '/../ext')
 require 'patron'
 
+$stderr.puts "Build against #{Patron.libcurl_version}"
+
 Dir['./spec/support/**/*.rb'].each { |fn| require fn }
 
 PatronTestServer.start(nil, false, 9001) if RUBY_VERSION >= '1.9'

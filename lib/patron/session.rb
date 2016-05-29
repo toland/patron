@@ -107,7 +107,7 @@ module Patron
     
     private :handle_request, :add_cookie_file, :set_debug_file
 
-    # Create a new Session object.
+    # Create a new Session object for performing requests.
     #
     # @param args[Hash] options for the Session (same names as the writable attributes of the Session)
     # @yield self
@@ -124,6 +124,7 @@ module Patron
       end
 
       @headers ||= {}
+      @headers['User-Agent'] ||= Patron.user_agent_string
       @timeout ||= 5
       @connect_timeout ||= 1
       @max_redirects ||= 5

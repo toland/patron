@@ -27,6 +27,12 @@ require File.expand_path("./spec") + '/spec_helper.rb'
 
 describe Patron do
 
+  it 'should return the user agent string' do
+    ua_str = Patron.user_agent_string
+    expect(ua_str).to include('curl')
+    expect(ua_str).to include('Patron')
+  end
+  
   it "should return the version number of the Patron library" do
     version = Patron.version
     expect(version).to match(%r|^\d+.\d+.\d+$|)

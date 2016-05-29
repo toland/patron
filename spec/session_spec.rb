@@ -107,6 +107,19 @@ describe Patron::Session do
     FileUtils.rm tmpfile
   end
 
+  it "should not send the user-agent if it has been deleted from headers" do
+    @session.headers.delete 'User-Agent'
+    response = @session.get("/test")
+    body = YAML::load(response.body)
+    expect(body.header["user-agent"]).to be_nil
+  end
+  
+  it "should set the default User-agent" do
+    response = @session.get("/test")
+    body = YAML::load(response.body)
+    expect(body.header["user-agent"]).to be == [Patron.user_agent_string]
+  end
+
   it "should include custom headers in a request" do
     response = @session.get("/test", {"User-Agent" => "PatronTest"})
     body = YAML::load(response.body)
