@@ -39,7 +39,7 @@ module Patron
     VERSION
   end
   
-  # Returns the default Uset-Agent string
+  # Returns the default User-Agent string
   # @return [String]
   def self.user_agent_string
     @ua ||= "Patron/Ruby-%s-%s" % [version, libcurl_version]
