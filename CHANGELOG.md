@@ -1,5 +1,6 @@
 ### 0.6.4
 
+* Set the default User-Agent string, since some sites require it (like the Github API).
 * Add Response#ok? and Response#error? for cleaner branching on the returned Response objects
 * Explain a segfault with SSL in forked processes on OSX, document the way to avoid the issue
 * Fix segfault when attempting multiple post requests with multipart (#119)
