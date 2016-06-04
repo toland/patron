@@ -36,6 +36,20 @@ describe Patron::Session do
     @session.base_url = "http://localhost:9001"
   end
 
+  context 'when trying a non-HTTP(s) URL' do
+    forbidden_protos = %w( smb tftp imap smtp telnet dict ftp sftp scp file gopher )
+    forbidden_protos.each do |forbidden_proto|
+      it "should deny a #{forbidden_proto.upcase} request" do
+        @session.base_url = nil
+        expect {
+          @session.get('%s://localhost' % forbidden_proto)
+        }.to raise_error(Patron::UnsupportedProtocol)
+      end
+    end
+  end
+  
+  it 'does not follow a redirect to a non-HTTP/HTTPS URL'
+  
   it "should work when forcing ipv4" do
     @session.force_ipv4 = true
     expect { @session.get("/test") }.to_not raise_error
