@@ -471,11 +471,9 @@ static void set_options_from_request(VALUE self, VALUE request) {
   }
   curl_easy_setopt(curl, CURLOPT_URL, StringValuePtr(url));
   
-#ifdef CURLOPT_PROTOCOLS
+#ifdef CURLPROTO_HTTP
+  // Security: do not allow Curl to go looking on gopher/SMTP etc.
   curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
-#endif
-
-#ifdef CURLOPT_REDIR_PROTOCOLS
   curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
 #endif
     
