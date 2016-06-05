@@ -473,6 +473,8 @@ static void set_options_from_request(VALUE self, VALUE request) {
   
 #ifdef CURLPROTO_HTTP
   // Security: do not allow Curl to go looking on gopher/SMTP etc.
+  // Must prevent situations like this:
+  // https://hackerone.com/reports/115748
   curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
   curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
 #endif
