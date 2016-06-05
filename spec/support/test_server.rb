@@ -108,6 +108,13 @@ class RedirectServlet < HTTPServlet::AbstractServlet
   end
 end
 
+class EvilRedirectServlet < HTTPServlet::AbstractServlet
+  def do_GET(req,res)
+    res['Location'] = "smtp://mailbox:secret@localhost"
+    res.status = 301
+  end
+end
+
 class TestPostBodyServlet < HTTPServlet::AbstractServlet
   include RespondWith
   def do_POST(req, res)
@@ -188,6 +195,7 @@ class PatronTestServer
     @server.mount("/testpatch", TestPatchBodyServlet)
     @server.mount("/timeout", TimeoutServlet)
     @server.mount("/redirect", RedirectServlet)
+    @server.mount("/evil-redirect", EvilRedirectServlet)
     @server.mount("/picture", PictureServlet)
     @server.mount("/setcookie", SetCookieServlet)
     @server.mount("/repetitiveheader", RepetitiveHeaderServlet)

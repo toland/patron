@@ -48,7 +48,14 @@ describe Patron::Session do
     end
   end
   
-  it 'does not follow a redirect to a non-HTTP/HTTPS URL'
+  it 'does not follow a redirect to a non-HTTP/HTTPS URL' do
+    # The "/evil-redirect" servlet tries to do a redirect to SMTP,
+    # which can lead to exploits. By default, libCURL will just follow
+    # that redirect.
+    expect {
+      @session.get('/evil-redirect')
+    }.to raise_error(Patron::UnsupportedProtocol)
+  end
   
   it "should work when forcing ipv4" do
     @session.force_ipv4 = true
