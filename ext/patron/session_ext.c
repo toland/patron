@@ -470,7 +470,15 @@ static void set_options_from_request(VALUE self, VALUE request) {
     rb_raise(rb_eArgError, "Must provide a URL");
   }
   curl_easy_setopt(curl, CURLOPT_URL, StringValuePtr(url));
-
+  
+#ifdef CURLPROTO_HTTP
+  // Security: do not allow Curl to go looking on gopher/SMTP etc.
+  // Must prevent situations like this:
+  // https://hackerone.com/reports/115748
+  curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+  curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+#endif
+    
   timeout = rb_funcall(request, rb_intern("timeout"), 0);
   if (RTEST(timeout)) {
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, FIX2INT(timeout));

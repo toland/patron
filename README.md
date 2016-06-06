@@ -92,10 +92,14 @@ For sharing a resource of sessions between threads we recommend using the excell
 
 ## Requirements
 
-You need a recent version of libcurl in order to install this gem. On MacOS X
-the provided libcurl is sufficient. You will have to install the libcurl
+Patron uses encoding features of Ruby, so you need at least Ruby 1.9. Also, a
+recent version of libCURL is required. We recommend at least 7.19.4 because
+it [supports limiting the protocols](https://curl.haxx.se/libcurl/c/CURLOPT_PROTOCOLS.html),
+and that is very important for security - especially if you follow redirects. 
+
+On OSX the provided libcurl is sufficient. You will have to install the libcurl
 development packages on Debian or Ubuntu. Other Linux systems are probably
-similar. Windows users are on your own. Good luck with that.
+similar. For Windows we do not have an established build instruction at the moment, unfortunately.
 
 ## Installation
 
