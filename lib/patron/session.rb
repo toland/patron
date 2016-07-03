@@ -226,7 +226,9 @@ module Patron
     #
     # @todo inconsistency with "post" - Hash not accepted
     # @param url[String] the URL to fetch
-    # @param data[#to_s] an object that can be converted to a String to create the request body
+    # @param data[#to_s, #to_path] an object that can be converted to a String
+    #   to create the request body, or that responds to #to_path to upload the
+    #   entire request body from that file
     # @param headers[Hash] the hash of header keys to values
     # @return [Patron::Response]
     def put(url, data, headers = {})
@@ -238,7 +240,9 @@ module Patron
     #
     # @todo inconsistency with "post" - Hash not accepted
     # @param url[String] the URL to fetch
-    # @param data[#to_s] an object that can be converted to a String to create the request body
+    # @param data[#to_s, #to_path] an object that can be converted to a String
+    #   to create the request body, or that responds to #to_path to upload the
+    #   entire request body from that file
     # @param headers[Hash] the hash of header keys to values
     # @return [Patron::Response]
     def patch(url, data, headers = {})
@@ -259,7 +263,10 @@ module Patron
     # Uploads the passed `data` to the specified `url` using an HTTP POST.
     #
     # @param url[String] the URL to fetch
-    # @param data[Hash, #to_s] a Hash of form fields/values, or an object that can be converted to a String to create the request body
+    # @param data[Hash, #to_s, #to_path] a Hash of form fields/values,
+    #   or an object that can be converted to a String
+    #   to create the request body, or an object that responds to #to_path to upload the
+    #   entire request body from that file
     # @param headers[Hash] the hash of header keys to values
     # @return [Patron::Response]
     def post(url, data, headers = {})
@@ -292,7 +299,6 @@ module Patron
     def post_multipart(url, data, filename, headers = {})
       request(:post, url, headers, {:data => data, :file => filename, :multipart => true})
     end
-
 
     # @!group WebDAV methods
     # Sends a WebDAV COPY request to the specified +url+.
