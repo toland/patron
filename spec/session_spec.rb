@@ -248,6 +248,17 @@ describe Patron::Session do
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
 
+  it "should upload a Tempfile with :put" do
+    data = Tempfile.new 'data-buffer'
+    data << Random.new.bytes(1024 * 64)
+    data.flush; data.rewind
+    
+    response = @session.put("/test", data, {'Expect' => ''})
+    body = YAML::load(response.body)
+    expect(body.request_method).to be == "PUT"
+    expect(body.header['content-length']).to be == [data.size.to_s]
+  end
+  
   it "should upload data with :patch" do
     data = "upload data"
     response = @session.patch("/testpatch", data)
