@@ -1,3 +1,7 @@
+### 0.6.5
+
+* Prevent libCURL from doing requests to non-HTTP/HTTPS URLs, and from following redirects to such URLs
+
 ### 0.6.4
 
 * Set the default User-Agent string, since some sites require it (like the Github API).
