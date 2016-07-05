@@ -26,6 +26,7 @@
 #if defined(USE_TBR) && defined(HAVE_THREAD_H)
 #include <ruby/thread.h>
 #endif
+#include <sys/stat.h>
 #include <curl/curl.h>
 #include "membuffer.h"
 #include "sglib.h"  /* Simple Generic Library -> http://sglib.sourceforge.net */
@@ -51,8 +52,8 @@ struct curl_state {
   CURL* handle;
   char* upload_buf;
   FILE* download_file;
-  FILE* upload_file;
   FILE* debug_file;
+  FILE* request_body_file;
   char error_buf[CURL_ERROR_SIZE];
   struct curl_slist* headers;
   struct curl_httppost* post;
@@ -329,12 +330,47 @@ static FILE* open_file(VALUE filename, const char* perms) {
   return handle;
 }
 
+static void set_request_body_file(struct curl_state* state, VALUE r_path_str) {
+  CURL* curl = state->handle;
+  
+  state->request_body_file = open_file(r_path_str, "rb");
+  curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
+  curl_easy_setopt(curl, CURLOPT_READDATA, state->request_body_file);
+  #ifdef CURLOPT_INFILESIZE_LARGE
+    struct stat stat_info;
+    fstat(fileno(state->request_body_file), &stat_info);
+    curl_easy_setopt(curl, CURLOPT_INFILESIZE, stat_info.st_size);
+  #else
+    struct stat stat_info;
+    fstat(fileno(state->request_body_file), &stat_info);
+    curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, stat_info.st_size);
+  #endif
+}
+
+static void set_request_body(struct curl_state* state, VALUE stringable_or_file) {
+  CURL* curl = state->handle;
+  if(rb_respond_to(stringable_or_file, rb_intern("to_path"))) {
+    // Set up a file read callback (read the entire request body from a file).
+    // Instead of using the Ruby file reads, use #to_path to obtain the
+    // file path on the file system and open a file pointer to it
+    VALUE r_path_str = rb_funcall(stringable_or_file, rb_intern("to_path"), 0);
+    r_path_str = rb_funcall(r_path_str, rb_intern("to_s"), 0);
+    set_request_body_file(state, r_path_str);
+  } else {
+    // Set the request body from a String
+    VALUE data = rb_funcall(stringable_or_file, rb_intern("to_s"), 0);
+    long len = RSTRING_LEN(data);
+    state->upload_buf = StringValuePtr(data);
+    set_curl_request_body(curl, state->upload_buf, len);
+  }
+}
+
 /* Set the options on the Curl handle from a Request object. Takes each field
  * in the Request object and uses it to set the appropriate option on the Curl
  * handle.
  */
 static void set_options_from_request(VALUE self, VALUE request) {
-  struct curl_state *state = get_curl_state(self);
+  struct curl_state* state = get_curl_state(self);
   CURL* curl = state->handle;
 
   ID    action                = Qnil;
@@ -372,10 +408,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
     curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
     if (RTEST(data)) {
-      data = rb_funcall(data, rb_intern("to_s"), 0);
-      long len = RSTRING_LEN(data);
-      state->upload_buf = StringValuePtr(data);
-      set_curl_request_body(curl, state->upload_buf, len);
+      set_request_body(state, data);
       curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "GET");
     }
     if (RTEST(download_file)) {
@@ -398,30 +431,24 @@ static void set_options_from_request(VALUE self, VALUE request) {
     }
     
     if (RTEST(data) && !RTEST(multipart)) {
-      data = rb_funcall(data, rb_intern("to_s"), 0);
       if (action == rb_intern("post")) {
         curl_easy_setopt(curl, CURLOPT_POST, 1);
       }
-      long len = RSTRING_LEN(data);
-      state->upload_buf = StringValuePtr(data);
-      set_curl_request_body(curl, state->upload_buf, len);
+      set_request_body(state, data);
     } else if (RTEST(filename) && !RTEST(multipart)) {
       set_chunked_encoding(state);
-
-      curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
-
-      state->upload_file = open_file(filename, "rb");
-      curl_easy_setopt(curl, CURLOPT_READDATA, state->upload_file);
+      set_request_body_file(state, filename);
     } else if (RTEST(multipart)) {
       if (action == rb_intern("post")) {
         if(RTEST(data) && RTEST(filename)) {
           if (rb_type(data) == T_HASH && rb_type(filename) == T_HASH) {
             rb_hash_foreach(data, formadd_values, self);
             rb_hash_foreach(filename, formadd_files, self);
-        } else {   rb_raise(rb_eArgError, "Data and Filename must be passed in a hash.");}
+          } else {
+            rb_raise(rb_eArgError, "Data and Filename must be passed in a hash.");
+          }
         }
         curl_easy_setopt(curl, CURLOPT_HTTPPOST, state->post);
-
       } else {
          rb_raise(rb_eArgError, "Multipart PUT not supported");
       }
@@ -670,11 +697,11 @@ static VALUE cleanup(VALUE self) {
     state->download_file = NULL;
   }
 
-  if (state->upload_file) {
-    fclose(state->upload_file);
-    state->upload_file = NULL;
+  if (state->request_body_file) {
+    fclose(state->request_body_file);
+    state->request_body_file = NULL;
   }
-
+  
   if (state->post) {
     curl_formfree(state->post);
     state->post = NULL;
