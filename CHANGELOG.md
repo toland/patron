@@ -1,3 +1,5 @@
+### 0.7.0
+
 * Allow Ruby File objects to be passed as `data` to `Session#put`, `Sesion#post` etc.
 
 ### 0.6.5
