@@ -336,14 +336,12 @@ static void set_request_body_file(struct curl_state* state, VALUE r_path_str) {
   state->request_body_file = open_file(r_path_str, "rb");
   curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
   curl_easy_setopt(curl, CURLOPT_READDATA, state->request_body_file);
+  struct stat stat_info;
+  fstat(fileno(state->request_body_file), &stat_info);
   #ifdef CURLOPT_INFILESIZE_LARGE
-    struct stat stat_info;
-    fstat(fileno(state->request_body_file), &stat_info);
-    curl_easy_setopt(curl, CURLOPT_INFILESIZE, stat_info.st_size);
-  #else
-    struct stat stat_info;
-    fstat(fileno(state->request_body_file), &stat_info);
     curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, stat_info.st_size);
+  #else
+    curl_easy_setopt(curl, CURLOPT_INFILESIZE, stat_info.st_size);
   #endif
 }
 
