@@ -28,6 +28,7 @@ require 'webrick'
 require 'yaml'
 require 'base64'
 require 'fileutils'
+require 'securerandom'
 
 describe Patron::Session do
 
