@@ -233,7 +233,7 @@ describe Patron::Session do
     # but it does get used nevertheless - for instance, it is a usual
     # practice when interacting with an ElasticSearch cluster where
     # you can have very deeply going queries, which are still technically GETs
-    data = SecureRandom.random_bytes(1024 * 24)
+    data = Random.new.bytes(1024 * 24)
     response = @session.request(:get, "/test", {}, :data => data)
     body = YAML::load(response.body)
     expect(body.request_method).to be == "GET"
@@ -241,7 +241,7 @@ describe Patron::Session do
   end
   
   it "should upload data with :put" do
-    data = SecureRandom.random_bytes(1024 * 24)
+    data = Random.new.bytes(1024 * 24)
     response = @session.put("/test", data)
     body = YAML::load(response.body)
     expect(body.request_method).to be == "PUT"
