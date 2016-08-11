@@ -114,8 +114,13 @@ EOF
       # treat it as such. So a fallback chain of 8859-1->UTF8->binary seems the most sane.
       tries = [Encoding::ISO8859_1, Encoding::UTF_8, Encoding::BINARY]
       tries.each do |possible_enc|
-        return str if str.force_encoding(possible_enc).valid_encoding?
+        begin
+          return str.encode(possible_enc)
+        rescue ::Encoding::UndefinedConversionError
+          next
+        end
       end
+      str # if it doesn't encode, just give back what we got
     end
   end
   

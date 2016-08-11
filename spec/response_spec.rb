@@ -133,7 +133,7 @@ describe Patron::Response do
   it "decodes a header that contains UTF-8 even though internal encoding is ASCII" do
     Encoding.default_internal = Encoding::ASCII
     encoding = Encoding.find("UTF-8")
-    headers = "HTTP/1.1 200 OK \r\nContent-Disposition: attachment,filename=\"файлец.txt\"\r\n"
+    headers = "HTTP/1.1 200 OK \r\nContent-Disposition: attachment,filename=\"žфайлец.txt\"\r\n"
     body = "this is a file with a Russian filename set in content-disposition"
 
     response = Patron::Response.new("url", "status", 0, headers, body, "UTF-8")
