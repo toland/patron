@@ -28,6 +28,7 @@ require 'webrick'
 require 'yaml'
 require 'base64'
 require 'fileutils'
+require 'securerandom'
 
 describe Patron::Session do
 
@@ -518,7 +519,7 @@ describe Patron::Session do
     session = Patron::Session.new do |patron|
       patron.timeout = args[:timeout]
       patron.base_url = args[:base_url]
-      patron.headers =  args[:headers]
+      patron.headers = args[:headers]
     end
 
     it 'sets the base_url' do
