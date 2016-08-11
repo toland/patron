@@ -85,7 +85,15 @@ module Patron
       status >= 400
     end
     
-    private
+    # Tells whether the response body can be decoded losslessly into the curren internal encoding
+    #
+    # @return [Boolean] true if the body is decodable, false if otherwise
+    def body_decodable?
+      return true if @body.nil?
+      return true if decoded_body
+    rescue HeaderCharsetInvalid, NonRepresentableBody
+      false
+    end
 
     # Returns the response body converted into the Ruby process internal encoding (the one set as `Encoding.default_internal`).
     # As the response gets returned, the response body is not assumed to be in any encoding whatsoever - it will be explicitly
@@ -127,17 +135,7 @@ module Patron
       return unless @body
       @inspectable_body ||= decode_body(false)
     end
-    
-    # Tells whether the response body can be decoded losslessly into the curren internal encoding
-    #
-    # @return [Boolean] true if the body is decodable, false if otherwise
-    def body_decodable?
-      return true if @body.nil?
-      return true if decoded_body
-    rescue HeaderCharsetInvalid, NonRepresentableBody
-      false
-    end
-    
+
     private
 
     # Called by the C code to parse and set the headers
