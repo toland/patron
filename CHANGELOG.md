@@ -1,5 +1,13 @@
 ### 0.7.0
 
+* Add `Response#inspectable_body`, `Response#decoded_body`. `decoded_body` will atempt to decode
+  the HTTP response into your internal encoding, using the charset header that the server has
+  provided. Note that this operation may fail - if the server said that the body is in a certain
+  encoding, but this is then overridden with, say, `meta` elements in the HTML Patron is _not_
+  going to parse the HTML to figure out how to decode.
+
+### 0.7.0
+
 * Allow Ruby File objects to be passed as `data` to `Session#put`, `Sesion#post` etc.
 
 ### 0.6.5
