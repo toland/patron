@@ -1,4 +1,4 @@
-### 0.7.0
+### 0.8.0
 
 * Add `Response#inspectable_body`, `Response#decoded_body`. `decoded_body` will atempt to decode
   the HTTP response into your internal encoding, using the charset header that the server has
