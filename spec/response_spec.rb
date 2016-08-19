@@ -32,6 +32,12 @@ require 'base64'
 require 'fileutils'
 
 describe Patron::Response do
+  around(:each) do |example|
+    previous_internal = Encoding.default_internal
+    example.run
+    Encoding.default_internal = previous_internal
+  end
+  
   before(:each) do
     @session = Patron::Session.new
     @session.base_url = "http://localhost:9001"
@@ -75,47 +81,67 @@ describe Patron::Response do
     response = @session.get("/repetitiveheader")
     expect(response.headers['Set-Cookie']).to be == ["a=1","b=2"]
   end
+  
+  describe '#decoded_body and #inspectable_body' do
+    it "should raise with explicitly binary response bodies but allow an inspectable body" do
+      Encoding.default_internal = Encoding::UTF_8
+      response = @session.get("/picture")
+      expect(response.headers['Content-Type']).to be == 'image/png'
+      expect(response.body.encoding).to be == Encoding::BINARY
+      expect(response).not_to be_body_decodable
+      expect {
+        response.decoded_body
+      }.to raise_error(Patron::NonRepresentableBody)
+      
+      inspectable = response.inspectable_body
+      expect(inspectable.encoding).to eq(Encoding::UTF_8)
+      expect(inspectable).to be_valid_encoding
+    end
+    
+    it "should encode body in the internal charset" do
+      allow(Encoding).to receive(:default_internal).and_return("UTF-8")
 
-  it "should works with non-text files" do
-    response = @session.get("/picture")
-    expect(response.headers['Content-Type']).to be == 'image/png'
-    expect(response.body.encoding).to be == Encoding::ASCII_8BIT
+      greek_encoding = Encoding.find("ISO-8859-7")
+      utf_encoding = Encoding.find("UTF-8")
+
+      headers = "HTTP/1.1 200 OK \r\nContent-Type: text/css;charset=ISO-8859-7\r\n"
+      body = "Ππ".encode(greek_encoding) # Greek alphabet
+
+      response = Patron::Response.new("url", "status", 0, headers, body, nil)
+
+      expect(response).to be_body_decodable
+      expect(response.decoded_body.encoding).to eql(utf_encoding)
+    end
+    
+    it "should fallback to default charset when header or body charset is not valid" do
+      allow(Encoding).to receive(:default_internal).and_return("UTF-8")
+
+      encoding = Encoding.find("UTF-8")
+      headers = "HTTP/1.1 200 OK \r\nContent-Type: text/css; charset=invalid\r\n"
+      body = "who knows which encoding this CSS is in?"
+
+      response = Patron::Response.new("url", "status", 0, headers, body, "UTF-8")
+      expect(response.charset).to eq('invalid')
+      
+      expect(response).not_to be_body_decodable
+      expect {
+        response.decoded_body
+      }.to raise_error(Patron::HeaderCharsetInvalid)
+    end
   end
 
-  it "should not allow a default charset to be nil" do
-    allow(Encoding).to receive(:default_internal).and_return("UTF-8")
-    expect {
-      Patron::Response.new("url", "status", 0, "", "", nil)
-    }.to_not raise_error
-  end
-
-  it "should be able to serialize and deserialize itself" do
-    expect(Marshal.load(Marshal.dump(@request))).to eql(@request)
-  end
-
-  it "should encode body in the internal charset" do
-    allow(Encoding).to receive(:default_internal).and_return("UTF-8")
-
-    greek_encoding = Encoding.find("ISO-8859-7")
-    utf_encoding = Encoding.find("UTF-8")
-
-    headers = "HTTP/1.1 200 OK \r\nContent-Type: text/css\r\n"
-    body = "charset=ISO-8859-7 Ππ".encode(greek_encoding) # Greek alphabet
-
-    response = Patron::Response.new("url", "status", 0, headers, body, nil)
-
-    expect(response.body.encoding).to eql(utf_encoding)
-  end
-
-  it "should fallback to default charset when header or body charset is not valid" do
-    allow(Encoding).to receive(:default_internal).and_return("UTF-8")
-
+  it "decodes a header that contains UTF-8 even though internal encoding is ASCII" do
+    Encoding.default_internal = Encoding::ASCII
     encoding = Encoding.find("UTF-8")
-    headers = "HTTP/1.1 200 OK \r\nContent-Type: text/css\r\n"
-    body = "charset=invalid"
+    headers = "HTTP/1.1 200 OK \r\nContent-Disposition: attachment,filename=\"žфайлец.txt\"\r\n"
+    body = "this is a file with a Russian filename set in content-disposition"
 
     response = Patron::Response.new("url", "status", 0, headers, body, "UTF-8")
-
-    expect(response.body.encoding).to eql(encoding)
+    dispo = response.headers['Content-Disposition']
+    expect(dispo.encoding).to eq(Encoding::UTF_8)
+  end
+  
+  it "should be able to serialize and deserialize itself" do
+    expect(Marshal.load(Marshal.dump(@request))).to eql(@request)
   end
 end

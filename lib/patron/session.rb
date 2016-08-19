@@ -27,6 +27,7 @@
 require 'uri'
 require 'patron/error'
 require 'patron/request'
+require 'patron/response_decoding'
 require 'patron/response'
 require 'patron/session_ext'
 require 'patron/util'
@@ -347,9 +348,9 @@ module Patron
     # the Request object, and not it's public methods.
     #
     # @param action[String] the HTTP verb
-    # @paran url[#to_s] the addition to the base url component, or a complete URL
-    # @paran headers[Hash] a hash of headers, "Accept" will be automatically set to an empty string if not provided
-    # @paran options[Hash] any overriding options (will shadow the options from the Session object)
+    # @param url[#to_s] the addition to the base url component, or a complete URL
+    # @param headers[Hash] a hash of headers, "Accept" will be automatically set to an empty string if not provided
+    # @param options[Hash] any overriding options (will shadow the options from the Session object)
     # @return [Patron::Request] the request that will be passed to ++handle_request++
     def build_request(action, url, headers, options = {})
       # If the Expect header isn't set uploads are really slow
