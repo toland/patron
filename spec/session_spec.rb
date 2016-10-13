@@ -129,6 +129,34 @@ describe Patron::Session do
     FileUtils.rm tmpfile
   end
 
+  it "downloads a very large file" do
+    tmpfile = "/tmp/large-succeeded"
+    @session.get_file "/very-large", tmpfile
+    expect(File.size(tmpfile)).to eq(15 * 1024 * 1024)
+  end
+
+  it "raises an exception if the download body limit is exceeded when using direct-to-file download" do
+    tmpfile = "/tmp/large-aborted"
+    @session.download_byte_limit = 1024
+    @session.buffer_size = 1024
+    expect {
+      @session.get_file "/very-large", tmpfile
+    }.to raise_error(Patron::Error)
+    # On Ruby 2.x Patron::Aborted takes precedence, but
+    # on 1.9 it will be Patron::PartialFileError
+    expect(File.size(tmpfile)).to be < (1024 * 3)
+  end
+
+  it "raises an exception if the download body limit is exceeded when using download-to-memory" do
+    @session.download_byte_limit = 1024
+    @session.buffer_size = 1024
+    expect {
+      @session.get "/very-large"
+    }.to raise_error(Patron::Error)
+    # On Ruby 2.x Patron::Aborted takes precedence, but
+    # on 1.9 it will be Patron::PartialFileError
+  end
+
   it "should not send the user-agent if it has been deleted from headers" do
     @session.headers.delete 'User-Agent'
     response = @session.get("/test")

@@ -163,6 +163,14 @@ class WrongContentLengthServlet < HTTPServlet::AbstractServlet
   end
 end
 
+# Serves a substantial amount of data
+class LargeServlet < HTTPServlet::AbstractServlet
+  def do_GET(req, res)
+    res.content_length = 15 * 1024 * 1024
+    res.body = Random.new.bytes(15 * 1024 * 1024)
+  end
+end
+
 class PatronTestServer
 
   def self.start( log_file = nil, ssl = false, port = 9001 )
@@ -198,6 +206,7 @@ class PatronTestServer
     @server.mount("/redirect", RedirectServlet)
     @server.mount("/evil-redirect", EvilRedirectServlet)
     @server.mount("/picture", PictureServlet)
+    @server.mount("/very-large", LargeServlet)
     @server.mount("/setcookie", SetCookieServlet)
     @server.mount("/repetitiveheader", RepetitiveHeaderServlet)
     @server.mount("/wrongcontentlength", WrongContentLengthServlet)

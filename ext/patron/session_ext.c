@@ -32,6 +32,8 @@
 #include "sglib.h"  /* Simple Generic Library -> http://sglib.sourceforge.net */
 
 #define UNUSED_ARGUMENT(x) (void)x
+#define INTERRUPT_ABORT 1
+#define INTERRUPT_DOWNLOAD_OVERFLOW 2
 
 static VALUE mPatron = Qnil;
 static VALUE mProxyType = Qnil;
@@ -47,7 +49,7 @@ static VALUE eConnectionFailed = Qnil;
 static VALUE ePartialFileError = Qnil;
 static VALUE eTimeoutError = Qnil;
 static VALUE eTooManyRedirects = Qnil;
-
+static VALUE eAborted = Qnil;
 
 struct patron_curl_state {
   CURL* handle;
@@ -61,6 +63,7 @@ struct patron_curl_state {
   struct curl_httppost* last;
   membuffer header_buffer;
   membuffer body_buffer;
+  size_t download_byte_limit;
   int interrupt;
 };
 
@@ -79,17 +82,39 @@ static size_t session_write_handler(char* stream, size_t size, size_t nmemb, mem
   return size * nmemb;
 }
 
+/* Used as WRITEFUNCTION for file downloads (required on Windows) */
+static size_t file_write_handler(void* stream, size_t size, size_t nmemb, FILE* fp) {
+  fwrite(stream, size, nmemb, fp);
+  if (ferror(fp)) {
+    return 0;
+  } else {
+    /* Just always OK the write */
+    return size * nmemb;
+  }
+}
+
 /* A non-zero return value from the progress handler will terminate the current
  * request. We use this fact in order to interrupt any request when either the
  * user calls the "interrupt" method on the session or when the Ruby interpreter
  * is attempting to exit.
  */
-static int session_progress_handler(void *clientp, double dltotal, double dlnow, double ultotal, double ulnow) {
+static int session_progress_handler(void *clientp, size_t dltotal, size_t dlnow, size_t ultotal, size_t ulnow) {
   struct patron_curl_state* state = (struct patron_curl_state*) clientp;
-  UNUSED_ARGUMENT(dltotal);
   UNUSED_ARGUMENT(dlnow);
   UNUSED_ARGUMENT(ultotal);
   UNUSED_ARGUMENT(ulnow);
+
+  // Set the interrupt if the download byte limit has been reached
+  if(state->download_byte_limit != 0 && (dltotal > state->download_byte_limit)) {
+    state->interrupt = INTERRUPT_DOWNLOAD_OVERFLOW;
+  }
+  
+  // If the interrupt value is anything except 0, the perform() call
+  // will be aborted by libCURL.
+  // Note however that some older versions of libcurl have a bug which
+  // makes the return value of this callback be ignored, and the request
+  // will actually proceed undeterred.
+  // See https://sourceforge.net/p/curl/bugs/1318/
   return state->interrupt;
 }
 
@@ -132,7 +157,7 @@ static void cs_list_interrupt(VALUE data) {
   UNUSED_ARGUMENT(data);
 
   SGLIB_LIST_MAP_ON_ELEMENTS(struct patron_curl_state_list, cs_list, item, next, {
-    item->state->interrupt = 1;
+    item->state->interrupt = INTERRUPT_ABORT;
   });
 }
 
@@ -178,14 +203,20 @@ VALUE session_alloc(VALUE klass) {
 
 /* Return the patron_curl_state from the ruby VALUE which is the Session instance. */
 static struct patron_curl_state* get_patron_curl_state(VALUE self) {
-  struct patron_curl_state *state;
+  struct patron_curl_state* state;
   Data_Get_Struct(self, struct patron_curl_state, state);
 
   if (NULL == state->handle) {
     state->handle = curl_easy_init();
     curl_easy_setopt(state->handle, CURLOPT_NOSIGNAL, 1);
     curl_easy_setopt(state->handle, CURLOPT_NOPROGRESS, 0);
-    curl_easy_setopt(state->handle, CURLOPT_PROGRESSFUNCTION, &session_progress_handler);
+    #if LIBCURL_VERSION_NUM >= 0x072000
+      /* this is libCURLv7.32.0 or later, supports CURLOPT_XFERINFOFUNCTION */
+      curl_easy_setopt(state->handle, CURLOPT_XFERINFOFUNCTION, &session_progress_handler);
+    #else
+      curl_easy_setopt(state->handle, CURLOPT_PROGRESSFUNCTION, &session_progress_handler);
+    #endif
+
     curl_easy_setopt(state->handle, CURLOPT_PROGRESSDATA, state);
   }
 
@@ -388,13 +419,19 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE buffer_size           = Qnil;
   VALUE action_name           = rb_funcall(request, rb_intern("action"), 0);
   VALUE a_c_encoding          = rb_funcall(request, rb_intern("automatic_content_encoding"), 0);
+  VALUE download_byte_limit   = rb_funcall(request, rb_intern("download_byte_limit"), 0);
+
+  if (RTEST(download_byte_limit)) {
+    state->download_byte_limit = FIX2INT(download_byte_limit);
+  } else {
+    state->download_byte_limit = 0;
+  }
 
   headers = rb_funcall(request, rb_intern("headers"), 0);
   if (RTEST(headers)) {
     if (rb_type(headers) != T_HASH) {
       rb_raise(rb_eArgError, "Headers must be passed in a hash.");
     }
-
     rb_hash_foreach(headers, each_http_header, self);
   }
 
@@ -412,8 +449,12 @@ static void set_options_from_request(VALUE self, VALUE request) {
       curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "GET");
     }
     if (RTEST(download_file)) {
+      // we need the WRITEDATA option for the file destination
       state->download_file = open_file(download_file, "wb");
       curl_easy_setopt(curl, CURLOPT_WRITEDATA, state->download_file);
+      // curl docs say that CURLOPT_WRITEFUNCTION must be set too
+      // to avoid issues on Windows
+      curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &file_write_handler);
     } else {
       state->download_file = NULL;
     }
@@ -670,7 +711,7 @@ static VALUE select_error(CURLcode code) {
     case CURLE_PARTIAL_FILE:          error = ePartialFileError;    break;
     case CURLE_OPERATION_TIMEDOUT:    error = eTimeoutError;        break;
     case CURLE_TOO_MANY_REDIRECTS:    error = eTooManyRedirects;    break;
-
+    case CURLE_ABORTED_BY_CALLBACK:   error = eAborted;             break;
     default: error = ePatronError;
   }
 
@@ -685,7 +726,7 @@ static VALUE perform_request(VALUE self) {
   membuffer* body_buffer = NULL;
   CURLcode ret = 0;
 
-  state->interrupt = 0;  /* clear any interrupt flags */
+  state->interrupt = 0;            /* clear the interrupt flag */
 
   header_buffer = &state->header_buffer;
   body_buffer = &state->body_buffer;
@@ -815,7 +856,7 @@ static VALUE session_reset(VALUE self) {
  */
 static VALUE session_interrupt(VALUE self) {
   struct patron_curl_state *state = get_patron_curl_state(self);
-  state->interrupt = 1;
+  state->interrupt = INTERRUPT_ABORT;
   return self;
 }
 
@@ -887,6 +928,7 @@ void Init_session_ext() {
   ePartialFileError = rb_const_get(mPatron, rb_intern("PartialFileError"));
   eTimeoutError = rb_const_get(mPatron, rb_intern("TimeoutError"));
   eTooManyRedirects = rb_const_get(mPatron, rb_intern("TooManyRedirects"));
+  eAborted = rb_const_get(mPatron, rb_intern("Aborted"));
 
   rb_define_module_function(mPatron, "libcurl_version", libcurl_version, 0);
 
