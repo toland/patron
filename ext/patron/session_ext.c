@@ -49,7 +49,7 @@ static VALUE eTimeoutError = Qnil;
 static VALUE eTooManyRedirects = Qnil;
 
 
-struct curl_state {
+struct patron_curl_state {
   CURL* handle;
   char* upload_buf;
   FILE* download_file;
@@ -85,7 +85,7 @@ static size_t session_write_handler(char* stream, size_t size, size_t nmemb, mem
  * is attempting to exit.
  */
 static int session_progress_handler(void *clientp, double dltotal, double dlnow, double ultotal, double ulnow) {
-  struct curl_state* state = (struct curl_state*) clientp;
+  struct patron_curl_state* state = (struct patron_curl_state*) clientp;
   UNUSED_ARGUMENT(dltotal);
   UNUSED_ARGUMENT(dlnow);
   UNUSED_ARGUMENT(ultotal);
@@ -97,32 +97,32 @@ static int session_progress_handler(void *clientp, double dltotal, double dlnow,
 /*----------------------------------------------------------------------------*/
 /* List of active curl sessions                                               */
 
-struct curl_state_list {
-  struct curl_state       *state;
-  struct curl_state_list  *next;
+struct patron_curl_state_list {
+  struct patron_curl_state       *state;
+  struct patron_curl_state_list  *next;
 };
 
 #define CS_LIST_COMPARATOR(p, _state_) (p->state - _state_)
 
-static struct curl_state_list *cs_list = NULL;
+static struct patron_curl_state_list *cs_list = NULL;
 
-static void cs_list_append( struct curl_state *state ) {
-  struct curl_state_list *item = NULL;
+static void cs_list_append( struct patron_curl_state *state ) {
+  struct patron_curl_state_list *item = NULL;
 
   assert(state != NULL);
-  item = ruby_xmalloc(sizeof(struct curl_state_list));
+  item = ruby_xmalloc(sizeof(struct patron_curl_state_list));
   item->state = state;
   item->next = NULL;
 
-  SGLIB_LIST_ADD(struct curl_state_list, cs_list, item, next);
+  SGLIB_LIST_ADD(struct patron_curl_state_list, cs_list, item, next);
 }
 
-static void cs_list_remove(struct curl_state *state) {
-  struct curl_state_list *item = NULL;
+static void cs_list_remove(struct patron_curl_state *state) {
+  struct patron_curl_state_list *item = NULL;
 
   assert(state != NULL);
 
-  SGLIB_LIST_DELETE_IF_MEMBER(struct curl_state_list, cs_list, state, CS_LIST_COMPARATOR, next, item);
+  SGLIB_LIST_DELETE_IF_MEMBER(struct patron_curl_state_list, cs_list, state, CS_LIST_COMPARATOR, next, item);
   if (item) {
     ruby_xfree(item);
   }
@@ -131,7 +131,7 @@ static void cs_list_remove(struct curl_state *state) {
 static void cs_list_interrupt(VALUE data) {
   UNUSED_ARGUMENT(data);
 
-  SGLIB_LIST_MAP_ON_ELEMENTS(struct curl_state_list, cs_list, item, next, {
+  SGLIB_LIST_MAP_ON_ELEMENTS(struct patron_curl_state_list, cs_list, item, next, {
     item->state->interrupt = 1;
   });
 }
@@ -140,7 +140,7 @@ static void cs_list_interrupt(VALUE data) {
 /*----------------------------------------------------------------------------*/
 /* Object allocation                                                          */
 
-static void session_close_debug_file(struct curl_state *curl) {
+static void session_close_debug_file(struct patron_curl_state *curl) {
   if (curl->debug_file && stderr != curl->debug_file) {
     fclose(curl->debug_file);
   }
@@ -148,7 +148,7 @@ static void session_close_debug_file(struct curl_state *curl) {
 }
 
 /* Cleans up the Curl handle when the Session object is garbage collected. */
-void session_free(struct curl_state *curl) {
+void session_free(struct patron_curl_state *curl) {
   if (curl->handle) {
     curl_easy_cleanup(curl->handle);
     curl->handle = NULL;
@@ -164,10 +164,10 @@ void session_free(struct curl_state *curl) {
   free(curl);
 }
 
-/* Allocates curl_state data needed for a new Session object. */
+/* Allocates patron_curl_state data needed for a new Session object. */
 VALUE session_alloc(VALUE klass) {
-  struct curl_state* curl;
-  VALUE obj = Data_Make_Struct(klass, struct curl_state, NULL, session_free, curl);
+  struct patron_curl_state* curl;
+  VALUE obj = Data_Make_Struct(klass, struct patron_curl_state, NULL, session_free, curl);
 
   membuffer_init( &curl->header_buffer );
   membuffer_init( &curl->body_buffer );
@@ -176,10 +176,10 @@ VALUE session_alloc(VALUE klass) {
   return obj;
 }
 
-/* Return the curl_state from the ruby VALUE which is the Session instance. */
-static struct curl_state* get_curl_state(VALUE self) {
-  struct curl_state *state;
-  Data_Get_Struct(self, struct curl_state, state);
+/* Return the patron_curl_state from the ruby VALUE which is the Session instance. */
+static struct patron_curl_state* get_patron_curl_state(VALUE self) {
+  struct patron_curl_state *state;
+  Data_Get_Struct(self, struct patron_curl_state, state);
 
   if (NULL == state->handle) {
     state->handle = curl_easy_init();
@@ -219,7 +219,7 @@ static VALUE session_escape(VALUE self, VALUE value) {
   char* escaped = NULL;
   VALUE retval = Qnil;
 
-  struct curl_state* state = curl_easy_init();
+  struct patron_curl_state* state = curl_easy_init();
   escaped = curl_easy_escape(state->handle,
                              RSTRING_PTR(string),
                              (int) RSTRING_LEN(string));
@@ -242,7 +242,7 @@ static VALUE session_unescape(VALUE self, VALUE value) {
   char* unescaped = NULL;
   VALUE retval = Qnil;
 
-  struct curl_state* state = curl_easy_init();
+  struct patron_curl_state* state = curl_easy_init();
   unescaped = curl_easy_unescape(state->handle,
                                  RSTRING_PTR(string),
                                  (int) RSTRING_LEN(string),
@@ -257,7 +257,7 @@ static VALUE session_unescape(VALUE self, VALUE value) {
 
 /* Callback used to iterate over the HTTP headers and store them in an slist. */
 static int each_http_header(VALUE header_key, VALUE header_value, VALUE self) {
-  struct curl_state *state = get_curl_state(self);
+  struct patron_curl_state *state = get_patron_curl_state(self);
   CURL* curl = state->handle;
 
   VALUE name = rb_obj_as_string(header_key);
@@ -287,7 +287,7 @@ static int each_http_header(VALUE header_key, VALUE header_value, VALUE self) {
 }
 
 static int formadd_values(VALUE data_key, VALUE data_value, VALUE self) {
-  struct curl_state *state = get_curl_state(self);
+  struct patron_curl_state *state = get_patron_curl_state(self);
   VALUE name = rb_obj_as_string(data_key);
   VALUE value = rb_obj_as_string(data_value);
 
@@ -298,7 +298,7 @@ static int formadd_values(VALUE data_key, VALUE data_value, VALUE self) {
 }
 
 static int formadd_files(VALUE data_key, VALUE data_value, VALUE self) {
-  struct curl_state *state = get_curl_state(self);
+  struct patron_curl_state *state = get_patron_curl_state(self);
   VALUE name = rb_obj_as_string(data_key);
   VALUE value = rb_obj_as_string(data_value);
 
@@ -318,7 +318,7 @@ static void set_curl_request_body(CURL* curl, char* buf, curl_off_t len) {
   #endif
 }
 
-static void set_chunked_encoding(struct curl_state *state) {
+static void set_chunked_encoding(struct patron_curl_state *state) {
   state->headers = curl_slist_append(state->headers, "Transfer-Encoding: chunked");
 }
 
@@ -331,7 +331,7 @@ static FILE* open_file(VALUE filename, const char* perms) {
   return handle;
 }
 
-static void set_request_body_file(struct curl_state* state, VALUE r_path_str) {
+static void set_request_body_file(struct patron_curl_state* state, VALUE r_path_str) {
   CURL* curl = state->handle;
   
   state->request_body_file = open_file(r_path_str, "rb");
@@ -346,7 +346,7 @@ static void set_request_body_file(struct curl_state* state, VALUE r_path_str) {
   #endif
 }
 
-static void set_request_body(struct curl_state* state, VALUE stringable_or_file) {
+static void set_request_body(struct patron_curl_state* state, VALUE stringable_or_file) {
   CURL* curl = state->handle;
   if(rb_respond_to(stringable_or_file, rb_intern("to_path"))) {
     // Set up a file read callback (read the entire request body from a file).
@@ -369,7 +369,7 @@ static void set_request_body(struct curl_state* state, VALUE stringable_or_file)
  * handle.
  */
 static void set_options_from_request(VALUE self, VALUE request) {
-  struct curl_state* state = get_curl_state(self);
+  struct patron_curl_state* state = get_patron_curl_state(self);
   CURL* curl = state->handle;
 
   ID    action                = Qnil;
@@ -679,7 +679,7 @@ static VALUE select_error(CURLcode code) {
 
 /* Perform the actual HTTP request by calling libcurl. */
 static VALUE perform_request(VALUE self) {
-  struct curl_state *state = get_curl_state(self);
+  struct patron_curl_state *state = get_patron_curl_state(self);
   CURL* curl = state->handle;
   membuffer* header_buffer = NULL;
   membuffer* body_buffer = NULL;
@@ -736,7 +736,7 @@ static VALUE perform_request(VALUE self) {
  * all request related objects such as the header slist.
  */
 static VALUE cleanup(VALUE self) {
-  struct curl_state *state = get_curl_state(self);
+  struct patron_curl_state *state = get_patron_curl_state(self);
   curl_easy_reset(state->handle);
 
   if (state->headers) {
@@ -795,8 +795,8 @@ static VALUE session_handle_request(VALUE self, VALUE request) {
  * @return self
  */
 static VALUE session_reset(VALUE self) {
-  struct curl_state *state;
-  Data_Get_Struct(self, struct curl_state, state);
+  struct patron_curl_state *state;
+  Data_Get_Struct(self, struct patron_curl_state, state);
 
   if (NULL != state->handle) {
     cleanup(self);
@@ -814,7 +814,7 @@ static VALUE session_reset(VALUE self) {
  * @return [void] This method always raises
  */
 static VALUE session_interrupt(VALUE self) {
-  struct curl_state *state = get_curl_state(self);
+  struct patron_curl_state *state = get_patron_curl_state(self);
   state->interrupt = 1;
   return self;
 }
@@ -829,7 +829,7 @@ static VALUE session_interrupt(VALUE self) {
 *  @return self
  */
 static VALUE add_cookie_file(VALUE self, VALUE file) {
-  struct curl_state *state = get_curl_state(self);
+  struct patron_curl_state *state = get_patron_curl_state(self);
   CURL* curl = state->handle;
   char* file_path = NULL;
 
@@ -850,7 +850,7 @@ static VALUE add_cookie_file(VALUE self, VALUE file) {
 *  @return self
  */
 static VALUE set_debug_file(VALUE self, VALUE file) {
-  struct curl_state *state = get_curl_state(self);
+  struct patron_curl_state *state = get_patron_curl_state(self);
   char* file_path = RSTRING_PTR(file);
 
   session_close_debug_file(state);
