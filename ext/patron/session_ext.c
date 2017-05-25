@@ -555,21 +555,31 @@ static void set_options_from_request(VALUE self, VALUE request) {
   if(RTEST(ssl_version)) {
     VALUE ssl_version_str = rb_funcall(ssl_version, rb_intern("to_s"), 0);
     char* version = StringValuePtr(ssl_version_str);
+
     if(strcmp(version, "SSLv2") == 0) {
       curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_SSLv2);
     } else if(strcmp(version, "SSLv3") == 0) {
       curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_SSLv3);
     } else if(strcmp(version, "TLSv1") == 0) {
           curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1);
-    } else if(strcmp(version, "TLSv1_0") == 0) {
-      curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_0); //libcurl v7.34.0+
-    } else if(strcmp(version, "TLSv1_1") == 0) {
-      curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_1); //libcurl v7.34.0+
-    } else if(strcmp(version, "TLSv1_2") == 0) {
-      curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2); //libcurl v7.34.0+
-    } else if(strcmp(version, "TLSv1_3") == 0) {
-      curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_3); //libcurl v7.52.0+
-    } else {
+    }
+    #if LIBCURL_VERSION_NUM >= 0x072200
+        /* this is libCURLv7.34.0 or later */
+        else if(strcmp(version, "TLSv1_0") == 0) {
+          curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_0); //libcurl v7.34.0+
+        } else if(strcmp(version, "TLSv1_1") == 0) {
+          curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_1); //libcurl v7.34.0+
+        } else if(strcmp(version, "TLSv1_2") == 0) {
+          curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2); //libcurl v7.34.0+
+        }
+    #endif
+    #if LIBCURL_VERSION_NUM >= 0x073400
+        /* this is libCURLv7.52.0 or later */
+        else if(strcmp(version, "TLSv1_3") == 0) {
+          curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_3); //libcurl v7.52.0+
+        }
+    #endif
+    else {
       rb_raise(eUnsupportedSSLVersion, "Unsupported SSL version: %s", version);
     }
   }
