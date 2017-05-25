@@ -284,7 +284,7 @@ describe Patron::Session do
   end
 
   it "should work with different SSL versions" do
-    ['SSLv3', 'TLSv1'].each do |version|
+    ['SSLv3','TLSv1_2'].each do |version|
       @session.ssl_version = version
       response = @session.get("/test")
       expect(response.status).to be == 200
@@ -299,7 +299,24 @@ describe Patron::Session do
       }.to raise_error(Patron::UnsupportedSSLVersion)
     end
   end
-  
+
+  it "should work with different HTTP versions" do
+    ['HTTPv1_1','HTTPv2_0'].each do |version|
+      @session.http_version = version
+      response = @session.get("/test")
+      expect(response.status).to be == 200
+    end
+  end
+
+  it "should raise when an unsupported or unknown HTTP version is requested" do
+    ['something', 1].each do |version|
+      @session.http_version = version
+      expect {
+        @session.get("/test")
+      }.to raise_error(Patron::UnsupportedHTTPVersion)
+    end
+  end
+
   # ------------------------------------------------------------------------
   describe 'when debug is enabled' do
     it 'it should not clobber stderr' do

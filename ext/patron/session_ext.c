@@ -40,6 +40,7 @@ static VALUE cRequest = Qnil;
 static VALUE ePatronError = Qnil;
 static VALUE eUnsupportedProtocol = Qnil;
 static VALUE eUnsupportedSSLVersion = Qnil;
+static VALUE eUnsupportedHTTPVersion = Qnil;
 static VALUE eURLFormatError = Qnil;
 static VALUE eHostResolutionError = Qnil;
 static VALUE eConnectionFailed = Qnil;
@@ -383,6 +384,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE insecure              = Qnil;
   VALUE cacert                = Qnil;
   VALUE ssl_version           = Qnil;
+  VALUE http_version          = Qnil;
   VALUE buffer_size           = Qnil;
   VALUE action_name           = rb_funcall(request, rb_intern("action"), 0);
   VALUE a_c_encoding          = rb_funcall(request, rb_intern("automatic_content_encoding"), 0);
@@ -558,9 +560,38 @@ static void set_options_from_request(VALUE self, VALUE request) {
     } else if(strcmp(version, "SSLv3") == 0) {
       curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_SSLv3);
     } else if(strcmp(version, "TLSv1") == 0) {
-      curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1);
+          curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1);
+    } else if(strcmp(version, "TLSv1_0") == 0) {
+      curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_0); //libcurl v7.34.0+
+    } else if(strcmp(version, "TLSv1_1") == 0) {
+      curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_1); //libcurl v7.34.0+
+    } else if(strcmp(version, "TLSv1_2") == 0) {
+      curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2); //libcurl v7.34.0+
+    } else if(strcmp(version, "TLSv1_3") == 0) {
+      curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_3); //libcurl v7.52.0+
     } else {
       rb_raise(eUnsupportedSSLVersion, "Unsupported SSL version: %s", version);
+    }
+  }
+
+  http_version = rb_funcall(request, rb_intern("http_version"), 0);
+  if(RTEST(http_version)) {
+    VALUE http_version_str = rb_funcall(http_version, rb_intern("to_s"), 0);
+    char* version = StringValuePtr(http_version_str);
+    if(strcmp(version, "None") == 0) {
+      curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_NONE);
+    } else if(strcmp(version, "HTTPv1_0") == 0) {
+      curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
+    } else if(strcmp(version, "HTTPv1_1") == 0) {
+          curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+    } else if(strcmp(version, "HTTPv2_0") == 0) {
+      curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0); //libcurl v7.33.0+
+    } else if(strcmp(version, "HTTPv2_TLS") == 0) {
+      curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS); //libcurl v7.47.0+
+    } else if(strcmp(version, "HTTPv2_PRIOR") == 0) {
+      curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE); //libcurl v7.49.0+
+    } else {
+      rb_raise(eUnsupportedHTTPVersion, "Unsupported HTTP version: %s", version);
     }
   }
 
@@ -826,6 +857,7 @@ void Init_session_ext() {
 
   eUnsupportedProtocol = rb_const_get(mPatron, rb_intern("UnsupportedProtocol"));
   eUnsupportedSSLVersion = rb_const_get(mPatron, rb_intern("UnsupportedSSLVersion"));
+  eUnsupportedHTTPVersion = rb_const_get(mPatron, rb_intern("UnsupportedHTTPVersion"));
   eURLFormatError = rb_const_get(mPatron, rb_intern("URLFormatError"));
   eHostResolutionError = rb_const_get(mPatron, rb_intern("HostResolutionError"));
   eConnectionFailed = rb_const_get(mPatron, rb_intern("ConnectionFailed"));

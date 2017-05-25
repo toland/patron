@@ -50,12 +50,12 @@ module Patron
       :url, :username, :password, :file_name, :proxy, :proxy_type, :insecure,
       :ignore_content_length, :multipart, :action, :timeout, :connect_timeout,
       :max_redirects, :headers, :auth_type, :upload_data, :buffer_size, :cacert,
-      :ssl_version, :automatic_content_encoding, :force_ipv4
+      :ssl_version, :http_version, :automatic_content_encoding, :force_ipv4
     ]
 
     WRITER_VARS = [
       :url, :username, :password, :file_name, :proxy, :proxy_type, :insecure,
-      :ignore_content_length, :multipart, :cacert, :ssl_version, :automatic_content_encoding, :force_ipv4
+      :ignore_content_length, :multipart, :cacert, :ssl_version, :http_version, :automatic_content_encoding, :force_ipv4
     ]
 
     attr_reader *READER_VARS
