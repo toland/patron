@@ -36,6 +36,9 @@ module Patron
   # Gets raised when a request is attempted with an unsupported SSL version.
   class UnsupportedSSLVersion  < Error; end
 
+  # Gets raised when a request is attempted with an unsupported HTTP version.
+  class UnsupportedHTTPVersion  < Error; end
+
   # Gets raised when the URL was not properly formatted.
   class URLFormatError         < Error; end
 
