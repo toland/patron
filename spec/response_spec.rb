@@ -45,7 +45,7 @@ describe Patron::Response do
 
   it 'recovers the status code' do
     response = @session.get("/repetitiveheader")
-    expect(response.status).to be_kind_of(Fixnum)
+    expect(response.status).to be_kind_of(Integer)
     expect(response.status).to eq(200)
   end
   
