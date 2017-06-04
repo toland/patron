@@ -36,11 +36,12 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
-  bundler (>= 1.0.0)
+  bundler (>= 1)
   patron!
-  rake-compiler (>= 0.7.5)
+  rake (~> 10)
+  rake-compiler
   rspec (>= 2.3.0)
-  simplecov (~> 0.12)
+  simplecov (~> 0.10)
   yard (~> 0.8)
 
 BUNDLED WITH
