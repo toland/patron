@@ -207,6 +207,20 @@ static VALUE libcurl_version(VALUE klass) {
 }
 
 /*
+* Returns the version of the embedded libcurl.
+* 
+*  @return [Array] an array of MAJOR, MINOR, PATCH integers
+ */
+static VALUE libcurl_version_exact(VALUE klass) {
+  UNUSED_ARGUMENT(klass);
+  VALUE cv_major = INT2FIX(LIBCURL_VERSION_MAJOR);
+  VALUE cv_minor = INT2FIX(LIBCURL_VERSION_MINOR);
+  VALUE cv_patch = INT2FIX(LIBCURL_VERSION_PATCH);
+  VALUE version_arr = rb_ary_new3(3, cv_major, cv_minor, cv_patch);
+  return version_arr;
+}
+
+/*
  * Escapes the provided string using libCURL URL escaping functions.
  *
  * @param [String] value plain string to URL-escape
@@ -833,7 +847,8 @@ void Init_session_ext() {
   eTimeoutError = rb_const_get(mPatron, rb_intern("TimeoutError"));
   eTooManyRedirects = rb_const_get(mPatron, rb_intern("TooManyRedirects"));
 
-  rb_define_module_function(mPatron, "libcurl_version", libcurl_version, 0);
+  rb_define_module_function(mPatron, "libcurl_version",       libcurl_version, 0);
+  rb_define_module_function(mPatron, "libcurl_version_exact", libcurl_version_exact, 0);
 
   cSession = rb_define_class_under(mPatron, "Session", rb_cObject);
   cRequest = rb_define_class_under(mPatron, "Request", rb_cObject);
