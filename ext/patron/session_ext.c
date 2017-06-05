@@ -564,20 +564,20 @@ static void set_options_from_request(VALUE self, VALUE request) {
           curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1);
     }
     #if LIBCURL_VERSION_NUM >= 0x072200
-        /* this is libCURLv7.34.0 or later */
-        else if(strcmp(version, "TLSv1_0") == 0) {
-          curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_0); //libcurl v7.34.0+
-        } else if(strcmp(version, "TLSv1_1") == 0) {
-          curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_1); //libcurl v7.34.0+
-        } else if(strcmp(version, "TLSv1_2") == 0) {
-          curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2); //libcurl v7.34.0+
-        }
+    /* this is libCURLv7.34.0 or later */
+    else if(strcmp(version, "TLSv1_0") == 0) {
+      curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_0); //libcurl v7.34.0+
+    } else if(strcmp(version, "TLSv1_1") == 0) {
+      curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_1); //libcurl v7.34.0+
+    } else if(strcmp(version, "TLSv1_2") == 0) {
+      curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2); //libcurl v7.34.0+
+    }
     #endif
     #if LIBCURL_VERSION_NUM >= 0x073400
-        /* this is libCURLv7.52.0 or later */
-        else if(strcmp(version, "TLSv1_3") == 0) {
-          curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_3); //libcurl v7.52.0+
-        }
+    /* this is libCURLv7.52.0 or later */
+    else if(strcmp(version, "TLSv1_3") == 0) {
+      curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_3); //libcurl v7.52.0+
+    }
     #endif
     else {
       rb_raise(eUnsupportedSSLVersion, "Unsupported SSL version: %s", version);
@@ -596,22 +596,22 @@ static void set_options_from_request(VALUE self, VALUE request) {
           curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
     }
     #if LIBCURL_VERSION_NUM >= 0x072100
-        /* this is libCURLv7.33.0 or later */
-        else if(strcmp(version, "HTTPv2_0") == 0) {
-          curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0); //libcurl v7.33.0+
-        }
+    /* this is libCURLv7.33.0 or later */
+    else if(strcmp(version, "HTTPv2_0") == 0) {
+      curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0); //libcurl v7.33.0+
+    }
     #endif
     #if LIBCURL_VERSION_NUM >= 0x072F00
-        /* this is libCURLv7.47.0 or later */
-        else if(strcmp(version, "HTTPv2_TLS") == 0) {
-          curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS); //libcurl v7.47.0+
-        }
+    /* this is libCURLv7.47.0 or later */
+    else if(strcmp(version, "HTTPv2_TLS") == 0) {
+      curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS); //libcurl v7.47.0+
+    }
     #endif
     #if LIBCURL_VERSION_NUM >= 0x073100
-        /* this is libCURLv7.49.0 or later */
-        else if(strcmp(version, "HTTPv2_PRIOR") == 0) {
-          curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE); //libcurl v7.49.0+
-        }
+    /* this is libCURLv7.49.0 or later */
+    else if(strcmp(version, "HTTPv2_PRIOR") == 0) {CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE
+      curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE); //libcurl v7.49.0+
+    }
     #endif
     else {
       rb_raise(eUnsupportedHTTPVersion, "Unsupported HTTP version: %s", version);

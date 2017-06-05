@@ -284,7 +284,7 @@ describe Patron::Session do
   end
 
   it "should work with different SSL versions" do
-    ['SSLv3','TLSv1_2'].each do |version|
+    ['SSLv3','TLSv1'].each do |version|
       @session.ssl_version = version
       response = @session.get("/test")
       expect(response.status).to be == 200
@@ -301,7 +301,7 @@ describe Patron::Session do
   end
 
   it "should work with different HTTP versions" do
-    ['HTTPv1_1','HTTPv2_0'].each do |version|
+    ['HTTPv1_0','HTTPv1_1'].each do |version|
       @session.http_version = version
       response = @session.get("/test")
       expect(response.status).to be == 200
