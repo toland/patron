@@ -1,33 +1,44 @@
 # -*- encoding: utf-8 -*-
-require File.expand_path("../lib/patron/version", __FILE__)
+lib = File.expand_path('../lib', __FILE__)
+$LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
+require 'patron/version'
 
-Gem::Specification.new do |s|
-  s.name        = "patron"
-  s.version     = Patron::VERSION
-  s.platform    = Gem::Platform::RUBY
-  s.authors     = ["Phillip Toland"]
-  s.email       = ["phil.toland@gmail.com"]
-  s.homepage    = "https://github.com/toland/patron"
-  s.summary     = "Patron HTTP Client"
-  s.description = "Ruby HTTP client library based on libcurl"
+Gem::Specification.new do |spec|
+  spec.name        = "patron"
+  spec.version     = Patron::VERSION
+  spec.platform    = Gem::Platform::RUBY
+  spec.authors     = ["Phillip Toland"]
+  spec.email       = ["phil.toland@gmail.com"]
+  spec.homepage    = "https://github.com/toland/patron"
+  spec.summary     = "Patron HTTP Client"
+  spec.description = "Ruby HTTP client library based on libcurl"
 
-  s.required_rubygems_version = ">= 1.2.0"
-  s.rubyforge_project = "patron"
+  # Prevent pushing this gem to RubyGemspec.org. To allow pushes either set the 'allowed_push_host'
+  # to allow pushing to a single host or delete this section to allow pushing to any host.
+  if spec.respond_to?(:metadata)
+    spec.metadata['allowed_push_host'] = "https://rubygemspec.org"
+  else
+    raise "RubyGems 2.0 or newer is required to protect against public gem pushespec."
+  end
+  
+  spec.required_rubygems_version = ">= 1.2.0"
+  spec.rubyforge_project = "patron"
 
-  s.add_development_dependency "bundler", ">= 1.0.0"
-  s.add_development_dependency "rake-compiler", ">= 0.7.5"
-  s.add_development_dependency "rspec", ">= 2.3.0"
-  s.add_development_dependency "simplecov", "~> 0.12"
-  s.add_development_dependency "yard", "~> 0.8"
-
-  s.files        = `git ls-files`.split("\n")
-  s.executables  = `git ls-files`.split("\n").map{|f| f =~ /^bin\/(.*)/ ? $1 : nil}.compact
-  s.require_paths = ["lib", "ext"]
-  s.extensions   = ["ext/patron/extconf.rb"]
-  s.post_install_message = %q{
+  spec.files         = `git ls-files -z`.split("\x0").reject { |f| f.match(%r{^(test|spec|features)/}) }
+  spec.bindir        = "exe"
+  spec.executables   = spec.files.grep(%r{^exe/}) { |f| File.basename(f) }
+  spec.require_paths = ["lib", "ext"]
+  spec.extensions   = ["ext/patron/extconf.rb"]
+  spec.post_install_message = %q{
 Thank you for installing Patron. On OSX, make sure you are using libCURL with OpenSSL.
-SecureTransport-based builds might cause crashes in forking environments.
+SecureTransport-based builds might cause crashes in forking environment.
 
 For more info see https://github.com/curl/curl/issues/788
 }
+  spec.add_development_dependency "rake", "~> 10"
+  spec.add_development_dependency "bundler", ">= 1"
+  spec.add_development_dependency "rspec", ">= 2.3.0"
+  spec.add_development_dependency "simplecov", "~> 0.10"
+  spec.add_development_dependency "yard", "~> 0.8"
+  spec.add_development_dependency "rake-compiler"
 end

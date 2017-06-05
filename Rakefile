@@ -24,16 +24,18 @@
 require 'rake/clean'
 require 'rake/extensiontask'
 require 'rspec/core/rake_task'
-require 'bundler'
+require "bundler/gem_tasks"
 require 'yard'
+
+RSpec::Core::RakeTask.new(:spec)
+
+task :build => :compile
 
 Rake::ExtensionTask.new do |ext|
   ext.name = 'session_ext'           # indicate the name of the extension.
   ext.ext_dir = 'ext/patron'         # search for 'hello_world' inside it.
   ext.lib_dir = 'lib/patron'         # put binaries into this folder.
 end
-
-Bundler::GemHelper.install_tasks
 
 CLEAN.include FileList["ext/patron/*"].exclude(/^.*\.(rb|c|h)$/)
 CLOBBER.include %w( doc coverage pkg )
@@ -50,12 +52,4 @@ YARD::Rake::YardocTask.new do |t|
   t.stats_options = ['--list-undoc']
 end
 
-desc "Run specs"
-RSpec::Core::RakeTask.new do |t|
-  t.rspec_opts = %w( --colour --format progress )
-  t.pattern = 'spec/**/*_spec.rb'
-end
-
-task :spec => [:compile]
-
-task :default => :spec
+task :default => [:clobber, :compile, :spec]
