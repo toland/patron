@@ -24,7 +24,7 @@ Gem::Specification.new do |spec|
   spec.required_rubygems_version = ">= 1.2.0"
   spec.rubyforge_project = "patron"
 
-  spec.files         = `git ls-files -z`.split("\x0").reject { |f| f.match(%r{^(test|spec|features)/}) }
+  spec.files         = `git ls-files -z`.split("\x0")
   spec.bindir        = "exe"
   spec.executables   = spec.files.grep(%r{^exe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib", "ext"]
