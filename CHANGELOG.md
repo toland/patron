@@ -1,3 +1,12 @@
+### MASTER
+
+* Added ssl_version options "TLSv1_1", "TLSv1_2", "TLSv1_3" for use per the libCURL documentation
+    * requires the appropriate versions of libCURL and OpenSSL installed to support these new options 
+    * reference: https://curl.haxx.se/libcurl/c/CURLOPT_SSLVERSION.html
+* Added a new http_version option with "HTTPv1_1", and "HTTPv2_0" options to set the HTTP version of HTTP/1.1 or HTTP/2.0
+    * requires the appropriate versions of libCURL and OpenSSL installed to support these new options 
+    * reference: https://curl.haxx.se/libcurl/c/CURLOPT_HTTP_VERSION.html
+
 ### 0.8.0
 
 * Add `Response#inspectable_body`, `Response#decoded_body`. `decoded_body` will atempt to decode

@@ -82,6 +82,10 @@ module Patron
     # The supported values are nil, "SSLv2", "SSLv3", and "TLSv1".
     attr_accessor :ssl_version
 
+    # @return [String] the HTTP version for the requests, or "None" if libcurl is to choose permitted versions
+    # The supported values are "None", "HTTPv1_0", "HTTPv1_1", "HTTPv2_0", "HTTPv2_TLS", and "HTTPv2_PRIOR".
+    attr_accessor :http_version
+
     # @return [String] path to the CA file used for certificate verification, or `nil` if CURL default is used
     attr_accessor :cacert
 
@@ -371,6 +375,7 @@ module Patron
         req.auth_type              = options.fetch :auth_type,             self.auth_type
         req.insecure               = options.fetch :insecure,              self.insecure
         req.ssl_version            = options.fetch :ssl_version,           self.ssl_version
+        req.http_version           = options.fetch :http_version,          self.http_version
         req.cacert                 = options.fetch :cacert,                self.cacert
         req.ignore_content_length  = options.fetch :ignore_content_length, self.ignore_content_length
         req.buffer_size            = options.fetch :buffer_size,           self.buffer_size
