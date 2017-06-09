@@ -609,7 +609,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
     #endif
     #if LIBCURL_VERSION_NUM >= 0x073100
     /* this is libCURLv7.49.0 or later */
-    else if(strcmp(version, "HTTPv2_PRIOR") == 0) {CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE
+    else if(strcmp(version, "HTTPv2_PRIOR") == 0) {
       curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE); //libcurl v7.49.0+
     }
     #endif
