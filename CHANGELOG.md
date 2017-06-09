@@ -6,6 +6,8 @@
 * Added a new http_version option with "HTTPv1_1", and "HTTPv2_0" options to set the HTTP version of HTTP/1.1 or HTTP/2.0
     * requires the appropriate versions of libCURL and OpenSSL installed to support these new options 
     * reference: https://curl.haxx.se/libcurl/c/CURLOPT_HTTP_VERSION.html
+* Updates the gem release procedure for more convenience, using the updated Rubygems.org tasks
+* Update a few minor dependencies and documentation to be Ruby 2.4.1-compatible, add 2.4.1. to Travis CI matrix
 
 ### 0.8.0
 
