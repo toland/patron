@@ -38,9 +38,16 @@ describe Patron do
     expect(version).to match(%r|^\d+.\d+.\d+$|)
   end
 
-  it "should return the version number of the libcurl library" do
+  it "should return the version string of the libcurl library" do
     version = Patron.libcurl_version
     expect(version).to match(%r|^libcurl/\d+.\d+.\d+|)
   end
 
+  it "should return the version numbers of the libcurl library" do
+    version = Patron.libcurl_version_exact
+    expect(version.length).to eq(3)
+    expect(version[0]).to be > 0
+    expect(version[1]).to be >= 0
+    expect(version[2]).to be >= 0
+  end
 end
