@@ -109,7 +109,12 @@ module Patron
 
     # @return [Boolean] Support automatic Content-Encoding decompression and set liberal Accept-Encoding headers
     attr_accessor :automatic_content_encoding
-    
+
+    # @return [Fixnum, nil] Limit the amount of bytes downloaded. If it is set to nil
+    #    (default) no limit will be applied.
+    #    **Note that this only works on libCURL 7.34 and newer**
+    attr_accessor :download_byte_limit
+
     private :handle_request, :add_cookie_file, :set_debug_file
 
     # Create a new Session object for performing requests.
@@ -379,6 +384,7 @@ module Patron
         req.cacert                 = options.fetch :cacert,                self.cacert
         req.ignore_content_length  = options.fetch :ignore_content_length, self.ignore_content_length
         req.buffer_size            = options.fetch :buffer_size,           self.buffer_size
+        req.download_byte_limit    = options.fetch :download_byte_limit,   self.download_byte_limit
         req.multipart              = options[:multipart]
         req.upload_data            = options[:data]
         req.file_name              = options[:file]

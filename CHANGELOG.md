@@ -8,6 +8,9 @@
     * reference: https://curl.haxx.se/libcurl/c/CURLOPT_HTTP_VERSION.html
 * Updates the gem release procedure for more convenience, using the updated Rubygems.org tasks
 * Update a few minor dependencies and documentation to be Ruby 2.4.1-compatible, add 2.4.1. to Travis CI matrix
+* Add `Session#download_byte_limit` for limiting the permitted download size.
+  This can be very useful in dealing with untrusted download sources, which might attempt
+  to send very large responses to overflow the receiving client.
 
 ### 0.8.0
 
