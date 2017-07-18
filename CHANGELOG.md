@@ -1,16 +1,19 @@
-### MASTER
+### 0.9.0
 
-* Added ssl_version options "TLSv1_1", "TLSv1_2", "TLSv1_3" for use per the libCURL documentation
+* Added ssl_version options `TLSv1_1`, `TLSv1_2`, `TLSv1_3` for explicitly forcing the SSL version
     * requires the appropriate versions of libCURL and OpenSSL installed to support these new options 
     * reference: https://curl.haxx.se/libcurl/c/CURLOPT_SSLVERSION.html
-* Added a new http_version option with "HTTPv1_1", and "HTTPv2_0" options to set the HTTP version of HTTP/1.1 or HTTP/2.0
+* Added a new `:http_version` option with `HTTPv1_1` and `HTTPv2_0` values to explicitly set the HTTP version of HTTP/1.1 or HTTP/2.0
     * requires the appropriate versions of libCURL and OpenSSL installed to support these new options 
     * reference: https://curl.haxx.se/libcurl/c/CURLOPT_HTTP_VERSION.html
 * Updates the gem release procedure for more convenience, using the updated Rubygems.org tasks
 * Update a few minor dependencies and documentation to be Ruby 2.4.1-compatible, add 2.4.1. to Travis CI matrix
 * Add `Session#download_byte_limit` for limiting the permitted download size.
   This can be very useful in dealing with untrusted download sources, which might attempt
-  to send very large responses to overflow the receiving client.
+  to send very large responses that would overwhelm the receiving client.
+* Add `Patron.libcurl_version_exact` which returns a triplet of major, minor and patch libCURL version numbers. This can be used
+  for more fine-grained matching when using some more esoteric Curl features which might not necessarily be available on libCURL
+  Patron has been linked against.
 
 ### 0.8.0
 
