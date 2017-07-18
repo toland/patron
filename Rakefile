@@ -29,8 +29,6 @@ require 'yard'
 
 RSpec::Core::RakeTask.new(:spec)
 
-task :build => :compile
-
 Rake::ExtensionTask.new do |ext|
   ext.name = 'session_ext'           # indicate the name of the extension.
   ext.ext_dir = 'ext/patron'         # search for 'hello_world' inside it.
@@ -53,3 +51,4 @@ YARD::Rake::YardocTask.new do |t|
 end
 
 task :default => [:clobber, :compile, :spec]
+task :build => [:clobber] # Make sure no binaries end up in the gem
