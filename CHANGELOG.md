@@ -1,4 +1,4 @@
-### 0.9.0
+### 0.9.1
 
 * Added ssl_version options `TLSv1_1`, `TLSv1_2`, `TLSv1_3` for explicitly forcing the SSL version
     * requires the appropriate versions of libCURL and OpenSSL installed to support these new options 
