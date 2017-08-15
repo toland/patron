@@ -71,21 +71,25 @@ class TestServlet < HTTPServlet::AbstractServlet
   def do_COPY(req,res)
     respond_with(:COPY, req, res)
   end
+
+  def do_PROPFIND(req,res)
+    respond_with(:PROPFIND, req, res)
+  end
 end
 
 class GzipServlet < HTTPServlet::AbstractServlet
 
   def do_GET(req,res)
     raise "Need to have the right Accept-Encoding: header" unless req.header['Accept-Encoding']
-    
+
     out = StringIO.new
     z = Zlib::Deflate.new(Zlib::DEFAULT_COMPRESSION)
-    1024.times { 
+    1024.times {
       out << z.deflate('Some highly compressible data')
     }
     out << z.finish
     z.close
-    
+
     content_length = out.size
     # Content-Length gets set automatically by WEBrick, and if we do it manually
     # here then two headers will be set.
@@ -234,4 +238,3 @@ class PatronTestServer
     self
   end
 end
-
