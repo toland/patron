@@ -48,7 +48,7 @@ describe Patron::Session do
       end
     end
   end
-  
+
   it 'does not follow a redirect to a non-HTTP/HTTPS URL' do
     # The "/evil-redirect" servlet tries to do a redirect to SMTP,
     # which can lead to exploits. By default, libCURL will just follow
@@ -57,12 +57,12 @@ describe Patron::Session do
       @session.get('/evil-redirect')
     }.to raise_error(Patron::UnsupportedProtocol)
   end
-  
+
   it "should work when forcing ipv4" do
     @session.force_ipv4 = true
     expect { @session.get("/test") }.to_not raise_error
   end
-  
+
   describe '.escape and #escape' do
     it 'makes escape() and unescape() available on the class' do
       string = "foo~bar baz/"
@@ -70,14 +70,14 @@ describe Patron::Session do
       unescaped = described_class.unescape(escaped)
       expect(unescaped).to be == string
     end
-    
+
     it "should escape and unescape strings symetrically" do
       string = "foo~bar baz/"
       escaped = @session.escape(string)
       unescaped = @session.unescape(escaped)
       expect(unescaped).to be == string
     end
-  
+
     it "should make e and unescape strings symetrically" do
       string = "foo~bar baz/"
       escaped = @session.escape(string)
@@ -85,7 +85,7 @@ describe Patron::Session do
       expect(unescaped).to be == string
     end
   end
-  
+
   it "should raise an error when passed an invalid action" do
     expect { @session.request(:bogus, "/test", {}) }.to raise_error(ArgumentError)
   end
@@ -163,7 +163,7 @@ describe Patron::Session do
     body = YAML::load(response.body)
     expect(body.header["user-agent"]).to be_nil
   end
-  
+
   it "should set the default User-agent" do
     response = @session.get("/test")
     body = YAML::load(response.body)
@@ -249,14 +249,14 @@ describe Patron::Session do
     expect(body.request_method).to be == "GET"
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
-  
+
   it "should call to_s on the data being uploaded via GET if it is not already a String" do
     data = 12345
     response = @session.request(:get, "/test", {}, :data => data)
     body = YAML::load(response.body)
     expect(body.request_method).to be == "GET"
   end
-  
+
   it "should upload data with :get" do
     # Sending a request body with a GET request is a technique seldom used,
     # but it does get used nevertheless - for instance, it is a usual
@@ -268,7 +268,7 @@ describe Patron::Session do
     expect(body.request_method).to be == "GET"
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
-  
+
   it "should upload data with :put" do
     data = Random.new.bytes(1024 * 24)
     response = @session.put("/test", data)
@@ -281,13 +281,19 @@ describe Patron::Session do
     data = Tempfile.new 'data-buffer'
     data << Random.new.bytes(1024 * 64)
     data.flush; data.rewind
-    
+
     response = @session.put("/test", data, {'Expect' => ''})
     body = YAML::load(response.body)
     expect(body.request_method).to be == "PUT"
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
-  
+
+  it "should send a propfind request with :propfind" do
+    response = @session.propfind("/test")
+    body = YAML::load(response.body)
+    expect(body.request_method).to be == "PROPFIND"
+  end
+
   it "should upload data with :patch" do
     data = "upload data"
     response = @session.patch("/testpatch", data)
@@ -322,14 +328,14 @@ describe Patron::Session do
     body = YAML::load(response.body)
     expect(body.header['transfer-encoding'].first).to be == "chunked"
   end
-  
+
   it "should call to_s on the data being uploaded via POST if it is not already a String" do
     data = 12345
     response = @session.post("/testpost", data)
     body = YAML::load(response.body)
     expect(body['body']).to eq("12345")
   end
-  
+
   it "should upload data with :post" do
     data = "upload data"
     response = @session.post("/test", data)
@@ -384,15 +390,15 @@ describe Patron::Session do
   it "should store cookies across multiple requests" do
     tf = Tempfile.new('cookiejar')
     cookie_jar_path = tf.path
-    
+
     @session.handle_cookies(cookie_jar_path)
     response = @session.get("/setcookie").body
-    
+
     cookie_jar_contents = tf.read
     expect(cookie_jar_contents).not_to be_empty
     expect(cookie_jar_contents).to include('Netscape HTTP Cookie File')
   end
-  
+
   it "should handle cookies if set" do
     @session.handle_cookies
     response = @session.get("/setcookie").body
@@ -455,14 +461,14 @@ describe Patron::Session do
   it "should automatically decompress using Content-Encoding if requested" do
     @session.automatic_content_encoding = true
     response = @session.get('/gzip-compressed')
-    
+
     expect(response.headers['Content-Length']).to eq('125')
-    
+
     body = response.body
     expect(body).to match(/Some highly compressible data/)
     expect(body.bytesize).to eq(29696)
   end
-  
+
   it "should serialize query params and append them to the url" do
     response = @session.request(:get, "/test", {}, :query => {:foo => "bar"})
     request = YAML::load(response.body)
@@ -482,30 +488,30 @@ describe Patron::Session do
   end
 
   describe 'when using a subclass with a custom Response' do
-    
+
     class CustomResponse
       attr_reader :constructor_args
       def initialize(*constructor_args)
         @constructor_args = constructor_args
       end
     end
-    
+
     class CustomizedSession < Patron::Session
       def response_class
         CustomResponse
       end
     end
-    
+
     it 'instantiates the customized response object' do
       @session = CustomizedSession.new
       @session.base_url = "http://localhost:9001"
       response = @session.request(:get, "/test", {}, :query => {:foo => "bar"})
-      
+
       expect(response).to be_kind_of(CustomResponse)
       expect(response.constructor_args.length).to eq(6)
     end
   end
-  
+
   describe 'when instantiating with hash arguments' do
 
     let(:args) { {
