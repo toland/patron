@@ -34,8 +34,8 @@ describe Patron::Request do
 
   describe :action do
 
-    it "should accept :get, :put, :post, :delete and :head" do
-      [:get, :put, :post, :delete, :head, :copy].each do |action|
+    it "should accept :get, :put, :post, :delete, :head, :copy, :patch and :propfind" do
+      [:get, :put, :post, :delete, :head, :copy, :patch, :propfind].each do |action|
         expect {@request.action = action}.not_to raise_error
       end
     end
