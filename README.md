@@ -105,5 +105,4 @@ similar. For Windows we do not have an established build instruction at the mome
 
     sudo gem install patron
 
-
 Copyright (c) 2008 The Hive
