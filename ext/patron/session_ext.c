@@ -547,6 +547,16 @@ static void set_options_from_request(VALUE self, VALUE request) {
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, FIX2INT(timeout));
   }
 
+  VALUE low_speed_time = rb_funcall(request, rb_intern("low_speed_time"), 0);
+  if(RTEST(low_speed_time)) {
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, FIX2LONG(low_speed_time));
+  }
+
+  VALUE low_speed_limit_bytes_per_second = rb_funcall(request, rb_intern("low_speed_limit"), 0);
+  if(RTEST(low_speed_limit_bytes_per_second)) {
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, FIX2LONG(low_speed_limit_bytes_per_second));
+  }
+
   redirects = rb_funcall(request, rb_intern("max_redirects"), 0);
   if (RTEST(redirects)) {
     int r = FIX2INT(redirects);

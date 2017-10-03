@@ -80,6 +80,14 @@ class TimeoutServlet < HTTPServlet::AbstractServlet
   end
 end
 
+class SlowServlet < HTTPServlet::AbstractServlet
+  def do_GET(req,res)
+    sleep 3
+    res.header['Content-Type'] = 'text/plain'
+    res.body = 'beep'
+  end
+end
+
 class RedirectServlet < HTTPServlet::AbstractServlet
   def do_GET(req,res)
     res['Location'] = "http://localhost:9001/test"
@@ -181,6 +189,7 @@ class PatronTestServer
     @server.mount("/testpost", TestPostBodyServlet)
     @server.mount("/testpatch", TestPatchBodyServlet)
     @server.mount("/timeout", TimeoutServlet)
+    @server.mount("/slow", SlowServlet)
     @server.mount("/redirect", RedirectServlet)
     @server.mount("/evil-redirect", EvilRedirectServlet)
     @server.mount("/picture", PictureServlet)
