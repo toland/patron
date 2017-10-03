@@ -7,5 +7,4 @@ rvm:
 sudo: false
 dist: trusty
 cache: bundler
-before_script:
-  - gem update bundler
+
