@@ -5,7 +5,7 @@ dist: trusty
 cache: bundler
 before_script:
   - gem uninstall bundler --all
-  - gem update --system
+  - gem update --system 1.4.2
   - gem install bundler
 install:
   - "bundle install --verbose --jobs=1 --retry=1 --path=${BUNDLE_PATH:-vendor/bundle}"
