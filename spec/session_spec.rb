@@ -171,6 +171,13 @@ describe Patron::Session do
     expect {@session.get("/timeout")}.to raise_error(Patron::TimeoutError)
   end
 
+  it "should raise an exception on timeout when reading from a slow resource" do
+    @session.timeout = 40
+    @session.low_speed_time = 2
+    @session.low_speed_limit = 10
+    expect {@session.get("/slow")}.to raise_error(Patron::TimeoutError)
+  end
+
   it "should follow redirects by default" do
     @session.max_redirects = 1
     response = @session.get("/redirect")
