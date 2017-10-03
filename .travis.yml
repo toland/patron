@@ -8,4 +8,5 @@ sudo: false
 dist: trusty
 cache: bundler
 before_script:
+  - gem update --system 2.6.12 # https://github.com/rubygems/rubygems/issues/2024
   - gem update bundler
