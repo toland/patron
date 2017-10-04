@@ -1,3 +1,10 @@
+### 0.10.0
+
+* Added `Session#low_speed_time` and `Session#low_speed_limit`. When used, they will force libCURL to raise
+  a timeout if a certain speed limit is not met performing the request. These can be used for better timeout
+  handling. These are available in all libCURL versions. See https://curl.haxx.se/libcurl/c/CURLOPT_LOW_SPEED_TIME.html
+  and https://curl.haxx.se/libcurl/c/CURLOPT_LOW_SPEED_LIMIT.html
+
 ### 0.9.1
 
 * Added ssl_version options `TLSv1_1`, `TLSv1_2`, `TLSv1_3` for explicitly forcing the SSL version
