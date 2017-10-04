@@ -84,10 +84,20 @@ module Patron
     # @return [Boolean] Support automatic Content-Encoding decompression and set liberal Accept-Encoding headers
     attr_accessor :automatic_content_encoding
 
-    # @return [Fixnum, nil] Limit the amount of bytes downloaded. If it is set to nil
+    # @return [Fixnum, nil] the amount of bytes downloaded. If it is set to nil
     #    (default) no limit will be applied.
     #    **Note that this only works on libCURL 7.34 and newer**
     attr_accessor :download_byte_limit
+
+    # @return [Integer, nil] the time in number seconds that the transfer speed should be below the
+    #     `low_speed_limit` for the library to consider it too slow and abort.
+    # @see low_speed_limit
+    attr_accessor :low_speed_time
+
+    # @return [Integer, nil] the average transfer speed in bytes per second that the transfer should be below
+    #    during `low_speed_time` seconds for libcurl to consider it to be too slow and abort.
+    # @see low_speed_time
+    attr_accessor :low_speed_limit
 
     private :handle_request, :add_cookie_file, :set_debug_file
 
@@ -345,6 +355,8 @@ module Patron
         req.automatic_content_encoding = options.fetch :automatic_content_encoding, self.automatic_content_encoding
         req.timeout                = options.fetch :timeout,               self.timeout
         req.connect_timeout        = options.fetch :connect_timeout,       self.connect_timeout
+        req.low_speed_time         = options.fetch :low_speed_time,        self.low_speed_time
+        req.low_speed_limit        = options.fetch :low_speed_limit,       self.low_speed_limit
         req.force_ipv4             = options.fetch :force_ipv4,            self.force_ipv4
         req.max_redirects          = options.fetch :max_redirects,         self.max_redirects
         req.username               = options.fetch :username,              self.username
