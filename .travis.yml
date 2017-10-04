@@ -4,8 +4,8 @@ sudo: false
 dist: trusty
 cache: bundler
 install:
-  - gem update --system 2.6.12  # https://github.com/rubygems/rubygems/issues/2024
+  - gem update --system 2.6.13 # Reset to failing version
   - gem update bundler
   - gem --version
   - bundle --version
-  - "bundle install --verbose --jobs=3 --retry=3 --path=${BUNDLE_PATH:-vendor/bundle}"
+  - "bundle install --verbose --jobs=1 --retry=1 --path=${BUNDLE_PATH:-vendor/bundle}"

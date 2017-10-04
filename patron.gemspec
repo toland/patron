@@ -41,4 +41,5 @@ For more info see https://github.com/curl/curl/issues/788
   spec.add_development_dependency "simplecov", "~> 0.10"
   spec.add_development_dependency "yard", "~> 0.8"
   spec.add_development_dependency "rake-compiler"
+  spec.add_development_dependency "json", "~> 1"
 end
