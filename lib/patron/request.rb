@@ -8,7 +8,7 @@ module Patron
   class Request
 
     # Contains the valid HTTP verbs that can be used to perform requests
-    VALID_ACTIONS = %w[GET PUT POST DELETE HEAD COPY PATCH]
+    VALID_ACTIONS = %w[GET PUT POST DELETE HEAD COPY PATCH PROPFIND]
 
     # Initializes a new Request, which defaults to the GET HTTP verb and
     # has it's timeouts set to 0
@@ -109,7 +109,7 @@ module Patron
 
       @connect_timeout = new_timeout.to_i
     end
-    
+
     # Sets the maximum number of redirects that are going to be followed.
     #
     # @param new_max_redirects[Integer] The number of redirects to follow, or `-1` for unlimited redirects.

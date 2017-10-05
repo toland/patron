@@ -29,7 +29,7 @@ module Patron
     # Username for http authentication
     # @return [String,nil] the HTTP basic auth username
     attr_accessor :username
-    
+
     # Password for http authentication
     # @return [String,nil] the HTTP basic auth password
     attr_accessor :password
@@ -77,7 +77,7 @@ module Patron
     # response does not specify a charset in it's `Content-Type` header already, if it does that charset
     # will take precedence.
     attr_accessor :default_response_charset
-    
+
     # @return [Boolean] Force curl to use IPv4
     attr_accessor :force_ipv4
 
@@ -136,7 +136,7 @@ module Patron
     def handle_cookies(file_path = nil)
       if file_path
         path = Pathname(file_path).expand_path
-        
+
         if !File.exists?(file_path) && !File.writable?(path.dirname)
           raise ArgumentError, "Can't create file #{path} (permission error)"
         elsif File.exists?(file_path) && !File.writable?(file_path)
@@ -145,12 +145,12 @@ module Patron
       else
         path = nil
       end
-      
+
       # Apparently calling this with an empty string sets the cookie file,
       # but calling it with a path to a writable file sets that file to be
       # the cookie jar (new cookies are written there)
       add_cookie_file(path.to_s)
-      
+
       self
     end
 
@@ -243,6 +243,17 @@ module Patron
       request(:patch, url, headers, :data => data)
     end
 
+    # Same as #get but performs a PROPFIND request.
+    #
+    # Notice: this method doesn't accept any `data` argument
+    #
+    # @param url[String] the URL to fetch
+    # @param headers[Hash] the hash of header keys to values
+    # @return [Patron::Response]
+    def propfind(url, headers = {})
+      request(:propfind, url, headers)
+    end
+
     # Uploads the contents of `file` to the specified `url` using an HTTP PUT. The file will be
     # sent "as-is" without any multipart encoding.
     #
@@ -306,7 +317,7 @@ module Patron
       request(:copy, url, headers)
     end
     # @!endgroup
-    
+
     # @!group Basic API methods
     # Send an HTTP request to the specified `url`.
     #
@@ -320,7 +331,7 @@ module Patron
       req = build_request(action, url, headers, options)
       handle_request(req)
     end
-    
+
     # Returns the class that will be used to build a Response
     # from a Curl call.
     #
@@ -335,7 +346,7 @@ module Patron
     def response_class
       ::Patron::Response
     end
-    
+
     # Builds a request object that can be used by ++handle_request++
     # Note that internally, ++handle_request++ uses instance variables of
     # the Request object, and not it's public methods.
