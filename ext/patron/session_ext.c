@@ -7,6 +7,8 @@
 #include "membuffer.h"
 #include "sglib.h"  /* Simple Generic Library -> http://sglib.sourceforge.net */
 
+#include <stdio.h>
+
 #define UNUSED_ARGUMENT(x) (void)x
 #define INTERRUPT_ABORT 1
 #define INTERRUPT_DOWNLOAD_OVERFLOW 2
@@ -40,7 +42,12 @@ struct patron_curl_state {
   membuffer header_buffer;
   membuffer body_buffer;
   size_t download_byte_limit;
+  void* user_progress_blk;
   int interrupt;
+  size_t dltotal;
+  size_t dlnow;
+  size_t ultotal;
+  size_t ulnow;
 };
 
 
@@ -69,16 +76,36 @@ static size_t file_write_handler(void* stream, size_t size, size_t nmemb, FILE* 
   }
 }
 
+#include <stdio.h>
+
+static int call_rb_progress_blk(void* api_arg) {
+  struct patron_curl_state* pd = (struct patron_curl_state*)api_arg;
+  VALUE cb_args;
+  cb_args = rb_ary_new();
+  rb_ary_store(cb_args, 0, LONG2NUM(pd->dltotal));
+  rb_ary_store(cb_args, 1, LONG2NUM(pd->dlnow));
+  rb_ary_store(cb_args, 2, LONG2NUM(pd->ultotal));
+  rb_ary_store(cb_args, 3, LONG2NUM(pd->ulnow));
+  return 0;
+}
+
+
 /* A non-zero return value from the progress handler will terminate the current
  * request. We use this fact in order to interrupt any request when either the
  * user calls the "interrupt" method on the session or when the Ruby interpreter
  * is attempting to exit.
  */
-static int session_progress_handler(void *clientp, size_t dltotal, size_t dlnow, size_t ultotal, size_t ulnow) {
+static int session_progress_handler(void* clientp, size_t dltotal, size_t dlnow, size_t ultotal, size_t ulnow) {
   struct patron_curl_state* state = (struct patron_curl_state*) clientp;
-  UNUSED_ARGUMENT(dlnow);
-  UNUSED_ARGUMENT(ultotal);
-  UNUSED_ARGUMENT(ulnow);
+  state->dltotal = dltotal;
+  state->dlnow = dlnow;
+  state->ultotal = ultotal;
+  state->ulnow = ulnow;
+  printf("Running session progress handler with ultotal %d\n", (int)ultotal);
+
+//  rb_thread_check_ints();
+//  rb_thread_call_with_gvl((void *(*)(void *)) call_rb_progress_blk, (void*)state);
+  rb_thread_call_with_gvl(rb_thread_check_ints, NULL);
 
   // Set the interrupt if the download byte limit has been reached
   if(state->download_byte_limit != 0 && (dltotal > state->download_byte_limit)) {
@@ -718,6 +745,18 @@ static VALUE select_error(CURLcode code) {
   return error;
 }
 
+
+/* Uses as the unblocking function when the thread running Patron gets
+   signaled. The important difference with session_interrupt is that we
+   are not allowed to touch any Ruby structures while outside the GIL,
+   but we _are_ permitted to touch our internal curl state struct
+*/
+void session_ubf_abort(void* patron_state) {
+  struct patron_curl_state* state = (struct patron_curl_state*) patron_state;
+  printf("Aborting in unblock fun\n");
+  state->interrupt = INTERRUPT_ABORT;
+}
+
 /* Perform the actual HTTP request by calling libcurl. */
 static VALUE perform_request(VALUE self) {
   struct patron_curl_state *state = get_patron_curl_state(self);
@@ -746,14 +785,14 @@ static VALUE perform_request(VALUE self) {
 
 #if (defined(HAVE_TBR) || defined(HAVE_TCWOGVL)) && defined(USE_TBR)
 #if defined(HAVE_TCWOGVL)
-  ret = (CURLcode) rb_thread_call_without_gvl(
+  ret = (CURLcode) rb_thread_call_without_gvl2(
           (void *(*)(void *)) curl_easy_perform, curl,
-          RUBY_UBF_IO, 0
+          session_ubf_abort, (void*)state
         );
 #else
   ret = (CURLcode) rb_thread_blocking_region(
           (rb_blocking_function_t*) curl_easy_perform, curl,
-          RUBY_UBF_IO, 0
+          session_ubf_abort, (void*)state
         );
 #endif
 #else

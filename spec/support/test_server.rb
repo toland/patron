@@ -82,7 +82,7 @@ end
 
 class SlowServlet < HTTPServlet::AbstractServlet
   def do_GET(req,res)
-    sleep 3
+    sleep 15
     res.header['Content-Type'] = 'text/plain'
     res.body = 'beep'
   end

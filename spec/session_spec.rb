@@ -178,6 +178,47 @@ describe Patron::Session do
     expect {@session.get("/slow")}.to raise_error(Patron::TimeoutError)
   end
 
+  it "is able to terminate the thread that is running a slow request" do
+    Thread.abort_on_exception = true
+    t = Thread.new do
+      session = Patron::Session.new
+      session.timeout = 40
+      session.base_url = "http://localhost:9001"
+      session.get("/slow")
+    end
+    sleep 12
+    t.kill
+  end
+
+  it "is able to terminate the thread that is running a slow request" do
+    t = Thread.new do
+      session = Patron::Session.new
+      session.timeout = 40
+      session.base_url = "http://localhost:9001"
+      session.get("/slow")
+    end
+    sleep 3
+    t.kill
+  end
+
+  it "is able to terminate the thread that is running a slow request" do
+    t = Thread.new do
+      session = Patron::Session.new
+      session.timeout = 40
+      session.base_url = "http://localhost:9001"
+      session.get("/slow")
+    end
+    sleep 10
+    t.join
+  end
+
+  it "is able to terminate main thread that is running a slow request" do
+    session = Patron::Session.new
+    session.timeout = 40
+    session.base_url = "http://localhost:9001"
+    session.get("/slow")
+  end
+
   it "should follow redirects by default" do
     @session.max_redirects = 1
     response = @session.get("/redirect")
