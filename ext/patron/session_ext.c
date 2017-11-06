@@ -794,17 +794,17 @@ static VALUE perform_request(VALUE self) {
   }
 
 #if (defined(HAVE_TBR) || defined(HAVE_TCWOGVL)) && defined(USE_TBR)
-#if defined(HAVE_TCWOGVL)
-  ret = (CURLcode) rb_thread_call_without_gvl2(
-          (void *(*)(void *)) curl_easy_perform, curl,
-          session_ubf_abort, (void*)state
-        );
-#else
-  ret = (CURLcode) rb_thread_blocking_region(
-          (rb_blocking_function_t*) curl_easy_perform, curl,
-          session_ubf_abort, (void*)state
-        );
-#endif
+  #if defined(HAVE_TCWOGVL)
+    ret = (CURLcode) rb_thread_call_without_gvl(
+            (void *(*)(void *)) curl_easy_perform, curl,
+            session_ubf_abort, (void*)state
+          );
+  #else
+    ret = (CURLcode) rb_thread_blocking_region(
+            (rb_blocking_function_t*) curl_easy_perform, curl,
+            session_ubf_abort, (void*)state
+          );
+  #endif
 #else
   ret = curl_easy_perform(curl);
 #endif
