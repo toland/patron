@@ -42,7 +42,7 @@ struct patron_curl_state {
   membuffer header_buffer;
   membuffer body_buffer;
   size_t download_byte_limit;
-  void* user_progress_blk;
+  VALUE user_progress_blk;
   int interrupt;
   size_t dltotal;
   size_t dlnow;
@@ -78,14 +78,15 @@ static size_t file_write_handler(void* stream, size_t size, size_t nmemb, FILE* 
 
 #include <stdio.h>
 
-static int call_rb_progress_blk(void* api_arg) {
-  struct patron_curl_state* pd = (struct patron_curl_state*)api_arg;
-  VALUE cb_args;
-  cb_args = rb_ary_new();
-  rb_ary_store(cb_args, 0, LONG2NUM(pd->dltotal));
-  rb_ary_store(cb_args, 1, LONG2NUM(pd->dlnow));
-  rb_ary_store(cb_args, 2, LONG2NUM(pd->ultotal));
-  rb_ary_store(cb_args, 3, LONG2NUM(pd->ulnow));
+static int call_user_rb_progress_blk(void* vd_curl_state) {
+  struct patron_curl_state* state = (struct patron_curl_state*)vd_curl_state;
+  // Invoke the block with the array
+  VALUE blk_result = rb_funcall(state->user_progress_blk,
+    rb_intern("call"), 4,
+    LONG2NUM(state->dltotal),
+    LONG2NUM(state->dlnow),
+    LONG2NUM(state->ultotal),
+    LONG2NUM(state->ulnow));
   return 0;
 }
 
@@ -101,11 +102,13 @@ static int session_progress_handler(void* clientp, size_t dltotal, size_t dlnow,
   state->dlnow = dlnow;
   state->ultotal = ultotal;
   state->ulnow = ulnow;
-  printf("Running session progress handler with ultotal %d\n", (int)ultotal);
 
-//  rb_thread_check_ints();
-//  rb_thread_call_with_gvl((void *(*)(void *)) call_rb_progress_blk, (void*)state);
-//  rb_thread_call_with_gvl(rb_thread_check_ints, NULL);
+  // If a progress proc has been set, re-acquire the GIL and call it using
+  // `call_user_rb_progress_blk`. TODO: use the retval of that proc
+  // to permit premature abort 
+  if(RTEST(state->user_progress_blk)) {
+    rb_thread_call_with_gvl((void *(*)(void *)) call_user_rb_progress_blk, (void*)state);
+  }
 
   // Set the interrupt if the download byte limit has been reached
   if(state->download_byte_limit != 0 && (dltotal > state->download_byte_limit)) {
@@ -437,11 +440,18 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE action_name           = rb_funcall(request, rb_intern("action"), 0);
   VALUE a_c_encoding          = rb_funcall(request, rb_intern("automatic_content_encoding"), 0);
   VALUE download_byte_limit   = rb_funcall(request, rb_intern("download_byte_limit"), 0);
+  VALUE maybe_progress_proc   = rb_funcall(request, rb_intern("progress_callback"), 0);
 
   if (RTEST(download_byte_limit)) {
     state->download_byte_limit = FIX2INT(download_byte_limit);
   } else {
     state->download_byte_limit = 0;
+  }
+
+  if (rb_obj_is_proc(maybe_progress_proc)) {
+    state->user_progress_blk = maybe_progress_proc;
+  } else {
+    state->user_progress_blk = Qnil;
   }
 
   headers = rb_funcall(request, rb_intern("headers"), 0);
