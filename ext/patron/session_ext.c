@@ -105,7 +105,7 @@ static int session_progress_handler(void* clientp, size_t dltotal, size_t dlnow,
 
 //  rb_thread_check_ints();
 //  rb_thread_call_with_gvl((void *(*)(void *)) call_rb_progress_blk, (void*)state);
-  rb_thread_call_with_gvl(rb_thread_check_ints, NULL);
+//  rb_thread_call_with_gvl(rb_thread_check_ints, NULL);
 
   // Set the interrupt if the download byte limit has been reached
   if(state->download_byte_limit != 0 && (dltotal > state->download_byte_limit)) {

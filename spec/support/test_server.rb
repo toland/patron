@@ -82,9 +82,10 @@ end
 
 class SlowServlet < HTTPServlet::AbstractServlet
   def do_GET(req,res)
-    sleep 15
     res.header['Content-Type'] = 'text/plain'
-    res.body = 'beep'
+    res.body << 'x'
+    sleep 20
+    res.body << 'rest of body'
   end
 end
 
@@ -201,13 +202,13 @@ class PatronTestServer
   end
 
   def start
-    trap('INT') {
-      begin
-        @server.shutdown unless @server.nil?
-      rescue Object => e
-        $stderr.puts "Error #{__FILE__}:#{__LINE__}\n#{e.message}"
-      end
-    }
+#    trap('INT') {
+#      begin
+#        @server.shutdown unless @server.nil?
+#      rescue Object => e
+#        $stderr.puts "Error #{__FILE__}:#{__LINE__}\n#{e.message}"
+#      end
+#    }
 
     @thread = Thread.new { @server.start }
     Thread.pass
