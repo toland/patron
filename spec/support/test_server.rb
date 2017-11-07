@@ -202,13 +202,13 @@ class PatronTestServer
   end
 
   def start
-#    trap('INT') {
-#      begin
-#        @server.shutdown unless @server.nil?
-#      rescue Object => e
-#        $stderr.puts "Error #{__FILE__}:#{__LINE__}\n#{e.message}"
-#      end
-#    }
+    trap('INT') {
+      begin
+        @server.shutdown unless @server.nil?
+      rescue Object => e
+        $stderr.puts "Error #{__FILE__}:#{__LINE__}\n#{e.message}"
+      end
+    }
 
     @thread = Thread.new { @server.start }
     Thread.pass
