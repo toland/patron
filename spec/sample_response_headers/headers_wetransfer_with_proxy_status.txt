@@ -1,0 +1,20 @@
+HTTP/1.1 200 Connection established
+
+HTTP/1.1 200 OK
+Date: Mon, 29 Jan 2018 00:09:09 GMT
+Content-Type: text/html; charset=utf-8
+Transfer-Encoding: chunked
+Connection: keep-alive
+X-Frame-Options: SAMEORIGIN
+X-XSS-Protection: 1; mode=block
+X-Content-Type-Options: nosniff
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+Pragma: no-cache
+Expires: Fri, 01 Jan 1990 00:00:00 GMT
+Vary: Accept-Encoding, Origin
+Set-Cookie: _wt_session=BAh7B0kiD3Nlc3Npb25faWQGOgZFVEkiJTllOGNkZDg3N2Y2Mzc2M2E1NWY2NTQwMjYzNzljODJhBjsAVEkiEF9jc3JmX3Rva2VuBjsARkkiMXk4YWtnZDVNYlRYUmJJWkFFaWkzVXFWM3IzbE1aU2xSbFl3SDQ3aHArbU09BjsARg%3D%3D--fe13900e81f693acb4a80d372d864c78704fa776; domain=wetransfer.com; path=/; secure; HttpOnly
+X-Request-Id: 62b0d737-b0f8-400b-ac3a-0f84acf241af
+X-Opaque: dev-1.wt-19171
+X-Runtime: 0.116529
+Strict-Transport-Security: max-age=15552000; includeSubDomains;
+
