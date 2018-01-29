@@ -78,11 +78,6 @@ module Patron
       end
     end
 
-    def progress_callback
-      nil
-#      Proc.new{|*a| $stderr.puts a.inspect }
-    end
-
     # Sets the HTTP verb for the request
     #
     # @param action[String] the name of the HTTP verb

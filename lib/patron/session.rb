@@ -101,6 +101,7 @@ module Patron
 
     private :handle_request, :add_cookie_file, :set_debug_file
 
+    attr_accessor :progress_callback
     # Create a new Session object for performing requests.
     #
     # @param args[Hash] options for the Session (same names as the writable attributes of the Session)
@@ -371,6 +372,7 @@ module Patron
         req.ignore_content_length  = options.fetch :ignore_content_length, self.ignore_content_length
         req.buffer_size            = options.fetch :buffer_size,           self.buffer_size
         req.download_byte_limit    = options.fetch :download_byte_limit,   self.download_byte_limit
+        req.progress_callback      = options.fetch :progress_callback,     self.progress_callback
         req.multipart              = options[:multipart]
         req.upload_data            = options[:data]
         req.file_name              = options[:file]
