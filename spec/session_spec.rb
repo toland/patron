@@ -218,6 +218,19 @@ describe Patron::Session do
     expect(delta_s).to be_within(2).of(5)
   end
 
+  it "receives progress callbacks" do
+    session = Patron::Session.new
+    session.timeout = 40
+    session.base_url = "http://localhost:9001"
+    callback_args = []
+    session.progress_callback = Proc.new {|dltotal, dlnow, ultotal, ulnow|
+      callback_args << [dltotal, dlnow, ultotal, ulnow]
+    }
+    session.get("/slow")
+
+    expect(callback_args).not_to be_empty
+  end
+
   it "should follow redirects by default" do
     @session.max_redirects = 1
     response = @session.get("/redirect")
