@@ -1,3 +1,6 @@
+* Added `Session#progress_callback` which accepts a callable object, which can be used to report session progress during request
+  execution.
+
 ### 0.10.0
 
 * Added `Session#low_speed_time` and `Session#low_speed_limit`. When used, they will force libCURL to raise
