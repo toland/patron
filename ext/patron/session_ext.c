@@ -7,8 +7,6 @@
 #include "membuffer.h"
 #include "sglib.h"  /* Simple Generic Library -> http://sglib.sourceforge.net */
 
-#include <stdio.h>
-
 #define UNUSED_ARGUMENT(x) (void)x
 #define INTERRUPT_ABORT 1
 #define INTERRUPT_DOWNLOAD_OVERFLOW 2
@@ -76,8 +74,6 @@ static size_t file_write_handler(void* stream, size_t size, size_t nmemb, FILE* 
   }
 }
 
-#include <stdio.h>
-
 static int call_user_rb_progress_blk(void* vd_curl_state) {
   struct patron_curl_state* state = (struct patron_curl_state*)vd_curl_state;
   // Invoke the block with the array
@@ -107,7 +103,15 @@ static int session_progress_handler(void* clientp, size_t dltotal, size_t dlnow,
   // `call_user_rb_progress_blk`. TODO: use the retval of that proc
   // to permit premature abort 
   if(RTEST(state->user_progress_blk)) {
-    rb_thread_call_with_gvl((void *(*)(void *)) call_user_rb_progress_blk, (void*)state);
+    // Even though it is not documented, rb_thread_call_with_gvl is available even when
+    // rb_thread_call_without_gvl is not. See https://bugs.ruby-lang.org/issues/5543#note-4
+    // > rb_thread_call_with_gvl() is globally-visible (but not in headers)
+    // > for 1.9.3: https://bugs.ruby-lang.org/issues/4328
+    #if (defined(HAVE_TBR) || defined(HAVE_TCWOGVL)) && defined(USE_TBR)
+        rb_thread_call_with_gvl((void *(*)(void *)) call_user_rb_progress_blk, (void*)state);
+    #else
+        call_user_rb_progress_blk((void*)state);
+    #endif
   }
 
   // Set the interrupt if the download byte limit has been reached
@@ -763,7 +767,6 @@ static VALUE select_error(CURLcode code) {
 */
 void session_ubf_abort(void* patron_state) {
   struct patron_curl_state* state = (struct patron_curl_state*) patron_state;
-  printf("Aborting in unblock fun\n");
   state->interrupt = INTERRUPT_ABORT;
 }
 
