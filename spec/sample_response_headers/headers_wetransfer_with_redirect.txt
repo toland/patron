@@ -1,0 +1,24 @@
+HTTP/1.1 301 Moved Permanently
+Date: Mon, 29 Jan 2018 00:42:27 GMT
+Content-Length: 0
+Connection: keep-alive
+Location: https://wetransfer.com/
+
+HTTP/1.1 200 OK
+Date: Mon, 29 Jan 2018 00:42:27 GMT
+Content-Type: text/html; charset=utf-8
+Transfer-Encoding: chunked
+Connection: keep-alive
+X-Frame-Options: SAMEORIGIN
+X-XSS-Protection: 1; mode=block
+X-Content-Type-Options: nosniff
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+Pragma: no-cache
+Expires: Fri, 01 Jan 1990 00:00:00 GMT
+Vary: Accept-Encoding, Origin
+Set-Cookie: _wt_session=BAh7B0kiD3Nlc3Npb25faWQGOgZFVEkiJWYyMGFmZGRlY2QyNDJkNTA3YTc2YmJmYzg2MWNhMGZlBjsAVEkiEF9jc3JmX3Rva2VuBjsARkkiMUkvMUJqR0tCelZxQytKQU1kbDV4ZW5xNDNSaUlDNnVrODhDTEY4Q0dxbXM9BjsARg%3D%3D--b46297a54dd838e0c26b5559314b10deb1f59312; domain=wetransfer.com; path=/; secure; HttpOnly
+X-Request-Id: 09e7a0ef-e9a1-4519-a580-8185e6d64c1c
+X-Opaque: dev-1.wt-24185
+X-Runtime: 0.102958
+Strict-Transport-Security: max-age=15552000; includeSubDomains;
+

@@ -1,0 +1,9 @@
+HTTP/1.1 200 OK 
+Content-Type: text/plain
+Server: WEBrick/1.3.1 (Ruby/2.4.1/2017-03-22) OpenSSL/1.0.2k
+Date: Mon, 29 Jan 2018 01:50:54 GMT
+Content-Length: 3
+Connection: Keep-Alive
+Set-Cookie: a=1
+Set-Cookie: b=2
+
