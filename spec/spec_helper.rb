@@ -18,5 +18,5 @@ $stderr.puts "Build against #{Patron.libcurl_version}"
 
 Dir['./spec/support/**/*.rb'].each { |fn| require fn }
 
-PatronTestServer.start(nil, false, 9001) if RUBY_VERSION >= '1.9'
-PatronTestServer.start(nil, true, 9043) if RUBY_VERSION >= '1.9'
+Thread.new { PatronTestServer.start(false, 9001) }
+Thread.new { PatronTestServer.start(true, 9043) }

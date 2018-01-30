@@ -333,7 +333,7 @@ describe Patron::Session do
     data = "upload data"
     response = @session.patch("/testpatch", data)
     body = YAML::load(response.body)
-    expect(body["body"]).to eq("upload data")
+    expect(body.body).to eq("upload data")
   end
 
   it "should upload data with :delete" do

@@ -4,4 +4,4 @@
 root = File.expand_path('../..', __FILE__)
 require File.join(root, %w[spec support test_server.rb])
 
-PatronTestServer.start($stderr).join
+PatronTestServer.start
