@@ -40,12 +40,13 @@ struct patron_curl_state {
   membuffer header_buffer;
   membuffer body_buffer;
   size_t download_byte_limit;
-  VALUE user_progress_blk;
   int interrupt;
   size_t dltotal;
   size_t dlnow;
   size_t ultotal;
   size_t ulnow;
+  VALUE user_progress_blk;
+  VALUE user_body_blk;
 };
 
 
@@ -85,7 +86,6 @@ static int call_user_rb_progress_blk(void* vd_curl_state) {
     LONG2NUM(state->ulnow));
   return 0;
 }
-
 
 /* A non-zero return value from the progress handler will terminate the current
  * request. We use this fact in order to interrupt any request when either the
