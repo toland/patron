@@ -231,6 +231,19 @@ describe Patron::Session do
     expect(callback_args).not_to be_empty
   end
 
+  it "receives body callbacks" do
+    session = Patron::Session.new
+    session.timeout = 5000
+    session.buffer_size = 32
+    session.base_url = "http://localhost:9001"
+    session.body_callback = Proc.new {|str|
+      $stderr.puts Time.now
+      $stderr.puts "Received chunk:"
+      $stderr.puts str.inspect
+    }
+    session.get("/event-stream")
+  end
+
   it "should follow redirects by default" do
     @session.max_redirects = 1
     response = @session.get("/redirect")

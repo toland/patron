@@ -49,6 +49,12 @@ struct patron_curl_state {
   VALUE user_body_blk;
 };
 
+struct single_body_write {
+  char* stream;
+  size_t size;
+  size_t nmemb;
+  VALUE user_body_blk;
+};
 
 /*----------------------------------------------------------------------------*/
 /* Curl Callbacks                                                             */
@@ -63,6 +69,40 @@ static size_t session_write_handler(char* stream, size_t size, size_t nmemb, mem
   /* otherwise, return the number of bytes appended */
   return size * nmemb;
 }
+
+static int call_user_rb_write_blk(void* vd_single_body_write) {
+  struct single_body_write* w = (struct single_body_write*)vd_single_body_write;
+  long bufsize = w->size * w->nmemb;
+  VALUE body = rb_str_new(w->stream, bufsize);
+  rb_funcall(w->user_body_blk, rb_intern("call"), 1, body);
+  return 0;
+}
+
+/* Takes data streamed from libcurl passes it to the Ruby callback */
+static size_t session_write_handler_cb(char* stream, size_t size, size_t nmemb, void* vd_curl_state) {
+  struct patron_curl_state* state = (struct patron_curl_state*)vd_curl_state;
+  struct single_body_write body_write = {
+    stream,
+    size,
+    nmemb,
+    state->user_body_blk,
+  };
+
+  // Even though it is not documented, rb_thread_call_with_gvl is available even when
+  // rb_thread_call_without_gvl is not. See https://bugs.ruby-lang.org/issues/5543#note-4
+  // > rb_thread_call_with_gvl() is globally-visible (but not in headers)
+  // > for 1.9.3: https://bugs.ruby-lang.org/issues/4328
+  #if (defined(HAVE_TBR) || defined(HAVE_TCWOGVL)) && defined(USE_TBR)
+    rb_thread_call_with_gvl((void *(*)(void *)) call_user_rb_write_blk, (void*)&body_write);
+  #else
+    call_user_rb_write_blk((void*)&body_write);
+  #endif
+
+  /* return 0 to signal that we could not append data to our buffer */
+  /* otherwise, return the number of bytes appended */
+  return size * nmemb;
+}
+
 
 /* Used as WRITEFUNCTION for file downloads (required on Windows) */
 static size_t file_write_handler(void* stream, size_t size, size_t nmemb, FILE* fp) {
@@ -445,6 +485,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE a_c_encoding          = rb_funcall(request, rb_intern("automatic_content_encoding"), 0);
   VALUE download_byte_limit   = rb_funcall(request, rb_intern("download_byte_limit"), 0);
   VALUE maybe_progress_proc   = rb_funcall(request, rb_intern("progress_callback"), 0);
+  VALUE maybe_body_proc       = rb_funcall(request, rb_intern("body_callback"), 0);
 
   if (RTEST(download_byte_limit)) {
     state->download_byte_limit = FIX2INT(download_byte_limit);
@@ -456,6 +497,12 @@ static void set_options_from_request(VALUE self, VALUE request) {
     state->user_progress_blk = maybe_progress_proc;
   } else {
     state->user_progress_blk = Qnil;
+  }
+
+  if (rb_obj_is_proc(maybe_body_proc)) {
+    state->user_body_blk = maybe_body_proc;
+  } else {
+    state->user_body_blk = Qnil;
   }
 
   headers = rb_funcall(request, rb_intern("headers"), 0);
@@ -792,8 +839,13 @@ static VALUE perform_request(VALUE self) {
 
   /* body */
   if (!state->download_file) {
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &session_write_handler);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, body_buffer);
+    if(state->user_body_blk != Qnil) {
+      curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &session_write_handler_cb);
+      curl_easy_setopt(curl, CURLOPT_WRITEDATA, state);
+    } else {
+      curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &session_write_handler);
+      curl_easy_setopt(curl, CURLOPT_WRITEDATA, body_buffer);
+    }
   }
 
 #if (defined(HAVE_TBR) || defined(HAVE_TCWOGVL)) && defined(USE_TBR)
