@@ -239,6 +239,12 @@ describe Patron::Session do
     expect(body.path).to be == "/test"
   end
 
+  it "should not keep the Location header from the redirecting response" do
+    @session.max_redirects = 1
+    response = @session.get("/redirect")
+    expect(response.headers['Location']).to be_nil
+  end
+
   it "should include redirect count in response" do
     @session.max_redirects = 1
     response = @session.get("/redirect")

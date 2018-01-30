@@ -113,16 +113,14 @@ module Patron
     private
 
     # Called by the C code to parse and set the headers
-    def parse_headers(header_data)
+    def parse_headers(header_data_for_multiple_responses)
       @headers = {}
 
-      lines = header_data.split("\r\n")
+      responses = Patron::HeaderParser.parse(header_data_for_multiple_responses)
+      last_response = responses[-1] # Only use the last response (for proxies and redirects)
 
-      @status_line = lines.shift
-
-      lines.each do |line|
-        break if line.empty?
-
+      @status_line = last_response.status_line
+      last_response.headers.each do |line|
         hdr, val = line.split(":", 2)
 
         val.strip! unless val.nil?

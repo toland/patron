@@ -5,6 +5,7 @@ require 'patron/response_decoding'
 require 'patron/response'
 require 'patron/session_ext'
 require 'patron/util'
+require 'patron/header_parser'
 
 module Patron
 

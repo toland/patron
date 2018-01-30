@@ -66,8 +66,8 @@ class GzipServlet < HTTPServlet::AbstractServlet
     
     content_length = out.size
     # Content-Length gets set automatically by WEBrick, and if we do it manually
-    # here then two headers will be set.
-    # res.header['Content-Length'] = content_length
+    # here then two headers will be set. This is also against the content encoding
+    # description in the HTTP 1.1 RFC - but hey, Webrick!
     res.header['Content-Encoding'] = 'deflate'
     res.header['Vary'] = 'Accept-Encoding'
     res.body = out.string
