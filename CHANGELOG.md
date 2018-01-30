@@ -1,3 +1,7 @@
+### 0.11.1
+
+* Make sure StringScanner is available to HeaderParser.
+
 ### 0.11.0
 
 * Added `Session#progress_callback` which accepts a callable object, which can be used to report session progress during request

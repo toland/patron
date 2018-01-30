@@ -1,3 +1,5 @@
+require 'strscan'
+
 module Patron::HeaderParser
   CRLF = /#{Regexp.escape("\r\n")}/
 
