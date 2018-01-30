@@ -40,7 +40,12 @@ struct patron_curl_state {
   membuffer header_buffer;
   membuffer body_buffer;
   size_t download_byte_limit;
+  VALUE user_progress_blk;
   int interrupt;
+  size_t dltotal;
+  size_t dlnow;
+  size_t ultotal;
+  size_t ulnow;
 };
 
 
@@ -69,16 +74,45 @@ static size_t file_write_handler(void* stream, size_t size, size_t nmemb, FILE* 
   }
 }
 
+static int call_user_rb_progress_blk(void* vd_curl_state) {
+  struct patron_curl_state* state = (struct patron_curl_state*)vd_curl_state;
+  // Invoke the block with the array
+  VALUE blk_result = rb_funcall(state->user_progress_blk,
+    rb_intern("call"), 4,
+    LONG2NUM(state->dltotal),
+    LONG2NUM(state->dlnow),
+    LONG2NUM(state->ultotal),
+    LONG2NUM(state->ulnow));
+  return 0;
+}
+
+
 /* A non-zero return value from the progress handler will terminate the current
  * request. We use this fact in order to interrupt any request when either the
  * user calls the "interrupt" method on the session or when the Ruby interpreter
  * is attempting to exit.
  */
-static int session_progress_handler(void *clientp, size_t dltotal, size_t dlnow, size_t ultotal, size_t ulnow) {
+static int session_progress_handler(void* clientp, size_t dltotal, size_t dlnow, size_t ultotal, size_t ulnow) {
   struct patron_curl_state* state = (struct patron_curl_state*) clientp;
-  UNUSED_ARGUMENT(dlnow);
-  UNUSED_ARGUMENT(ultotal);
-  UNUSED_ARGUMENT(ulnow);
+  state->dltotal = dltotal;
+  state->dlnow = dlnow;
+  state->ultotal = ultotal;
+  state->ulnow = ulnow;
+
+  // If a progress proc has been set, re-acquire the GIL and call it using
+  // `call_user_rb_progress_blk`. TODO: use the retval of that proc
+  // to permit premature abort 
+  if(RTEST(state->user_progress_blk)) {
+    // Even though it is not documented, rb_thread_call_with_gvl is available even when
+    // rb_thread_call_without_gvl is not. See https://bugs.ruby-lang.org/issues/5543#note-4
+    // > rb_thread_call_with_gvl() is globally-visible (but not in headers)
+    // > for 1.9.3: https://bugs.ruby-lang.org/issues/4328
+    #if (defined(HAVE_TBR) || defined(HAVE_TCWOGVL)) && defined(USE_TBR)
+        rb_thread_call_with_gvl((void *(*)(void *)) call_user_rb_progress_blk, (void*)state);
+    #else
+        call_user_rb_progress_blk((void*)state);
+    #endif
+  }
 
   // Set the interrupt if the download byte limit has been reached
   if(state->download_byte_limit != 0 && (dltotal > state->download_byte_limit)) {
@@ -410,11 +444,18 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE action_name           = rb_funcall(request, rb_intern("action"), 0);
   VALUE a_c_encoding          = rb_funcall(request, rb_intern("automatic_content_encoding"), 0);
   VALUE download_byte_limit   = rb_funcall(request, rb_intern("download_byte_limit"), 0);
+  VALUE maybe_progress_proc   = rb_funcall(request, rb_intern("progress_callback"), 0);
 
   if (RTEST(download_byte_limit)) {
     state->download_byte_limit = FIX2INT(download_byte_limit);
   } else {
     state->download_byte_limit = 0;
+  }
+
+  if (rb_obj_is_proc(maybe_progress_proc)) {
+    state->user_progress_blk = maybe_progress_proc;
+  } else {
+    state->user_progress_blk = Qnil;
   }
 
   headers = rb_funcall(request, rb_intern("headers"), 0);
@@ -718,6 +759,17 @@ static VALUE select_error(CURLcode code) {
   return error;
 }
 
+
+/* Uses as the unblocking function when the thread running Patron gets
+   signaled. The important difference with session_interrupt is that we
+   are not allowed to touch any Ruby structures while outside the GIL,
+   but we _are_ permitted to touch our internal curl state struct
+*/
+void session_ubf_abort(void* patron_state) {
+  struct patron_curl_state* state = (struct patron_curl_state*) patron_state;
+  state->interrupt = INTERRUPT_ABORT;
+}
+
 /* Perform the actual HTTP request by calling libcurl. */
 static VALUE perform_request(VALUE self) {
   struct patron_curl_state *state = get_patron_curl_state(self);
@@ -745,17 +797,17 @@ static VALUE perform_request(VALUE self) {
   }
 
 #if (defined(HAVE_TBR) || defined(HAVE_TCWOGVL)) && defined(USE_TBR)
-#if defined(HAVE_TCWOGVL)
-  ret = (CURLcode) rb_thread_call_without_gvl(
-          (void *(*)(void *)) curl_easy_perform, curl,
-          RUBY_UBF_IO, 0
-        );
-#else
-  ret = (CURLcode) rb_thread_blocking_region(
-          (rb_blocking_function_t*) curl_easy_perform, curl,
-          RUBY_UBF_IO, 0
-        );
-#endif
+  #if defined(HAVE_TCWOGVL)
+    ret = (CURLcode) rb_thread_call_without_gvl(
+            (void *(*)(void *)) curl_easy_perform, curl,
+            session_ubf_abort, (void*)state
+          );
+  #else
+    ret = (CURLcode) rb_thread_blocking_region(
+            (rb_blocking_function_t*) curl_easy_perform, curl,
+            session_ubf_abort, (void*)state
+          );
+  #endif
 #else
   ret = curl_easy_perform(curl);
 #endif

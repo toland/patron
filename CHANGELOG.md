@@ -1,3 +1,5 @@
+* Added `Session#progress_callback` which accepts a callable object, which can be used to report session progress during request
+  execution.
 * Fixed parsing of response headers when multiple responses are involved (redirect chains and HTTP proxies)
 
 ### 0.10.0

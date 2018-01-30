@@ -178,6 +178,59 @@ describe Patron::Session do
     expect {@session.get("/slow")}.to raise_error(Patron::TimeoutError)
   end
 
+  it "is able to terminate the thread that is running a slow request using Thread#kill (uses the custom unblock)" do
+    t = Thread.new do
+      session = Patron::Session.new
+      session.timeout = 40
+      session.base_url = "http://localhost:9001"
+      session.get("/slow")
+    end
+
+    # Our test server starts sending the body only after 20 seconds. We should be able to abort
+    # using a signal during that time.
+    started = Time.now.to_i
+    sleep 5 # Less than what it takes for the server to respond
+    t.kill # Kill the thread forcibly
+    t.join # wrap up the thread. If Patron is still busy there, this join call will still take 15s.
+
+    delta_s = Time.now.to_i - started
+    expect(delta_s).to be_within(2).of(5)
+  end
+
+  it "is able to terminate the thread that is running a slow request" do
+    t = Thread.new do
+      trap('SIGINT') do
+        exit # exit the thread
+      end
+      session = Patron::Session.new
+      session.timeout = 40
+      session.base_url = "http://localhost:9001"
+      session.get("/slow")
+    end
+
+    # Our test server starts sending the body only after 20 seconds. We should be able to abort
+    # using a signal during that time.
+    started = Time.now.to_i
+    sleep 5 # Less than what it takes for the server to respond
+    Process.kill("INT", Process.pid) # Signal ourselves...
+    t.join # wrap up the thread. If Patron is still busy there, this join call will still take 15s.
+    delta_s = Time.now.to_i - started
+    expect(delta_s).to be_within(2).of(5)
+  end
+
+  it "receives progress callbacks" do
+    session = Patron::Session.new
+    session.timeout = 40
+    session.base_url = "http://localhost:9001"
+    callback_args = []
+    session.progress_callback = Proc.new {|dltotal, dlnow, ultotal, ulnow|
+      callback_args << [dltotal, dlnow, ultotal, ulnow]
+    }
+    session.get("/slow")
+
+    expect(callback_args).not_to be_empty
+  end
+
   it "should follow redirects by default" do
     @session.max_redirects = 1
     response = @session.get("/redirect")
