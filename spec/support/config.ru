@@ -64,12 +64,12 @@ SlowServlet = Proc.new {|env|
   [200, {'Content-Type' => 'text/plain'}, body]
 }
 
-RedirectServlet = -> (env) {
+RedirectServlet = Proc.new {|env|
   port = env.fetch('SERVER_PORT')
   [301, {'Location' => "http://localhost:#{port}/test"}, []]
 }
 
-EvilRedirectServlet = -> (env) {
+EvilRedirectServlet = Proc.new {|env|
   [301, {'Location' => "smtp://mailbox:secret@localhost"}, []]
 }
 
@@ -111,7 +111,7 @@ LargeServlet = Proc.new {|env|
 }
 
 run Rack::URLMap.new({
-  "/" => ->(*) { [200, {'Content-Length' => '2'}, ['Welcome']]},
+  "/" => Proc.new {|env| [200, {'Content-Length' => '2'}, ['Welcome']]},
   "/test" => Readback,
   "/testpost" => BodyReadback,
   "/testpatch" => BodyReadback,
