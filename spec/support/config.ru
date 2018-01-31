@@ -1,14 +1,9 @@
-## -------------------------------------------------------------------
-##
-## Patron HTTP Client: HTTP test server for integration tests
 require 'yaml'
 require 'ostruct'
 
-def to_fake_webrick_request(env)
+## HTTP test server for integration tests
 
-end
-
-Readback = ->(env) {
+Readback = Proc.new {|env|
   # The Patron test suite is originally written to enable the following
   # testing pattern:
   # * Patron does a request
@@ -40,7 +35,7 @@ Readback = ->(env) {
   [200, {'Content-Type' => 'text/plain', 'Content-Length' => body_str.bytesize.to_s}, [body_str]]
 }
 
-GzipServlet = ->(env) {
+GzipServlet = Proc.new {|env|
   raise "Need to have the right Accept-Encoding: header" unless env['HTTP_ACCEPT_ENCODING']
   
   body = Enumerator.new do |y|
@@ -55,12 +50,12 @@ GzipServlet = ->(env) {
   [200, {'Content-Encoding' => 'deflate', 'Vary' => 'Accept-Encoding'}, body]
 }
 
-TimeoutServlet = ->(env) {
+TimeoutServlet = Proc.new {|env|
   sleep 1.1
   [200, {'Content-Type' => 'text/plain'}, ['That took a while']]
 }
 
-SlowServlet = ->(env) {
+SlowServlet = Proc.new {|env|
   body = Enumerator.new do |y|
     y.yield 'x'
     sleep 20
@@ -75,38 +70,37 @@ RedirectServlet = -> (env) {
 }
 
 EvilRedirectServlet = -> (env) {
-  port = env.fetch('SERVER_PORT')
   [301, {'Location' => "smtp://mailbox:secret@localhost"}, []]
 }
 
-BodyReadback = ->(env) {
+BodyReadback = Proc.new {|env|
   readback = {'method' => env['REQUEST_METHOD'], 'body' => env['rack.input'].read, 'content_type' => env.fetch('HTTP_CONTENT_TYPE')}
   [200, {'Content-Type' => 'text/plain'}, [readback]]
 }
 
 TestPatchBodyServlet = BodyReadback
 
-SetCookieServlet = ->(env) {
+SetCookieServlet = Proc.new {|env|
   [301, {'Set-Cookie' => 'session_id=foo123', 'Location' => 'http://localhost:9001/test'}, []]
 }
 
-RepetitiveHeaderServlet = ->(env) {
+RepetitiveHeaderServlet = Proc.new {|env|
   # The values of the header must be Strings,
   # consisting of lines (for multiple header values, e.g. multiple
   # <tt>Set-Cookie</tt> values) separated by "\\n".
   [200, {'Set-Cookie' => "a=1\nb=2", 'Content-Type' => 'text/plain'}, ['Hi.']]
 }
 
-PictureServlet = ->(env) {
+PictureServlet = Proc.new {|env|
   [200, {'Content-Type' => 'image/png'}, [File.read('./pic.png')]]
 }
 
-WrongContentLengthServlet = ->(env) {
+WrongContentLengthServlet = Proc.new {|env|
   [200, {'Content-Length' => '1024', 'Content-Type' => 'text/plain'}, ['Hello.']]
 }
 
 # Serves a substantial amount of data
-LargeServlet = ->(env) {
+LargeServlet = Proc.new {|env|
   len = 15 * 1024 * 1024
   body = Enumerator.new do |y|
     15.times do
