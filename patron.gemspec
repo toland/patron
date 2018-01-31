@@ -41,6 +41,6 @@ For more info see https://github.com/curl/curl/issues/788
   spec.add_development_dependency "simplecov", "~> 0.10"
   spec.add_development_dependency "yard", "~> 0.8"
   spec.add_development_dependency "rack", "~> 1"
-  spec.add_development_dependency "puma"
+  spec.add_development_dependency "puma", '~> 3.11'
   spec.add_development_dependency "rake-compiler"
 end
