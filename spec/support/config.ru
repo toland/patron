@@ -110,8 +110,22 @@ LargeServlet = Proc.new {|env|
   [200, {'Content-Type' => 'binary/octet-stream', 'Content-Length' => len.to_s}, body]
 }
 
+EventSourceApp = Proc.new {|env|
+  body = Enumerator.new do |y|
+    10.times do |i|
+      str = ["event: counter\n", "data: #{i}\n", "\n"].join
+      chunk = [str.bytesize.to_s(16), "\r\n", str, "\r\n"].join
+      y.yield(chunk)
+      sleep 1.3
+    end
+    y.yield("0\r\n\r\n")
+  end
+  [200, {'Transfer-Encoding' => 'chunked', 'Content-Type' => 'text/event-stream'}, body]
+}
+
 run Rack::URLMap.new({
   "/" => Proc.new {|env| [200, {'Content-Length' => '2'}, ['Welcome']]},
+  "/event-source" => EventSourceApp,
   "/test" => Readback,
   "/testpost" => BodyReadback,
   "/testpatch" => BodyReadback,
