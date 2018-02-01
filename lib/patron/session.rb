@@ -16,7 +16,7 @@ module Patron
     # @return [Integer] HTTP connection timeout in seconds. Defaults to 1 second.
     attr_accessor :connect_timeout
 
-    # @return [Integer] HTTP transaction timeout in seconds. Defaults to 5 seconds.
+    # @return [Integer] HTTP transaction timeout in seconds. Defaults to 5 seconds. Set to 0 to disable timeout
     attr_accessor :timeout
 
     # Maximum number of redirects to follow

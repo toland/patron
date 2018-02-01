@@ -27,10 +27,6 @@ describe Patron::Request do
       expect {@request.timeout = -1}.to raise_error(ArgumentError)
     end
 
-    it "should raise an exception when assigned 0" do
-      expect {@request.timeout = 0}.to raise_error(ArgumentError)
-    end
-
   end
 
   describe :max_redirects do

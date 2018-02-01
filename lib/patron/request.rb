@@ -90,10 +90,10 @@ module Patron
 
     # Sets the read timeout for the CURL request, in seconds
     #
-    # @param new_timeout[Integer] the number of seconds to wait before raising a timeout error
+    # @param new_timeout[Integer] the number of seconds to wait before raising a timeout error, 0 for no timeout
     def timeout=(new_timeout)
-      if new_timeout && new_timeout.to_i < 1
-        raise ArgumentError, "Timeout must be a positive integer greater than 0"
+      if new_timeout && new_timeout.to_i < 0
+        raise ArgumentError, "timeout must be a positive integer or 0 for no timeout"
       end
 
       @timeout = new_timeout.to_i
@@ -103,8 +103,8 @@ module Patron
     #
     # @param new_timeout[Integer] the number of seconds to wait before raising a timeout error
     def connect_timeout=(new_timeout)
-      if new_timeout && new_timeout.to_i < 1
-        raise ArgumentError, "Timeout must be a positive integer greater than 0"
+      if new_timeout && new_timeout.to_i < 0
+        raise ArgumentError, "connect_timeout must be a positive integer or 0 to set the libCURL default (300 seconds)"
       end
 
       @connect_timeout = new_timeout.to_i
