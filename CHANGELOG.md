@@ -1,3 +1,6 @@
+* Replace StringScanner in HeaderParser with StringIO, fix Webmock regression when the headers string would
+  not have an empty CRLF-terminated line at the end - which would cause the parser to return a nil.
+
 ### 0.11.1
 
 * Make sure StringScanner is available to HeaderParser.
