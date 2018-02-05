@@ -588,6 +588,11 @@ static void set_options_from_request(VALUE self, VALUE request) {
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, FIX2INT(timeout));
   }
 
+  timeout = rb_funcall(request, rb_intern("dns_cache_timeout"), 0);
+  if (RTEST(timeout)) {
+    curl_easy_setopt(curl, CURLOPT_DNS_CACHE_TIMEOUT, FIX2INT(timeout));
+  }
+
   VALUE low_speed_time = rb_funcall(request, rb_intern("low_speed_time"), 0);
   if(RTEST(low_speed_time)) {
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, FIX2LONG(low_speed_time));

@@ -166,6 +166,11 @@ describe Patron::Session do
     expect(body.header["x-test"]).to be == ["Testing"]
   end
 
+  it "accepts the DNS cache timeout option" do
+    @session.dns_cache_timeout = 60
+    @session.get("/")
+  end
+
   it "should raise an exception on timeout" do
     @session.timeout = 1
     expect {@session.get("/timeout")}.to raise_error(Patron::TimeoutError)
@@ -551,6 +556,7 @@ describe Patron::Session do
 
     let(:args) { {
         :timeout => 10,
+        :dns_cache_timeout => 10,
         :base_url => 'http://localhost:9001',
         :headers => {'User-Agent' => 'myapp/1.0'}
     } }
@@ -563,6 +569,10 @@ describe Patron::Session do
 
     it 'sets timeout' do
       expect(session.timeout).to be == args[:timeout]
+    end
+
+    it 'sets DNS cache timeout' do
+      expect(session.dns_cache_timeout).to be == args[:dns_cache_timeout]
     end
 
     it 'sets headers' do

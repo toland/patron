@@ -19,6 +19,9 @@ module Patron
     # @return [Integer] HTTP transaction timeout in seconds. Defaults to 5 seconds.
     attr_accessor :timeout
 
+    # @return [Integer] DNS cache timeout in seconds. Defaults to 60 seconds. Set to 0 for no cache, or to -1 for indefinite caching.
+    attr_accessor :dns_cache_timeout
+
     # Maximum number of redirects to follow
     # Set to 0 to disable and -1 to follow all redirects. Defaults to 5.
     # @return [Integer]
@@ -361,6 +364,7 @@ module Patron
         req.automatic_content_encoding = options.fetch :automatic_content_encoding, self.automatic_content_encoding
         req.timeout                = options.fetch :timeout,               self.timeout
         req.connect_timeout        = options.fetch :connect_timeout,       self.connect_timeout
+        req.dns_cache_timeout      = options.fetch :dns_cache_timeout,     self.dns_cache_timeout
         req.low_speed_time         = options.fetch :low_speed_time,        self.low_speed_time
         req.low_speed_limit        = options.fetch :low_speed_limit,       self.low_speed_limit
         req.force_ipv4             = options.fetch :force_ipv4,            self.force_ipv4
