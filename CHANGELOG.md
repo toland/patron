@@ -1,4 +1,4 @@
-* Add a configuration option for CURLOPT_DNS_CACHE_TIMEOUT
+* Added `Session#dns_cache_timeout` as a config option for CURLOPT_DNS_CACHE_TIMEOUT
 
 ### 0.11.1
 
