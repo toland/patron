@@ -70,4 +70,18 @@ describe Patron::HeaderParser do
     expect(second_response.headers).to be_kind_of(Array)
     expect(second_response.headers[0]).to eq("Date: Mon, 29 Jan 2018 00:09:09 GMT")
   end
+
+  it 'parses headers without the trailing CRLF from Webmock' do
+    path = File.dirname(__FILE__) + '/sample_response_headers/webmock_headers_without_trailing_crlf.txt'
+    responses = Patron::HeaderParser.parse(File.read(path))
+
+    expect(responses.length).to eq(1)
+    first_response = responses[0]
+
+    expect(first_response.status_line).to eq("HTTP/1.1 200 OK")
+    expect(first_response.headers).to be_kind_of(Array)
+    expect(first_response.headers).not_to be_empty
+    last_header = first_response.headers[-1]
+    expect(last_header).to eq('Connection: Close')
+  end
 end
