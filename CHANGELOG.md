@@ -1,3 +1,5 @@
+* Add a configuration option for CURLOPT_DNS_CACHE_TIMEOUT
+
 ### 0.11.1
 
 * Make sure StringScanner is available to HeaderParser.
