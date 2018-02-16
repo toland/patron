@@ -1,3 +1,5 @@
+* Ensure HTTP2 response headers/status lines are correctly handled
+
 ### 0.12.0
 
 * Replace StringScanner in HeaderParser with StringIO, fix Webmock regression when the headers string would
