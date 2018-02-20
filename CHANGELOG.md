@@ -1,3 +1,5 @@
+### 0.12.1
+
 * Ensure HTTP2 response headers/status lines are correctly handled
 
 ### 0.12.0
