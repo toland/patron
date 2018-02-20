@@ -1,5 +1,5 @@
 module Patron::HeaderParser
-  HTTP_STATUS_LINE_START_RE = /^HTTP\/\d\.\d \d+/
+  HTTP_STATUS_LINE_START_RE = /^HTTP\/\d(\.\d)? \d+/
   HEADER_LINE_START_RE = /^[^:]+\:/
 
   # Returned for each response parsed out

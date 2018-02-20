@@ -84,4 +84,18 @@ describe Patron::HeaderParser do
     last_header = first_response.headers[-1]
     expect(last_header).to eq('Connection: Close')
   end
+
+  it 'parses headers for an HTTP2 response' do
+    path = File.dirname(__FILE__) + '/sample_response_headers/sample_http2_header.txt'
+    responses = Patron::HeaderParser.parse(File.read(path))
+
+    expect(responses.length).to eq(1)
+    first_response = responses[0]
+
+    expect(first_response.status_line).to eq("HTTP/2 200")
+    expect(first_response.headers).to be_kind_of(Array)
+    expect(first_response.headers).not_to be_empty
+    last_header = first_response.headers[-1]
+    expect(last_header).to eq('strict-transport-security: max-age=15552000; includeSubDomains;')
+  end
 end
