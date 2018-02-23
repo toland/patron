@@ -20,7 +20,7 @@ Gem::Specification.new do |spec|
   else
     raise "RubyGems 2.0 or newer is required to protect against public gem pushespec."
   end
-  
+
   spec.required_rubygems_version = ">= 1.2.0"
   spec.rubyforge_project = "patron"
 
@@ -39,7 +39,7 @@ For more info see https://github.com/curl/curl/issues/788
   spec.add_development_dependency "bundler", ">= 1"
   spec.add_development_dependency "rspec", ">= 2.3.0"
   spec.add_development_dependency "simplecov", "~> 0.10"
-  spec.add_development_dependency "yard", "~> 0.8"
+  spec.add_development_dependency "yard", "~> 0.9.11"
   spec.add_development_dependency "rack", "~> 1"
   spec.add_development_dependency "puma", '~> 3.11'
   spec.add_development_dependency "rake-compiler"
