@@ -33,13 +33,13 @@ module Patron
     # @return [String] the original URL used to perform the request (contains the final URL after redirects)
     attr_reader :url
 
-    # @return [Fixnum] the HTTP status code of the final response after all the redirects
+    # @return [Integer] the HTTP status code of the final response after all the redirects
     attr_reader :status
 
     # @return [String] the complete status line (code and message)
     attr_reader :status_line
 
-    # @return [Fixnum] how many redirects were followed when fulfilling this request
+    # @return [Integer] how many redirects were followed when fulfilling this request
     attr_reader :redirect_count
 
     # @return [String, nil] the response body as a String encoded as `Encoding::BINARY` or

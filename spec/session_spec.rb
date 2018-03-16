@@ -438,14 +438,12 @@ describe Patron::Session do
   it "should serialize query params and append them to the url" do
     response = @session.request(:get, "/test", {}, :query => {:foo => "bar"})
     request = YAML::load(response.body)
-    request.parse
     expect(request.path + '?' + request.query_string).to be == "/test?foo=bar"
   end
 
   it "should merge parameters in the :query option with pre-existing query parameters" do
     response = @session.request(:get, "/test?foo=bar", {}, :query => {:baz => "quux"})
     request = YAML::load(response.body)
-    request.parse
     expect(request.path + '?' + request.query_string).to be == "/test?foo=bar&baz=quux"
   end
 

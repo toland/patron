@@ -42,8 +42,25 @@ class URI::Parser
 end
 
 module RespondWith
+  HTTPRequest = Struct.new(
+    :request_method,
+    :path,
+    :query_string,
+    :header,
+  )
+
   def respond_with(method, req, res)
-    res.body = req.to_yaml
+    res.body =
+      if req.is_a? WEBrick::HTTPRequest
+        HTTPRequest.new(
+          req.request_method,
+          req.path,
+          req.query_string,
+          req.header
+        )
+      else
+        req
+      end.to_yaml
     res['Content-Type'] = "text/plain"
   end
 end
