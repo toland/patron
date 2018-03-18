@@ -5,7 +5,6 @@ require 'base64'
 require 'fileutils'
 
 describe Patron::Session do
-
   before(:each) do
     @session = Patron::Session.new
     @session.base_url = "https://localhost:9043"
@@ -34,7 +33,7 @@ describe Patron::Session do
     tmpfile = "/tmp/patron_test.yaml"
     @session.get_file "/test2", tmpfile
     File.unlink(tmpfile)
-    
+
     # and this one segfaults
     pid = fork do
       tmpfile = "/tmp/patron_test.yaml"
@@ -44,11 +43,11 @@ describe Patron::Session do
       expect(body.request_method).to be == "GET"
       FileUtils.rm tmpfile
     end
-    
+
     exit_pid, status = Process.wait2(pid)
     expect(status.exitstatus).to be_zero
   end
-  
+
   it "should download correctly(md5 ok) with get_file" do
     tmpfile = "/tmp/picture"
     response = @session.get_file "/picture", tmpfile
@@ -253,6 +252,16 @@ describe Patron::Session do
   it "should work when insecure mode is off but certificate is supplied" do
     @session.insecure = nil
     @session.cacert = 'spec/certs/cacert.pem'
+    response = @session.get("/test")
+    body = YAML::load(response.body)
+    expect(body.request_method).to be == "GET"
+  end
+
+  it "should work when ssl_cert is supplied" do
+    @session.insecure = nil
+    @session.ssl_cert = 'spec/certs/keystore.p12'
+    @sessions.ssl_cert_type = "p12"
+    @session.ssl_key_password = "pkcs12"
     response = @session.get("/test")
     body = YAML::load(response.body)
     expect(body.request_method).to be == "GET"

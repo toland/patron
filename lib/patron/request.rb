@@ -25,13 +25,13 @@ module Patron
       :ignore_content_length, :multipart, :action, :timeout, :connect_timeout, :dns_cache_timeout,
       :max_redirects, :headers, :auth_type, :upload_data, :buffer_size, :cacert,
       :ssl_version, :http_version, :automatic_content_encoding, :force_ipv4, :download_byte_limit,
-      :low_speed_time, :low_speed_limit, :progress_callback
+      :low_speed_time, :low_speed_limit, :progress_callback, :ssl_cert_type, :ssl_cert, :ssl_key_password
     ]
 
     WRITER_VARS = [
       :url, :username, :password, :file_name, :proxy, :proxy_type, :insecure, :dns_cache_timeout,
       :ignore_content_length, :multipart, :cacert, :ssl_version, :http_version, :automatic_content_encoding, :force_ipv4, :download_byte_limit,
-      :low_speed_time, :low_speed_limit, :progress_callback
+      :low_speed_time, :low_speed_limit, :progress_callback, :ssl_cert_type, :ssl_cert, :ssl_key_password
     ]
 
     attr_reader *READER_VARS
@@ -109,7 +109,7 @@ module Patron
 
       @connect_timeout = new_timeout.to_i
     end
-    
+
     # Sets the maximum number of redirects that are going to be followed.
     #
     # @param new_max_redirects[Integer] The number of redirects to follow, or `-1` for unlimited redirects.
@@ -179,7 +179,8 @@ module Patron
     def marshal_dump
       [ @url, @username, @password, @file_name, @proxy, @proxy_type, @insecure,
         @ignore_content_length, @multipart, @action, @timeout, @connect_timeout,
-        @max_redirects, @headers, @auth_type, @upload_data, @buffer_size, @cacert ]
+        @max_redirects, @headers, @auth_type, @upload_data, @buffer_size, @cacert,
+        @ssl_cert_type, @ssl_cert, @ssl_key_password ]
     end
 
     # Reinstates instance variables from a marshaled representation
@@ -188,7 +189,8 @@ module Patron
     def marshal_load(data)
       @url, @username, @password, @file_name, @proxy, @proxy_type, @insecure,
       @ignore_content_length, @multipart, @action, @timeout, @connect_timeout,
-      @max_redirects, @headers, @auth_type, @upload_data, @buffer_size, @cacert = data
+      @max_redirects, @headers, @auth_type, @upload_data, @buffer_size, @cacert,
+      @ssl_cert_type, @ssl_cert, @ssl_key_password = data
     end
 
   end
