@@ -1,3 +1,7 @@
+### 0.13.0
+
+* Added ssl_cert, ssl_cert_type, ssl_key_password to support self-signed SSL cert file
+
 ### 0.12.1
 
 * Ensure HTTP2 response headers/status lines are correctly handled
@@ -28,10 +32,10 @@
 ### 0.9.1
 
 * Added ssl_version options `TLSv1_1`, `TLSv1_2`, `TLSv1_3` for explicitly forcing the SSL version
-    * requires the appropriate versions of libCURL and OpenSSL installed to support these new options 
+    * requires the appropriate versions of libCURL and OpenSSL installed to support these new options
     * reference: https://curl.haxx.se/libcurl/c/CURLOPT_SSLVERSION.html
 * Added a new `:http_version` option with `HTTPv1_1` and `HTTPv2_0` values to explicitly set the HTTP version of HTTP/1.1 or HTTP/2.0
-    * requires the appropriate versions of libCURL and OpenSSL installed to support these new options 
+    * requires the appropriate versions of libCURL and OpenSSL installed to support these new options
     * reference: https://curl.haxx.se/libcurl/c/CURLOPT_HTTP_VERSION.html
 * Updates the gem release procedure for more convenience, using the updated Rubygems.org tasks
 * Update a few minor dependencies and documentation to be Ruby 2.4.1-compatible, add 2.4.1. to Travis CI matrix

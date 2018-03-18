@@ -101,7 +101,7 @@ static int session_progress_handler(void* clientp, size_t dltotal, size_t dlnow,
 
   // If a progress proc has been set, re-acquire the GIL and call it using
   // `call_user_rb_progress_blk`. TODO: use the retval of that proc
-  // to permit premature abort 
+  // to permit premature abort
   if(RTEST(state->user_progress_blk)) {
     // Even though it is not documented, rb_thread_call_with_gvl is available even when
     // rb_thread_call_without_gvl is not. See https://bugs.ruby-lang.org/issues/5543#note-4
@@ -118,7 +118,7 @@ static int session_progress_handler(void* clientp, size_t dltotal, size_t dlnow,
   if(state->download_byte_limit != 0 && (dltotal > state->download_byte_limit)) {
     state->interrupt = INTERRUPT_DOWNLOAD_OVERFLOW;
   }
-  
+
   // If the interrupt value is anything except 0, the perform() call
   // will be aborted by libCURL.
   // Note however that some older versions of libcurl have a bug which
@@ -239,7 +239,7 @@ static struct patron_curl_state* get_patron_curl_state(VALUE self) {
 
 /*
 * Returns the version of the embedded libcurl.
-* 
+*
 *  @return [String] libcurl version string
  */
 static VALUE libcurl_version(VALUE klass) {
@@ -250,7 +250,7 @@ static VALUE libcurl_version(VALUE klass) {
 
 /*
 * Returns the version of the embedded libcurl.
-* 
+*
 *  @return [Array] an array of MAJOR, MINOR, PATCH integers
  */
 static VALUE libcurl_version_exact(VALUE klass) {
@@ -269,7 +269,7 @@ static VALUE libcurl_version_exact(VALUE klass) {
 *  @return [String] the escaped string
  */
 static VALUE session_escape(VALUE self, VALUE value) {
-  
+
   VALUE string = StringValue(value);
   char* escaped = NULL;
   VALUE retval = Qnil;
@@ -318,7 +318,7 @@ static int each_http_header(VALUE header_key, VALUE header_value, VALUE self) {
   VALUE name = rb_obj_as_string(header_key);
   VALUE value = rb_obj_as_string(header_value);
   VALUE header_str = Qnil;
-  
+
   // TODO: see how to combine this with automatic_content_encoding
   if (rb_str_cmp(name, rb_str_new2("Accept-Encoding")) == 0) {
     if (rb_funcall(value, rb_intern("include?"), 1, rb_str_new2("gzip"))) {
@@ -388,7 +388,7 @@ static FILE* open_file(VALUE filename, const char* perms) {
 
 static void set_request_body_file(struct patron_curl_state* state, VALUE r_path_str) {
   CURL* curl = state->handle;
-  
+
   state->request_body_file = open_file(r_path_str, "rb");
   curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
   curl_easy_setopt(curl, CURLOPT_READDATA, state->request_body_file);
@@ -439,6 +439,9 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE insecure              = Qnil;
   VALUE cacert                = Qnil;
   VALUE ssl_version           = Qnil;
+  VALUE ssl_cert              = Qnil;
+  VALUE ssl_cert_type         = Qnil;
+  VALUE ssl_key_password      = Qnil;
   VALUE http_version          = Qnil;
   VALUE buffer_size           = Qnil;
   VALUE action_name           = rb_funcall(request, rb_intern("action"), 0);
@@ -501,7 +504,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
     } else if (action == rb_intern("patch")) {
       curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
     }
-    
+
     if (RTEST(data) && !RTEST(multipart)) {
       if (action == rb_intern("post")) {
         curl_easy_setopt(curl, CURLOPT_POST, 1);
@@ -563,13 +566,13 @@ static void set_options_from_request(VALUE self, VALUE request) {
         "The libcurl version installed doesn't support automatic content negotiation");
     #endif
   }
-  
+
   url = rb_funcall(request, rb_intern("url"), 0);
   if (!RTEST(url)) {
     rb_raise(rb_eArgError, "Must provide a URL");
   }
   curl_easy_setopt(curl, CURLOPT_URL, StringValuePtr(url));
-  
+
 #ifdef CURLPROTO_HTTP
   // Security: do not allow Curl to go looking on gopher/SMTP etc.
   // Must prevent situations like this:
@@ -577,7 +580,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
   curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
   curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
 #endif
-    
+
   timeout = rb_funcall(request, rb_intern("timeout"), 0);
   if (RTEST(timeout)) {
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, FIX2INT(timeout));
@@ -705,6 +708,21 @@ static void set_options_from_request(VALUE self, VALUE request) {
     }
   }
 
+  ssl_cert = rb_funcall(request, rb_intern("ssl_cert"), 0);
+  if(RTEST(ssl_cert)) {
+    curl_easy_setopt(curl, CURLOPT_SSLCERT, StringValuePtr(ssl_cert));
+  }
+
+  ssl_cert_type = rb_funcall(request, rb_intern("ssl_cert_type"), 0);
+  if(RTEST(ssl_cert_type)) {
+    curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE, StringValuePtr(ssl_cert_type));
+  }
+
+  ssl_key_password = rb_funcall(request, rb_intern("ssl_key_password"), 0);
+  if(RTEST(ssl_key_password)) {
+    curl_easy_setopt(curl, CURLOPT_SSLKEYPASSWD, StringValuePtr(ssl_key_password));
+  }
+
   cacert = rb_funcall(request, rb_intern("cacert"), 0);
   if(RTEST(cacert)) {
     curl_easy_setopt(curl, CURLOPT_CAINFO, StringValuePtr(cacert));
@@ -728,7 +746,7 @@ static VALUE create_response(VALUE self, CURL* curl, VALUE header_buffer, VALUE 
   long code = 0;
   long count = 0;
   VALUE responseKlass = Qnil;
-  
+
   curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &effective_url);
   args[0] = rb_str_new2(effective_url);
 
@@ -741,7 +759,7 @@ static VALUE create_response(VALUE self, CURL* curl, VALUE header_buffer, VALUE 
   args[3] = header_buffer;
   args[4] = body_buffer;
   args[5] = rb_funcall(self, rb_intern("default_response_charset"), 0);
-  
+
   responseKlass = rb_funcall(self, rb_intern("response_class"), 0);
   return rb_class_new_instance(6, args, responseKlass);
 }
@@ -821,9 +839,9 @@ static VALUE perform_request(VALUE self) {
     VALUE header_str = membuffer_to_rb_str(header_buffer);
     VALUE body_str = Qnil;
     if (!state->download_file) { body_str = membuffer_to_rb_str(body_buffer); }
-    
+
     curl_easy_setopt(curl, CURLOPT_COOKIELIST, "FLUSH"); // Flush cookies to the cookie jar
-    
+
     return create_response(self, curl, header_str, body_str);
   } else {
     rb_raise(select_error(ret), "%s", state->error_buf);
@@ -851,7 +869,7 @@ static VALUE cleanup(VALUE self) {
     fclose(state->request_body_file);
     state->request_body_file = NULL;
   }
-  
+
   if (state->post) {
     curl_formfree(state->post);
     state->post = NULL;
@@ -922,7 +940,7 @@ static VALUE session_interrupt(VALUE self) {
  * default or in +file+ if specified. The `file` must be readable and
  * writable. Calling multiple times will add more files.
  * FIXME: what does the empty string actually do here?
-* 
+*
  * @param [String] file path to the existing cookie file, or nil to store in memory.
 *  @return self
  */

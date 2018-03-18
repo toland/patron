@@ -33,7 +33,7 @@ module Patron
     # Username for http authentication
     # @return [String,nil] the HTTP basic auth username
     attr_accessor :username
-    
+
     # Password for http authentication
     # @return [String,nil] the HTTP basic auth password
     attr_accessor :password
@@ -67,6 +67,15 @@ module Patron
     # @return [String] path to the CA file used for certificate verification, or `nil` if CURL default is used
     attr_accessor :cacert
 
+    # @return [String] path to the SSL Cert file used for certificate verification, or `nil` if CURL default is used
+    attr_accessor :ssl_cert
+
+    # @return [String]  the SSL Cert file type, should be one of p12(PKCS12) or pem
+    attr_accessor :ssl_cert_type
+
+    # @return [String]  the SSL Key Password
+    attr_accessor :ssl_key_password
+
     # @return [Boolean] whether Content-Range and Content-Length headers should be ignored
     attr_accessor :ignore_content_length
 
@@ -81,7 +90,7 @@ module Patron
     # response does not specify a charset in it's `Content-Type` header already, if it does that charset
     # will take precedence.
     attr_accessor :default_response_charset
-    
+
     # @return [Boolean] Force curl to use IPv4
     attr_accessor :force_ipv4
 
@@ -145,7 +154,7 @@ module Patron
     def handle_cookies(file_path = nil)
       if file_path
         path = Pathname(file_path).expand_path
-        
+
         if !File.exists?(file_path) && !File.writable?(path.dirname)
           raise ArgumentError, "Can't create file #{path} (permission error)"
         elsif File.exists?(file_path) && !File.writable?(file_path)
@@ -154,12 +163,12 @@ module Patron
       else
         path = nil
       end
-      
+
       # Apparently calling this with an empty string sets the cookie file,
       # but calling it with a path to a writable file sets that file to be
       # the cookie jar (new cookies are written there)
       add_cookie_file(path.to_s)
-      
+
       self
     end
 
@@ -315,7 +324,7 @@ module Patron
       request(:copy, url, headers)
     end
     # @!endgroup
-    
+
     # @!group Basic API methods
     # Send an HTTP request to the specified `url`.
     #
@@ -329,7 +338,7 @@ module Patron
       req = build_request(action, url, headers, options)
       handle_request(req)
     end
-    
+
     # Returns the class that will be used to build a Response
     # from a Curl call.
     #
@@ -344,7 +353,7 @@ module Patron
     def response_class
       ::Patron::Response
     end
-    
+
     # Builds a request object that can be used by ++handle_request++
     # Note that internally, ++handle_request++ uses instance variables of
     # the Request object, and not it's public methods.
@@ -378,6 +387,9 @@ module Patron
         req.ssl_version            = options.fetch :ssl_version,           self.ssl_version
         req.http_version           = options.fetch :http_version,          self.http_version
         req.cacert                 = options.fetch :cacert,                self.cacert
+        req.ssl_cert_type          = options.fetch :ssl_cert_type,         self.ssl_cert_type
+        req.ssl_cert               = options.fetch :ssl_cert,              self.ssl_cert
+        req.ssl_key_password       = options.fetch :ssl_key_password,      self.ssl_key_password
         req.ignore_content_length  = options.fetch :ignore_content_length, self.ignore_content_length
         req.buffer_size            = options.fetch :buffer_size,           self.buffer_size
         req.download_byte_limit    = options.fetch :download_byte_limit,   self.download_byte_limit
