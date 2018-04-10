@@ -73,7 +73,9 @@ describe Patron::Session do
 
   it "should raise an exception on timeout" do
     @session.timeout = 1
-    expect {@session.get("/timeout")}.to raise_error(Patron::TimeoutError)
+    expect {
+      @session.get("/timeout?millis=1100")
+    }.to raise_error(Patron::TimeoutError)
   end
 
   it "should follow redirects by default" do

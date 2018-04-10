@@ -401,6 +401,12 @@ static void set_request_body_file(struct patron_curl_state* state, VALUE r_path_
   #endif
 }
 
+static long floating_rb_seconds_to_milliseconds(VALUE r_seconds) {
+  double seconds_f = NUM2DBL(r_seconds);
+  long millis = seconds_f * (double)1000.0;
+  return millis;
+}
+
 static void set_request_body(struct patron_curl_state* state, VALUE stringable_or_file) {
   CURL* curl = state->handle;
   if(rb_respond_to(stringable_or_file, rb_intern("to_path"))) {
@@ -580,12 +586,12 @@ static void set_options_from_request(VALUE self, VALUE request) {
     
   timeout = rb_funcall(request, rb_intern("timeout"), 0);
   if (RTEST(timeout)) {
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, FIX2INT(timeout));
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, floating_rb_seconds_to_milliseconds(timeout));
   }
 
   timeout = rb_funcall(request, rb_intern("connect_timeout"), 0);
   if (RTEST(timeout)) {
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, FIX2INT(timeout));
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, floating_rb_seconds_to_milliseconds(timeout));
   }
 
   timeout = rb_funcall(request, rb_intern("dns_cache_timeout"), 0);

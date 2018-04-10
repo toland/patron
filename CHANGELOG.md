@@ -1,3 +1,9 @@
+### 0.13.0
+
+* Permit timeouts to be set as a Float of seconds and use `CURLOPT_(CONNECT)TIMEOUT_MS` instead of `CURLOPT_(CONNECT)TIMEOUT` so that
+  sub-second timeouts can be configured, which is useful for performant services using accelerated DNS resolution.
+* Remove the restriction that `Session#timeout` should be non-zero - a timeout set to 0 means "no timeout" in libCURL
+
 ### 0.12.1
 
 * Ensure HTTP2 response headers/status lines are correctly handled
