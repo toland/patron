@@ -88,26 +88,28 @@ module Patron
       @action = action.downcase.to_sym
     end
 
-    # Sets the read timeout for the CURL request, in seconds
+    # Sets the read timeout for the CURL request, in seconds.
+    # Can be set to less than a second using a floating-point value.
+    # Setting the value to 0 will disable the timeout.
     #
     # @param new_timeout[Integer] the number of seconds to wait before raising a timeout error
     def timeout=(new_timeout)
-      if new_timeout && new_timeout.to_i < 1
-        raise ArgumentError, "Timeout must be a positive integer greater than 0"
+      if new_timeout && new_timeout.to_f < 0
+        raise ArgumentError, "Timeout must be a positive number"
       end
-
-      @timeout = new_timeout.to_i
+      @timeout = new_timeout.to_f
     end
 
     # Sets the connect timeout for the CURL request, in seconds.
+    # Can be set to less than a second using a floating-point value.
     #
     # @param new_timeout[Integer] the number of seconds to wait before raising a timeout error
     def connect_timeout=(new_timeout)
-      if new_timeout && new_timeout.to_i < 1
-        raise ArgumentError, "Timeout must be a positive integer greater than 0"
+      if new_timeout && new_timeout.to_f < 0
+        raise ArgumentError, "Timeout must be a positive number"
       end
 
-      @connect_timeout = new_timeout.to_i
+      @connect_timeout = new_timeout.to_f
     end
     
     # Sets the maximum number of redirects that are going to be followed.

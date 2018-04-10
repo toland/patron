@@ -51,7 +51,9 @@ GzipServlet = Proc.new {|env|
 }
 
 TimeoutServlet = Proc.new {|env|
-  sleep 1.1
+  query_vars = Rack::Utils.parse_nested_query(env.fetch('QUERY_STRING'))
+  query_millis = query_vars.fetch('millis').to_i
+  sleep(query_millis / 1000.0)
   [200, {'Content-Type' => 'text/plain'}, ['That took a while']]
 }
 
