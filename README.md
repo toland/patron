@@ -69,13 +69,13 @@ When doing so, `curl` will use openssl as it's SSL driver. You also need to
 change the Patron compile flag:
 
 
-    $ brew install curl --with-openssl && \
-        gem install patron --with-curl-config=/usr/local/opt/curl/bin/curl-config
+    $ brew install curl-openssl && \
+        gem install patron -- --with-curl-config=/usr/local/opt/curl-openssl/bin/curl-config
 
 You can also save this parameter for all future Bundler-driven gem installs by
 setting this flag in Bundler proper:
 
-    $ bundle config build.patron --with-curl-config=/usr/local/opt/curl/bin/curl-config
+    $ bundle config build.patron --with-curl-config=/usr/local/opt/curl-openssl/bin/curl-config
 
 ## Threading
 
