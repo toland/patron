@@ -163,6 +163,7 @@ static void cs_list_remove(struct patron_curl_state *state) {
   }
 }
 
+/* Gets attached to at_exit of the Ruby process to be able to abort all running libCURL requests and quit */
 static void cs_list_interrupt(VALUE data) {
   UNUSED_ARGUMENT(data);
 
@@ -182,7 +183,7 @@ static void session_close_debug_file(struct patron_curl_state *curl) {
   curl->debug_file = NULL;
 }
 
-/* Cleans up the Curl handle when the Session object is garbage collected. */
+/* Cleans up the patron_curl_state data when the Session object is garbage collected. */
 void session_free(struct patron_curl_state *curl) {
   if (curl->handle) {
     curl_easy_cleanup(curl->handle);
@@ -201,12 +202,29 @@ void session_free(struct patron_curl_state *curl) {
 
 /* Allocates patron_curl_state data needed for a new Session object. */
 VALUE session_alloc(VALUE klass) {
-  struct patron_curl_state* curl;
-  VALUE obj = Data_Make_Struct(klass, struct patron_curl_state, NULL, session_free, curl);
+  struct patron_curl_state* state;
+  VALUE obj = Data_Make_Struct(klass, struct patron_curl_state, NULL, session_free, state);
 
-  membuffer_init( &curl->header_buffer );
-  membuffer_init( &curl->body_buffer );
-  cs_list_append(curl);
+  membuffer_init(&state->header_buffer);
+  membuffer_init(&state->body_buffer);
+  cs_list_append(state);
+
+  /*
+    Eagerly initialize the curl handle. We initialize it only once and store it
+    in the struct until the Session object gets garbage-collected in session_free(). This allows libCURL to
+    reuse the TCP connection and can speed things up if the same resource - like a backend service -
+    gets accessed over and over with requests.
+  */
+  state->handle = curl_easy_init();
+  curl_easy_setopt(state->handle, CURLOPT_NOSIGNAL, 1);
+  curl_easy_setopt(state->handle, CURLOPT_NOPROGRESS, 0);
+  #if LIBCURL_VERSION_NUM >= 0x072000
+    /* this is libCURLv7.32.0 or later, supports CURLOPT_XFERINFOFUNCTION */
+    curl_easy_setopt(state->handle, CURLOPT_XFERINFOFUNCTION, &session_progress_handler);
+  #else
+    curl_easy_setopt(state->handle, CURLOPT_PROGRESSFUNCTION, &session_progress_handler);
+  #endif
+  curl_easy_setopt(state->handle, CURLOPT_PROGRESSDATA, state);
 
   return obj;
 }
@@ -215,24 +233,8 @@ VALUE session_alloc(VALUE klass) {
 static struct patron_curl_state* get_patron_curl_state(VALUE self) {
   struct patron_curl_state* state;
   Data_Get_Struct(self, struct patron_curl_state, state);
-
-  if (NULL == state->handle) {
-    state->handle = curl_easy_init();
-    curl_easy_setopt(state->handle, CURLOPT_NOSIGNAL, 1);
-    curl_easy_setopt(state->handle, CURLOPT_NOPROGRESS, 0);
-    #if LIBCURL_VERSION_NUM >= 0x072000
-      /* this is libCURLv7.32.0 or later, supports CURLOPT_XFERINFOFUNCTION */
-      curl_easy_setopt(state->handle, CURLOPT_XFERINFOFUNCTION, &session_progress_handler);
-    #else
-      curl_easy_setopt(state->handle, CURLOPT_PROGRESSFUNCTION, &session_progress_handler);
-    #endif
-
-    curl_easy_setopt(state->handle, CURLOPT_PROGRESSDATA, state);
-  }
-
   return state;
 }
-
 
 /*----------------------------------------------------------------------------*/
 /* Method implementations                                                     */
@@ -887,33 +889,9 @@ static VALUE session_handle_request(VALUE self, VALUE request) {
   return rb_ensure(&perform_request, self, &cleanup, self);
 }
 
-/*
- * FIXME: figure out how this method should be used at all given Session is not multithreaded.
- * FIXME: also: what is the difference with `interrupt()` and also relationship with `cleanup()`?
- * Reset the underlying cURL session. This effectively closes all open
- * connections and disables debug output. There is no need to call this method
- * manually after performing a request, since cleanup is performed automatically
- * but the method can be used from another thread
- * to abort a request currently in progress.
- *
- * @return self
- */
-static VALUE session_reset(VALUE self) {
-  struct patron_curl_state *state;
-  Data_Get_Struct(self, struct patron_curl_state, state);
-
-  if (NULL != state->handle) {
-    cleanup(self);
-    curl_easy_cleanup(state->handle);
-    state->handle = NULL;
-    session_close_debug_file(state);
-  }
-
-  return self;
-}
-
 /* Interrupt any currently executing request. This will cause the current
- * request to error and raise an exception.
+ * request to error and raise an exception. The method can be called from another thread to
+ * abort the request in-flight.
  *
  * @return [void] This method always raises
  */
@@ -1009,7 +987,7 @@ void Init_session_ext() {
   rb_define_method(cSession, "unescape",       session_unescape,       1);
 
   rb_define_method(cSession, "handle_request", session_handle_request, 1);
-  rb_define_method(cSession, "reset",          session_reset,          0);
+  rb_define_method(cSession, "reset",          session_interrupt,      0);
   rb_define_method(cSession, "interrupt",      session_interrupt,      0);
   rb_define_method(cSession, "add_cookie_file", add_cookie_file, 1);
   rb_define_method(cSession, "set_debug_file", set_debug_file, 1);
