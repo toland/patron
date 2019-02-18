@@ -36,7 +36,7 @@ SecureTransport-based builds might cause crashes in forking environment.
 For more info see https://github.com/curl/curl/issues/788
 }
   spec.add_development_dependency "rake", "~> 10"
-  spec.add_development_dependency "bundler", ">= 1"
+  spec.add_development_dependency "bundler"
   spec.add_development_dependency "rspec", ">= 2.3.0"
   spec.add_development_dependency "simplecov", "~> 0.10"
   spec.add_development_dependency "yard", "~> 0.9.11"
