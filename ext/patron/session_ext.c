@@ -1,7 +1,5 @@
 #include <ruby.h>
-#if defined(USE_TBR) && defined(HAVE_THREAD_H)
 #include <ruby/thread.h>
-#endif
 #include <sys/stat.h>
 #include <curl/curl.h>
 #include "membuffer.h"
@@ -103,15 +101,7 @@ static int session_progress_handler(void* clientp, size_t dltotal, size_t dlnow,
   // `call_user_rb_progress_blk`. TODO: use the retval of that proc
   // to permit premature abort 
   if(RTEST(state->user_progress_blk)) {
-    // Even though it is not documented, rb_thread_call_with_gvl is available even when
-    // rb_thread_call_without_gvl is not. See https://bugs.ruby-lang.org/issues/5543#note-4
-    // > rb_thread_call_with_gvl() is globally-visible (but not in headers)
-    // > for 1.9.3: https://bugs.ruby-lang.org/issues/4328
-    #if (defined(HAVE_TBR) || defined(HAVE_TCWOGVL)) && defined(USE_TBR)
-        rb_thread_call_with_gvl((void *(*)(void *)) call_user_rb_progress_blk, (void*)state);
-    #else
-        call_user_rb_progress_blk((void*)state);
-    #endif
+    rb_thread_call_with_gvl((void *(*)(void *)) call_user_rb_progress_blk, (void*)state);
   }
 
   // Set the interrupt if the download byte limit has been reached
@@ -809,21 +799,10 @@ static VALUE perform_request(VALUE self) {
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, body_buffer);
   }
 
-#if (defined(HAVE_TBR) || defined(HAVE_TCWOGVL)) && defined(USE_TBR)
-  #if defined(HAVE_TCWOGVL)
-    ret = (CURLcode) rb_thread_call_without_gvl(
-            (void *(*)(void *)) curl_easy_perform, curl,
-            session_ubf_abort, (void*)state
-          );
-  #else
-    ret = (CURLcode) rb_thread_blocking_region(
-            (rb_blocking_function_t*) curl_easy_perform, curl,
-            session_ubf_abort, (void*)state
-          );
-  #endif
-#else
-  ret = curl_easy_perform(curl);
-#endif
+  ret = (CURLcode) rb_thread_call_without_gvl(
+          (void *(*)(void *)) curl_easy_perform, curl,
+          session_ubf_abort, (void*)state
+        );
 
   if (CURLE_OK == ret) {
     VALUE header_str = membuffer_to_rb_str(header_buffer);
