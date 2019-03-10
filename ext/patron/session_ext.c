@@ -119,9 +119,10 @@ static int session_progress_handler(void* clientp, size_t dltotal, size_t dlnow,
 }
 
 
-/*----------------------------------------------------------------------------*/
-/* List of active curl sessions                                               */
-
+/*
+  List of active curl sessions, used exclusively to be able to set interrupts
+  for all of them if the Ruby interpreter gets shut down with libCURL requests still in flight.
+*/
 struct patron_curl_state_list {
   struct patron_curl_state       *state;
   struct patron_curl_state_list  *next;
