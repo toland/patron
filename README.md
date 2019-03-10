@@ -90,6 +90,9 @@ On OSX the provided libcurl is sufficient if you are not using fork+SSL combinat
 You will have to install the libcurl development packages on Debian or Ubuntu. Other Linux systems are probably
 similar. For Windows we do not have an established build instruction at the moment, unfortunately.
 
+Versions of Patron below 1.0 will maintain compatibility down to Ruby 1.9.3,
+versions below 2.0 will maintain compatibility down to Ruby 2.3
+
 ## Forking webservers on macOS and SSL
 
 Currently, [an issue is at play](https://github.com/curl/curl/issues/788) with OSX builds of `curl` which use
