@@ -85,8 +85,10 @@ that are currently active in the process.
 
 ## Requirements
 
-Patron uses encoding features of Ruby, so you need at least Ruby 1.9. Also, a
-recent version of libCURL is required. We recommend at least 7.19.4 because
+Patron 1.0 and up requires MRI Ruby 2.3 or newer. The 0.x versions support
+Ruby 1.9.3 and these versions get tagged and developed on the `v0.x` branch.
+
+A recent version of libCURL is required. We recommend at least 7.19.4 because
 it [supports limiting the protocols](https://curl.haxx.se/libcurl/c/CURLOPT_PROTOCOLS.html),
 and that is very important for security - especially if you follow redirects. 
 
