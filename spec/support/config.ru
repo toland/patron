@@ -74,8 +74,9 @@ SlowServlet = Proc.new {|env|
 }
 
 RedirectServlet = Proc.new {|env|
+  url_scheme = env.fetch('rack.url_scheme')
   port = env.fetch('SERVER_PORT')
-  [301, {'Location' => "http://localhost:#{port}/test"}, []]
+  [301, {'Location' => "#{url_scheme}://localhost:#{port}/test"}, []]
 }
 
 EvilRedirectServlet = Proc.new {|env|
