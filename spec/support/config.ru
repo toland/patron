@@ -1,5 +1,6 @@
 require 'yaml'
 require 'ostruct'
+require 'zlib'
 
 ## HTTP test server for integration tests
 
@@ -25,7 +26,9 @@ Readback = Proc.new {|env|
   end
 
   fake_webrick_request_object = OpenStruct.new({
-    :path => req.fullpath,
+    :fullpath => req.fullpath,
+    :path => req.path,
+    :query_string => req.query_string,
     :request_method => req.request_method.to_s,
     :header => Hash[req_headers],
     :body => env['rack.input'].read,
@@ -38,16 +41,20 @@ Readback = Proc.new {|env|
 GzipServlet = Proc.new {|env|
   raise "Need to have the right Accept-Encoding: header" unless env['HTTP_ACCEPT_ENCODING']
   
-  body = Enumerator.new do |y|
-    z = Zlib::Deflate.new(Zlib::DEFAULT_COMPRESSION)
-    1024.times {
-      y.yield(z.deflate('Some highly compressible data'))
-    }
-    y.yield(z.finish.to_s)
-    y.yield(z.close.to_s)
+  body = []
+  content_length = 0
+  z = Zlib::Deflate.new(Zlib::DEFAULT_COMPRESSION)
+  1024.times do
+    chunk = z.deflate('Some highly compressible data')
+    content_length += chunk.bytesize
+    body << chunk
   end
+  fin = z.finish.to_s
+  body << fin
+  content_length += fin.bytesize
+  z.close
 
-  [200, {'Content-Encoding' => 'deflate', 'Vary' => 'Accept-Encoding'}, body]
+  [200, {'Content-Encoding' => 'deflate', 'Content-Length' => content_length.to_s, 'Vary' => 'Accept-Encoding'}, body]
 }
 
 TimeoutServlet = Proc.new {|env|
@@ -76,8 +83,8 @@ EvilRedirectServlet = Proc.new {|env|
 }
 
 BodyReadback = Proc.new {|env|
-  readback = {'method' => env['REQUEST_METHOD'], 'body' => env['rack.input'].read, 'content_type' => env.fetch('HTTP_CONTENT_TYPE')}
-  [200, {'Content-Type' => 'text/plain'}, [readback]]
+  readback = {'method' => env['REQUEST_METHOD'], 'body' => env['rack.input'].read, 'content_type' => env.fetch('CONTENT_TYPE')}
+  [200, {'Content-Type' => 'text/plain'}, [OpenStruct.new(readback).to_yaml]]
 }
 
 TestPatchBodyServlet = BodyReadback

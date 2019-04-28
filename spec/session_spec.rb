@@ -16,9 +16,9 @@ describe Patron::Session do
     forbidden_protos = %w( smb tftp imap smtp telnet dict ftp sftp scp file gopher )
     forbidden_protos.each do |forbidden_proto|
       it "should deny a #{forbidden_proto.upcase} request" do
-        @session.base_url = nil
         expect {
-          @session.get('%s://localhost' % forbidden_proto)
+          @session.base_url = '%s://localhost' % forbidden_proto
+          @session.get('')
         }.to raise_error(Patron::UnsupportedProtocol)
       end
     end
@@ -208,9 +208,9 @@ describe Patron::Session do
   end
 
   it "is able to terminate the thread that is running a slow request" do
-    t = Thread.new do
+    pid = Process.fork do
       trap('SIGINT') do
-        exit # exit the thread
+        exit # exit the process
       end
       session = Patron::Session.new
       session.timeout = 40
@@ -222,8 +222,8 @@ describe Patron::Session do
     # using a signal during that time.
     started = Time.now.to_i
     sleep 5 # Less than what it takes for the server to respond
-    Process.kill("INT", Process.pid) # Signal ourselves...
-    t.join # wrap up the thread. If Patron is still busy there, this join call will still take 15s.
+    Process.kill("INT", pid) # Signal ourselves...
+    Process.wait(pid) # wrap up the process. If Patron is still busy there, this call will still take 15s.
     delta_s = Time.now.to_i - started
     expect(delta_s).to be_within(2).of(5)
   end
@@ -458,14 +458,14 @@ describe Patron::Session do
   it "should ignore a wrong Content-Length when asked to" do
     expect {
       @session.ignore_content_length = true
-      @session.get("/wrongcontentlength")
+      @session.get("/wrongcontentlength", { 'Connection' => 'close' })
     }.to_not raise_error
   end
 
   it "should fail by default with a Content-Length too high" do
     expect {
       @session.ignore_content_length = nil
-      @session.get("/wrongcontentlength")
+      @session.get("/wrongcontentlength", { 'Connection' => 'close' })
     }.to raise_error(Patron::PartialFileError)
   end
 
@@ -517,14 +517,12 @@ describe Patron::Session do
   it "should serialize query params and append them to the url" do
     response = @session.request(:get, "/test", {}, :query => {:foo => "bar"})
     request = YAML::load(response.body)
-    request.parse
     expect(request.path + '?' + request.query_string).to be == "/test?foo=bar"
   end
 
   it "should merge parameters in the :query option with pre-existing query parameters" do
     response = @session.request(:get, "/test?foo=bar", {}, :query => {:baz => "quux"})
     request = YAML::load(response.body)
-    request.parse
     expect(request.path + '?' + request.query_string).to be == "/test?foo=bar&baz=quux"
   end
 

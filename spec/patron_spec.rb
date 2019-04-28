@@ -10,7 +10,7 @@ describe Patron do
   
   it "should return the version number of the Patron library" do
     version = Patron.version
-    expect(version).to match(%r|^\d+.\d+.\d+$|)
+    expect(version).to match(%r|^\d+.\d+.\d+(\.\w+\.\d+)?$|)
   end
 
   it "should return the version string of the libcurl library" do
