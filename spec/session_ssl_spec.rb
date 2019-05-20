@@ -32,12 +32,11 @@ describe Patron::Session do
   it "should download content in a forked subprocess" do
     # To trigger the bug, we need to perform a request in the master process first
     tmpfile = "/tmp/patron_test.yaml"
-    @session.get_file "/test2", tmpfile
-    File.unlink(tmpfile)
+    @session.get_file "/test", tmpfile
+    FileUtils.rm tmpfile
     
     # and this one segfaults
     pid = fork do
-      tmpfile = "/tmp/patron_test.yaml"
       response = @session.get_file "/test", tmpfile
       expect(response.body).to be_nil
       body = YAML::load_file(tmpfile)
@@ -214,20 +213,6 @@ describe Patron::Session do
     expect(YAML::load(response).header).to_not include('cookie')
   end
 
-  it "should ignore a wrong Content-Length when asked to" do
-    expect {
-      @session.ignore_content_length = true
-      @session.get("/wrongcontentlength")
-    }.to_not raise_error
-  end
-
-  it "should fail by default with a Content-Length too high" do
-    expect {
-      @session.ignore_content_length = nil
-      @session.get("/wrongcontentlength")
-    }.to raise_error(Patron::PartialFileError)
-  end
-
   it "should raise exception if cookie store is not writable or readable" do
     expect { @session.handle_cookies("/trash/clash/foo") }.to raise_error(ArgumentError)
   end
@@ -254,14 +239,14 @@ describe Patron::Session do
 
   it "should work when insecure mode is off but certificate is supplied" do
     @session.insecure = nil
-    @session.cacert = 'spec/certs/cacert.pem'
+    @session.cacert = File.join(__dir__, 'support', 'certs', 'cacert.pem')
     response = @session.get("/test")
     body = YAML::load(response.body)
     expect(body.request_method).to be == "GET"
   end
 
   it "should work with different SSL versions" do
-    ['SSLv3','TLSv1'].each do |version|
+    ['TLSv1_0','TLSv1_1'].each do |version|
       @session.ssl_version = version
       response = @session.get("/test")
       expect(response.status).to be == 200
