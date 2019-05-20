@@ -18,5 +18,14 @@ $stderr.puts "Build against #{Patron.libcurl_version}"
 
 Dir['./spec/support/**/*.rb'].each { |fn| require fn }
 
-Thread.new { PatronTestServer.start(false, 9001) }
-Thread.new { PatronTestServer.start(true, 9043) }
+http_server_pid = Process.fork { PatronTestServer.start(false, 9001) }
+https_server_pid = Process.fork { PatronTestServer.start(true, 9043) }
+
+RSpec.configure do |c|
+  c.after(:suite) do
+    Process.kill("INT", http_server_pid)
+    Process.kill("INT", https_server_pid)
+    Process.wait(http_server_pid)
+    Process.wait(https_server_pid)
+  end
+end
