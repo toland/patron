@@ -1,3 +1,7 @@
+### 0.13.3
+
+* Fix a number of specs that were failing due to use of threads
+
 ### 0.13.2
 
 * Eagerly initialize libCURL handle when creating the Session instance instead of initializing it lazily
