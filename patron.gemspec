@@ -6,6 +6,7 @@ require 'patron/version'
 Gem::Specification.new do |spec|
   spec.name        = "patron"
   spec.version     = Patron::VERSION
+  spec.licenses    = ["MIT"]
   spec.platform    = Gem::Platform::RUBY
   spec.authors     = ["Phillip Toland"]
   spec.email       = ["phil.toland@gmail.com"]
