@@ -23,7 +23,6 @@ Gem::Specification.new do |spec|
   end
 
   spec.required_rubygems_version = ">= 1.2.0"
-  spec.rubyforge_project = "patron"
 
   spec.files         = `git ls-files -z`.split("\x0")
   spec.bindir        = "exe"
@@ -36,7 +35,7 @@ SecureTransport-based builds might cause crashes in forking environment.
 
 For more info see https://github.com/curl/curl/issues/788
 }
-  spec.add_development_dependency "rake", "~> 10"
+  spec.add_development_dependency "rake", "~> 12.3.3"
   spec.add_development_dependency "bundler"
   spec.add_development_dependency "rspec", ">= 2.3.0"
   spec.add_development_dependency "simplecov", "~> 0.10"
