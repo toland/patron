@@ -34,8 +34,8 @@ module Patron
       :low_speed_time, :low_speed_limit, :progress_callback
     ]
 
-    attr_reader *READER_VARS
-    attr_writer *WRITER_VARS
+    attr_reader(*READER_VARS)
+    attr_writer(*WRITER_VARS)
 
     # Set the type of authentication to use for this request.
     #
