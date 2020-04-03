@@ -12,47 +12,63 @@ First, you instantiate a Session object. You can set a few
 default options on the Session instance that will be used by all subsequent
 requests:
 
-    sess = Patron::Session.new
-    sess.timeout = 10
-    sess.base_url = "http://myserver.com:9900"
-    sess.headers['User-Agent'] = 'myapp/1.0'
+```ruby
+sess = Patron::Session.new
+sess.timeout = 10
+sess.base_url = "http://myserver.com:9900"
+sess.headers['User-Agent'] = 'myapp/1.0'
+```
 
 You can set options with a hash in the constructor:
 
-    sess = Patron::Session.new({ :timeout => 10,
-                                 :base_url => 'http://myserver.com:9900',
-                                 :headers => {'User-Agent' => 'myapp/1.0'} } )
+```ruby
+sess = Patron::Session.new({ :timeout => 10,
+                             :base_url => 'http://myserver.com:9900',
+                             :headers => {'User-Agent' => 'myapp/1.0'} } )
+```
 
 Or the set options in a block:
 
-    sess = Patron::Session.new do |patron|
-        patron.timeout = 10
-        patron.base_url = 'http://myserver.com:9900'
-        patron.headers = {'User-Agent' => 'myapp/1.0'}
-    end
+```ruby
+sess = Patron::Session.new do |patron|
+    patron.timeout = 10
+    patron.base_url = 'http://myserver.com:9900'
+    patron.headers = {'User-Agent' => 'myapp/1.0'}
+end
+```
 
 Output debug log:
 
-    sess.enable_debug "/tmp/patron.debug"
+```ruby
+sess.enable_debug "/tmp/patron.debug"
+```
 
 The Session is used to make HTTP requests.
 
-    resp = sess.get("/foo/bar")
+```ruby
+resp = sess.get("/foo/bar")
+```
 
 Requests return a Response object:
 
-    if resp.status < 400
-      puts resp.body
-    end
+```ruby
+if resp.status < 400
+  puts resp.body
+end
+```
 
 The GET, HEAD, PUT, POST and DELETE operations are all supported.
 
-    sess.put("/foo/baz", "some data")
-    sess.delete("/foo/baz")
+```ruby
+sess.put("/foo/baz", "some data")
+sess.delete("/foo/baz")
+```
 
 You can ship custom headers with a single request:
 
-    sess.post("/foo/stuff", "some data", {"Content-Type" => "text/plain"})
+```ruby
+sess.post("/foo/stuff", "some data", {"Content-Type" => "text/plain"})
+```
 
 ## Threading
 
@@ -62,10 +78,12 @@ for doing concurrent requests. However, the actual code that interacts with libC
 so using multiple `Session` objects in different threads actually enables a high degree of parallelism.
 For sharing a resource of sessions between threads we recommend using the excellent [connection_pool](https://rubygems.org/gems/connection_pool) gem by Mike Perham.
 
-    patron_pool = ConnectionPool.new(size: 5, timeout: 5) { Patron::Session.new }
-    patron_pool.with do |session|
-      session.get(...)
-    end
+```ruby
+patron_pool = ConnectionPool.new(size: 5, timeout: 5) { Patron::Session.new }
+patron_pool.with do |session|
+  session.get(...)
+end
+```
 
 Sharing Session objects between requests will also allow you to benefit from persistent connections (connection reuse), see below.
 
