@@ -5,7 +5,6 @@ rvm:
 - 2.6.1
 - ruby-head
 
-sudo: false
 dist: trusty
 cache: bundler
 
