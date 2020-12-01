@@ -104,6 +104,14 @@ describe Patron::Session do
     FileUtils.rm tmpfile
   end
 
+  it "should follow a 307 redirect with Range headers" do
+    tmpfile = "/tmp/picture-fragment"
+    response = @session.get_file "/redirect-to-picture", tmpfile, {'Range' => 'bytes=0-3'}
+    expect(response.body).to be_nil
+    expect(File.size(tmpfile)).to eq(4)
+    FileUtils.rm tmpfile
+  end
+
   it "downloads a very large file" do
     tmpfile = "/tmp/large-succeeded"
     @session.get_file "/very-large", tmpfile
