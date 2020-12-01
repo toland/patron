@@ -102,7 +102,13 @@ RepetitiveHeaderServlet = Proc.new {|env|
 }
 
 PictureServlet = Proc.new {|env|
-  [200, {'Content-Type' => 'image/png'}, [File.read('./pic.png')]]
+  # Rack::File allows us to test Range support as well
+  env_with_adjusted_path = env.merge('PATH_INFO' => Rack::Utils.escape('/pic.png'))
+  Rack::File.new('./').call(env_with_adjusted_path)
+}
+
+RedirectToPictureServlet = Proc.new {|env|
+  [307, {'Location' => '/picture'}, []]
 }
 
 WrongContentLengthServlet = Proc.new {|env|
@@ -130,6 +136,7 @@ run Rack::URLMap.new({
   "/redirect" => RedirectServlet,
   "/evil-redirect" => EvilRedirectServlet,
   "/picture" => PictureServlet,
+  "/redirect-to-picture" => RedirectToPictureServlet,
   "/very-large" => LargeServlet,
   "/setcookie" => SetCookieServlet,
   "/repetitiveheader" => RepetitiveHeaderServlet,
