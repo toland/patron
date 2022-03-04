@@ -7,6 +7,14 @@ require 'securerandom'
 
 describe Patron::Session do
 
+  def yaml_load(str)
+    if RUBY_VERSION >= '3.1.0'
+      YAML::safe_load(str, permitted_classes: [OpenStruct])
+    else
+      YAML::load(str)
+    end
+  end
+
   before(:each) do
     @session = Patron::Session.new
     @session.base_url = "http://localhost:9001"
@@ -72,7 +80,7 @@ describe Patron::Session do
 
   it "should retrieve a url with :get" do
     response = @session.get("/test")
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.request_method).to be == "GET"
   end
 
@@ -91,7 +99,7 @@ describe Patron::Session do
     tmpfile = "/tmp/patron_test.yaml"
     response = @session.get_file "/test", tmpfile
     expect(response.body).to be_nil
-    body = YAML::load_file(tmpfile)
+    body = yaml_load(File.open(tmpfile).read)
     expect(body.request_method).to be == "GET"
     FileUtils.rm tmpfile
   end
@@ -143,33 +151,33 @@ describe Patron::Session do
   it "should not send the user-agent if it has been deleted from headers" do
     @session.headers.delete 'User-Agent'
     response = @session.get("/test")
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.header["user-agent"]).to be_nil
   end
   
   it "should set the default User-agent" do
     response = @session.get("/test")
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.header["user-agent"]).to be == [Patron.user_agent_string]
   end
 
   it "should include custom headers in a request" do
     response = @session.get("/test", {"User-Agent" => "PatronTest"})
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.header["user-agent"]).to be == ["PatronTest"]
   end
 
   it "should include default headers in a request, if they were defined" do
     @session.headers = {"User-Agent" => "PatronTest"}
     response = @session.get("/test")
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.header["user-agent"]).to be == ["PatronTest"]
   end
 
   it "should merge custom headers with session headers" do
     @session.headers["X-Test"] = "Testing"
     response = @session.get("/test", {"User-Agent" => "PatronTest"})
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.header["user-agent"]).to be == ["PatronTest"]
     expect(body.header["x-test"]).to be == ["Testing"]
   end
@@ -252,7 +260,7 @@ describe Patron::Session do
   it "should follow redirects by default" do
     @session.max_redirects = 1
     response = @session.get("/redirect")
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(response.status).to be == 200
     expect(body.path).to be == "/test"
   end
@@ -285,26 +293,26 @@ describe Patron::Session do
 
   it "should send a delete request with :delete" do
     response = @session.delete("/test")
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.request_method).to be == "DELETE"
   end
 
   it "should send a COPY request with :copy" do
     response = @session.copy("/test", "/test2")
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.request_method).to be == "COPY"
   end
 
   it "should include a Destination header in COPY requests" do
     response = @session.copy("/test", "/test2")
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.header['destination'].first).to be == "/test2"
   end
 
   it "should upload data with :get" do
     data = "upload data"
     response = @session.request(:get, "/test", {}, :data => data)
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.request_method).to be == "GET"
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
@@ -312,7 +320,7 @@ describe Patron::Session do
   it "should call to_s on the data being uploaded via GET if it is not already a String" do
     data = 12345
     response = @session.request(:get, "/test", {}, :data => data)
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.request_method).to be == "GET"
   end
   
@@ -323,7 +331,7 @@ describe Patron::Session do
     # you can have very deeply going queries, which are still technically GETs
     data = Random.new.bytes(1024 * 24)
     response = @session.request(:get, "/test", {}, :data => data)
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.request_method).to be == "GET"
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
@@ -331,7 +339,7 @@ describe Patron::Session do
   it "should upload data with :put" do
     data = Random.new.bytes(1024 * 24)
     response = @session.put("/test", data)
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.request_method).to be == "PUT"
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
@@ -342,7 +350,7 @@ describe Patron::Session do
     data.flush; data.rewind
     
     response = @session.put("/test", data, {'Expect' => ''})
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.request_method).to be == "PUT"
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
@@ -350,14 +358,14 @@ describe Patron::Session do
   it "should upload data with :patch" do
     data = "upload data"
     response = @session.patch("/testpatch", data)
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.body).to eq("upload data")
   end
 
   it "should upload data with :delete" do
     data = "upload data"
     response = @session.request(:delete, "/test", {}, :data => data)
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.request_method).to be == "DELETE"
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
@@ -368,7 +376,7 @@ describe Patron::Session do
 
   it "should upload a file with :put" do
     response = @session.put_file("/test", "LICENSE")
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.request_method).to be == "PUT"
   end
 
@@ -378,21 +386,21 @@ describe Patron::Session do
 
   it "should use chunked encoding when uploading a file with :put" do
     response = @session.put_file("/test", "LICENSE")
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.header['transfer-encoding'].first).to be == "chunked"
   end
   
   it "should call to_s on the data being uploaded via POST if it is not already a String" do
     data = 12345
     response = @session.post("/testpost", data)
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body['body']).to eq("12345")
   end
   
   it "should upload data with :post" do
     data = "upload data"
     response = @session.post("/test", data)
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.request_method).to be == "POST"
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
@@ -400,7 +408,7 @@ describe Patron::Session do
   it "should POST a hash of arguments as a urlencoded form" do
     data = {:foo => 123, 'baz' => '++hello world++'}
     response = @session.post("/testpost", data)
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body['content_type']).to be == "application/x-www-form-urlencoded"
     expect(body['body']).to match(/baz=%2B%2Bhello%20world%2B%2B/)
     expect(body['body']).to match(/foo=123/)
@@ -412,13 +420,13 @@ describe Patron::Session do
 
   it "should upload a file with :post" do
     response = @session.post_file("/test", "LICENSE")
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.request_method).to be == "POST"
   end
 
   it "should upload a multipart with :post" do
     response = @session.post_multipart("/test", { :test_data => "123" }, { :test_file => "LICENSE" } )
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.request_method).to be == "POST"
   end
 
@@ -428,7 +436,7 @@ describe Patron::Session do
 
   it "should use chunked encoding when uploading a file with :post" do
     response = @session.post_file("/test", "LICENSE")
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.header['transfer-encoding'].first).to be == "chunked"
   end
 
@@ -436,7 +444,7 @@ describe Patron::Session do
     @session.username = "foo"
     @session.password = "bar"
     response = @session.get("/test")
-    body = YAML::load(response.body)
+    body = yaml_load(response.body)
     expect(body.header['authorization']).to be == [encode_authz("foo", "bar")]
   end
 
@@ -455,12 +463,12 @@ describe Patron::Session do
   it "should handle cookies if set" do
     @session.handle_cookies
     response = @session.get("/setcookie").body
-    expect(YAML::load(response).header['cookie'].first).to be == "session_id=foo123"
+    expect(yaml_load(response).header['cookie'].first).to be == "session_id=foo123"
   end
 
   it "should not handle cookies by default" do
     response = @session.get("/setcookie").body
-    expect(YAML::load(response).header).to_not include('cookie')
+    expect(yaml_load(response).header).to_not include('cookie')
   end
 
   it "should ignore a wrong Content-Length when asked to" do
@@ -505,7 +513,7 @@ describe Patron::Session do
 
     expect {
       response = @session.get("/test")
-      body = YAML::load(response.body)
+      body = yaml_load(response.body)
     }.to_not raise_error
 
     expect(body.request_method).to be == "GET"
@@ -524,13 +532,13 @@ describe Patron::Session do
   
   it "should serialize query params and append them to the url" do
     response = @session.request(:get, "/test", {}, :query => {:foo => "bar"})
-    request = YAML::load(response.body)
+    request = yaml_load(response.body)
     expect(request.path + '?' + request.query_string).to be == "/test?foo=bar"
   end
 
   it "should merge parameters in the :query option with pre-existing query parameters" do
     response = @session.request(:get, "/test?foo=bar", {}, :query => {:baz => "quux"})
-    request = YAML::load(response.body)
+    request = yaml_load(response.body)
     expect(request.path + '?' + request.query_string).to be == "/test?foo=bar&baz=quux"
   end
 
