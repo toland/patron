@@ -146,9 +146,9 @@ module Patron
       if file_path
         path = Pathname(file_path).expand_path
         
-        if !File.exists?(file_path) && !File.writable?(path.dirname)
+        if !File.exist?(file_path) && !File.writable?(path.dirname)
           raise ArgumentError, "Can't create file #{path} (permission error)"
-        elsif File.exists?(file_path) && !File.writable?(file_path)
+        elsif File.exist?(file_path) && !File.writable?(file_path)
           raise ArgumentError, "Can't read or write file #{path} (permission error)"
         end
       else
