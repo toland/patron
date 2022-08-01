@@ -450,12 +450,14 @@ describe Patron::Session do
 
   it "should store cookies across multiple requests" do
     tf = Tempfile.new('cookiejar')
+    tf.close
     cookie_jar_path = tf.path
     
     @session.handle_cookies(cookie_jar_path)
     response = @session.get("/setcookie").body
     
-    cookie_jar_contents = tf.read
+    cookie_jar_contents = tf.open.read
+    tf.unlink
     expect(cookie_jar_contents).not_to be_empty
     expect(cookie_jar_contents).to include('Netscape HTTP Cookie File')
   end
