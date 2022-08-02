@@ -267,13 +267,22 @@ static VALUE session_escape(VALUE self, VALUE value) {
   char* escaped = NULL;
   VALUE retval = Qnil;
 
-  struct patron_curl_state* state = curl_easy_init();
-  escaped = curl_easy_escape(state->handle,
+#if LIBCURL_VERSION_NUM >= 0x075200
+  /* this is libCURLv7.82.0 or later, the curl parameter is ignored */
+  CURL *curl = NULL;
+#else
+  CURL* curl = curl_easy_init();
+#endif
+  escaped = curl_easy_escape(curl,
                              RSTRING_PTR(string),
                              (int) RSTRING_LEN(string));
 
   retval = rb_str_new2(escaped);
-  curl_easy_cleanup(state);
+#if LIBCURL_VERSION_NUM >= 0x075200
+  /* this is libCURLv7.82.0 or later, the curl parameter is ignored */
+#else
+  curl_easy_cleanup(curl);
+#endif
   curl_free(escaped);
 
   return retval;
@@ -290,15 +299,24 @@ static VALUE session_unescape(VALUE self, VALUE value) {
   char* unescaped = NULL;
   VALUE retval = Qnil;
 
-  struct patron_curl_state* state = curl_easy_init();
-  unescaped = curl_easy_unescape(state->handle,
+#if LIBCURL_VERSION_NUM >= 0x075200
+  /* this is libCURLv7.82.0 or later, the curl parameter is ignored */
+  CURL *curl = NULL;
+#else
+  CURL *curl = curl_easy_init();
+#endif
+  unescaped = curl_easy_unescape(curl,
                                  RSTRING_PTR(string),
                                  (int) RSTRING_LEN(string),
                                  NULL);
 
   retval = rb_str_new2(unescaped);
   curl_free(unescaped);
-  curl_easy_cleanup(state);
+#if LIBCURL_VERSION_NUM >= 0x075200
+  /* this is libCURLv7.82.0 or later, the curl parameter is ignored */
+#else
+  curl_easy_cleanup(curl);
+#endif
 
   return retval;
 }
