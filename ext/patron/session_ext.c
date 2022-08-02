@@ -966,11 +966,11 @@ void Init_session_ext() {
   rb_define_singleton_method(cSession, "unescape",   session_unescape,         1);
   rb_define_method(cSession, "unescape",       session_unescape,       1);
 
-  rb_define_method(cSession, "handle_request", session_handle_request, 1);
+  rb_define_private_method(cSession, "handle_request", session_handle_request, 1);
   rb_define_method(cSession, "reset",          session_interrupt,      0);
   rb_define_method(cSession, "interrupt",      session_interrupt,      0);
-  rb_define_method(cSession, "add_cookie_file", add_cookie_file, 1);
-  rb_define_method(cSession, "set_debug_file", set_debug_file, 1);
+  rb_define_private_method(cSession, "add_cookie_file", add_cookie_file, 1);
+  rb_define_private_method(cSession, "set_debug_file", set_debug_file, 1);
   rb_define_alias(cSession, "urlencode", "escape");
   rb_define_alias(cSession, "urldecode", "unescape");
 

@@ -103,8 +103,6 @@ module Patron
     # @see low_speed_time
     attr_accessor :low_speed_limit
 
-    private :handle_request, :add_cookie_file, :set_debug_file
-
     # @return [#call, nil] callable object that will be called with 4 arguments
     #    during request/response execution - `dltotal`, `dlnow`, `ultotal`, `ulnow`.
     #    All these arguments are in bytes.
