@@ -197,56 +197,65 @@ describe Patron::Session do
     expect {@session.get("/timeout?millis=400")}.to raise_error(Patron::TimeoutError)
   end
 
-  it "should raise an exception on timeout when reading from a slow resource" do
-    @session.timeout = 40
+  it "should raise an exception on timeout when reading from a slow resource and low speed limit is set" do
+    @session.timeout = 10 # Greater than the low_speed_time
     @session.low_speed_time = 2
     @session.low_speed_limit = 10
+
+    # Our test server starts sending the body only after 5 seconds. We should be able to abort
+    # by exceeding the low_speed_time.
+    started = Time.now.to_f
     expect {@session.get("/slow")}.to raise_error(Patron::TimeoutError)
+    delta_s = Time.now.to_f - started
+    # For some reason libCURL times out after 3 seconds instead of 2 sometimes.
+    expect(delta_s).to be_within(0.1).of(2).or be_within(0.1).of(3)
   end
 
   it "is able to terminate the thread that is running a slow request using Thread#kill (uses the custom unblock)" do
     t = Thread.new do
       session = Patron::Session.new
-      session.timeout = 40
+      session.timeout = 10 # Greater than the sleep duration
       session.base_url = "http://localhost:9001"
       session.get("/slow")
     end
 
-    # Our test server starts sending the body only after 20 seconds. We should be able to abort
+    # Our test server starts sending the body only after 5 seconds. We should be able to abort
     # using a signal during that time.
-    started = Time.now.to_i
-    sleep 5 # Less than what it takes for the server to respond
+    started = Time.now.to_f
+    sleep 2 # Less than what it takes for the server to respond
     t.kill # Kill the thread forcibly
-    t.join # wrap up the thread. If Patron is still busy there, this join call will still take 15s.
+    t.join # wrap up the thread. If Patron is still busy there, this join call will still take another 1s.
 
-    delta_s = Time.now.to_i - started
-    expect(delta_s).to be_within(2).of(5)
+    delta_s = Time.now.to_f - started
+    # For some reason libCURL times out after 3 seconds instead of 2 sometimes.
+    expect(delta_s).to be_within(0.1).of(2).or be_within(0.1).of(3)
   end
 
-  it "is able to terminate the thread that is running a slow request" do
+  it "is able to terminate the process that is running a slow request with SIGINT" do
     pid = Process.fork do
       trap('SIGINT') do
         exit # exit the process
       end
       session = Patron::Session.new
-      session.timeout = 40
+      session.timeout = 10 # Greater than the sleep duration
       session.base_url = "http://localhost:9001"
       session.get("/slow")
     end
 
-    # Our test server starts sending the body only after 20 seconds. We should be able to abort
+    # Our test server starts sending the body only after 5 seconds. We should be able to abort
     # using a signal during that time.
-    started = Time.now.to_i
-    sleep 5 # Less than what it takes for the server to respond
-    Process.kill("INT", pid) # Signal ourselves...
-    Process.wait(pid) # wrap up the process. If Patron is still busy there, this call will still take 15s.
-    delta_s = Time.now.to_i - started
-    expect(delta_s).to be_within(2).of(5)
+    started = Time.now.to_f
+    sleep 2 # Less than what it takes for the server to respond
+    Process.kill("INT", pid) # Signal the process...
+    Process.wait(pid) # wrap up the process. If Patron is still busy there, this call will still take another 1s.
+    delta_s = Time.now.to_f - started
+    # For some reason libCURL times out after 3 seconds instead of 2 sometimes.
+    expect(delta_s).to be_within(0.1).of(2).or be_within(0.1).of(3)
   end
 
   it "receives progress callbacks" do
     session = Patron::Session.new
-    session.timeout = 40
+    session.timeout = 10 # # Greater than the /slow respond time (5 seconds)
     session.base_url = "http://localhost:9001"
     callback_args = []
     session.progress_callback = Proc.new {|dltotal, dlnow, ultotal, ulnow|

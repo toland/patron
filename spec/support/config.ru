@@ -67,7 +67,7 @@ TimeoutServlet = Proc.new {|env|
 SlowServlet = Proc.new {|env|
   body = Enumerator.new do |y|
     y.yield 'x'
-    sleep 20
+    sleep 5
     y.yield 'rest of body'
   end
   [200, {'Content-Type' => 'text/plain'}, body]
