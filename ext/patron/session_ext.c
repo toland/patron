@@ -77,7 +77,7 @@ static size_t file_write_handler(void* stream, size_t size, size_t nmemb, FILE* 
 static int call_user_rb_progress_blk(void* vd_curl_state) {
   struct patron_curl_state* state = (struct patron_curl_state*)vd_curl_state;
   // Invoke the block with the array
-  VALUE blk_result = rb_funcall(state->user_progress_blk,
+  rb_funcall(state->user_progress_blk,
     rb_intern("call"), 4,
     LONG2NUM(state->dltotal),
     LONG2NUM(state->dlnow),
@@ -759,10 +759,10 @@ static VALUE create_response(VALUE self, CURL* curl, VALUE header_buffer, VALUE 
   args[0] = rb_str_new2(effective_url);
 
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
-  args[1] = INT2NUM(code);
+  args[1] = LONG2NUM(code);
 
   curl_easy_getinfo(curl, CURLINFO_REDIRECT_COUNT, &count);
-  args[2] = INT2NUM(count);
+  args[2] = LONG2NUM(count);
 
   args[3] = header_buffer;
   args[4] = body_buffer;
