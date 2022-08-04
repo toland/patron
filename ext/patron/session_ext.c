@@ -27,6 +27,8 @@ static VALUE eAborted = Qnil;
 
 struct patron_curl_state {
   CURL* handle;
+  CURL* base_handle;
+  CURLSH* share;
   char* upload_buf;
   FILE* download_file;
   FILE* debug_file;
@@ -175,20 +177,18 @@ static void session_close_debug_file(struct patron_curl_state *curl) {
 }
 
 /* Cleans up the patron_curl_state data when the Session object is garbage collected. */
-void session_free(struct patron_curl_state *curl) {
-  if (curl->handle) {
-    curl_easy_cleanup(curl->handle);
-    curl->handle = NULL;
-  }
+void session_free(struct patron_curl_state *state) {
+  curl_easy_cleanup(state->base_handle);
+  curl_share_cleanup(state->share);
 
-  session_close_debug_file(curl);
+  session_close_debug_file(state);
 
-  membuffer_destroy( &curl->header_buffer );
-  membuffer_destroy( &curl->body_buffer );
+  membuffer_destroy(&state->header_buffer);
+  membuffer_destroy(&state->body_buffer);
 
-  cs_list_remove(curl);
+  cs_list_remove(state);
 
-  free(curl);
+  free(state);
 }
 
 /* Allocates patron_curl_state data needed for a new Session object. */
@@ -206,16 +206,34 @@ VALUE session_alloc(VALUE klass) {
     reuse the TCP connection and can speed things up if the same resource - like a backend service -
     gets accessed over and over with requests.
   */
-  state->handle = curl_easy_init();
-  curl_easy_setopt(state->handle, CURLOPT_NOSIGNAL, 1);
-  curl_easy_setopt(state->handle, CURLOPT_NOPROGRESS, 0);
-  #if LIBCURL_VERSION_NUM >= 0x072000
-    /* this is libCURLv7.32.0 or later, supports CURLOPT_XFERINFOFUNCTION */
-    curl_easy_setopt(state->handle, CURLOPT_XFERINFOFUNCTION, &session_progress_handler);
-  #else
-    curl_easy_setopt(state->handle, CURLOPT_PROGRESSFUNCTION, &session_progress_handler);
-  #endif
-  curl_easy_setopt(state->handle, CURLOPT_PROGRESSDATA, state);
+  state->share = curl_share_init();
+  curl_share_setopt(state->share, CURLSHOPT_SHARE, CURL_LOCK_DATA_COOKIE);
+  curl_share_setopt(state->share, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
+  curl_share_setopt(state->share, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
+  curl_share_setopt(state->share, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
+  curl_share_setopt(state->share, CURLSHOPT_SHARE, CURL_LOCK_DATA_PSL);
+  state->base_handle = curl_easy_init();
+  curl_easy_setopt(state->base_handle, CURLOPT_SHARE, state->share);
+  curl_easy_setopt(state->base_handle, CURLOPT_WRITEFUNCTION, &session_write_handler);
+  curl_easy_setopt(state->base_handle, CURLOPT_WRITEDATA, &state->body_buffer);
+  curl_easy_setopt(state->base_handle, CURLOPT_HEADERFUNCTION, &session_write_handler);
+  curl_easy_setopt(state->base_handle, CURLOPT_HEADERDATA, &state->header_buffer);
+  curl_easy_setopt(state->base_handle, CURLOPT_NOSIGNAL, 1);
+  curl_easy_setopt(state->base_handle, CURLOPT_NOPROGRESS, 0);
+#if LIBCURL_VERSION_NUM >= 0x072000
+  /* this is libCURLv7.32.0 or later, supports CURLOPT_XFERINFOFUNCTION */
+  curl_easy_setopt(state->base_handle, CURLOPT_XFERINFOFUNCTION, &session_progress_handler);
+#else
+  curl_easy_setopt(state->base_handle, CURLOPT_PROGRESSFUNCTION, &session_progress_handler);
+#endif
+  curl_easy_setopt(state->base_handle, CURLOPT_PROGRESSDATA, state);
+#ifdef CURLPROTO_HTTP
+  // Security: do not allow Curl to go looking on gopher/SMTP etc.
+  // Must prevent situations like this:
+  // https://hackerone.com/reports/115748
+  curl_easy_setopt(state->base_handle, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+  curl_easy_setopt(state->base_handle, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+#endif
 
   return obj;
 }
@@ -442,7 +460,7 @@ static void set_request_body(struct patron_curl_state* state, VALUE stringable_o
  */
 static void set_options_from_request(VALUE self, VALUE request) {
   struct patron_curl_state* state = get_patron_curl_state(self);
-  CURL* curl = state->handle;
+  CURL* curl = curl_easy_duphandle(state->base_handle);
 
   ID    action                = Qnil;
   VALUE headers               = Qnil;
@@ -462,6 +480,9 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE a_c_encoding          = rb_funcall(request, rb_intern("automatic_content_encoding"), 0);
   VALUE download_byte_limit   = rb_funcall(request, rb_intern("download_byte_limit"), 0);
   VALUE maybe_progress_proc   = rb_funcall(request, rb_intern("progress_callback"), 0);
+
+  state->handle = curl;
+  curl_easy_setopt(curl, CURLOPT_SHARE, state->share);
 
   if (RTEST(download_byte_limit)) {
     state->download_byte_limit = FIX2INT(download_byte_limit);
@@ -484,7 +505,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
   }
 
   action = SYM2ID(action_name);
-  if(rb_funcall(request, rb_intern("force_ipv4"), 0)) {
+  if (RTEST(rb_funcall(request, rb_intern("force_ipv4"), 0))) {
     curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
   }
   if (action == rb_intern("get")) {
@@ -587,13 +608,6 @@ static void set_options_from_request(VALUE self, VALUE request) {
   }
   curl_easy_setopt(curl, CURLOPT_URL, StringValuePtr(url));
   
-#ifdef CURLPROTO_HTTP
-  // Security: do not allow Curl to go looking on gopher/SMTP etc.
-  // Must prevent situations like this:
-  // https://hackerone.com/reports/115748
-  curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
-  curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
-#endif
     
   timeout = rb_funcall(request, rb_intern("timeout"), 0);
   if (RTEST(timeout)) {
@@ -731,11 +745,6 @@ static void set_options_from_request(VALUE self, VALUE request) {
   if (RTEST(buffer_size)) {
      curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, NUM2LONG(buffer_size));
   }
-
-  if(state->debug_file) {
-    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1);
-    curl_easy_setopt(curl, CURLOPT_STDERR, state->debug_file);
-  }
 }
 
 /* Use the info in a Curl handle to create a new Response object. */
@@ -796,27 +805,9 @@ void session_ubf_abort(void* patron_state) {
 static VALUE perform_request(VALUE self) {
   struct patron_curl_state *state = get_patron_curl_state(self);
   CURL* curl = state->handle;
-  membuffer* header_buffer = NULL;
-  membuffer* body_buffer = NULL;
   CURLcode ret = 0;
 
   state->interrupt = 0;            /* clear the interrupt flag */
-
-  header_buffer = &state->header_buffer;
-  body_buffer = &state->body_buffer;
-
-  membuffer_clear(header_buffer);
-  membuffer_clear(body_buffer);
-
-  /* headers */
-  curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &session_write_handler);
-  curl_easy_setopt(curl, CURLOPT_HEADERDATA, header_buffer);
-
-  /* body */
-  if (!state->download_file) {
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &session_write_handler);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, body_buffer);
-  }
 
   ret = (CURLcode) rb_thread_call_without_gvl(
           (void *(*)(void *)) curl_easy_perform, curl,
@@ -824,9 +815,9 @@ static VALUE perform_request(VALUE self) {
         );
 
   if (CURLE_OK == ret) {
-    VALUE header_str = membuffer_to_rb_str(header_buffer);
+    VALUE header_str = membuffer_to_rb_str(&state->header_buffer);
     VALUE body_str = Qnil;
-    if (!state->download_file) { body_str = membuffer_to_rb_str(body_buffer); }
+    if (!state->download_file) { body_str = membuffer_to_rb_str(&state->body_buffer); }
     
     curl_easy_setopt(curl, CURLOPT_COOKIELIST, "FLUSH"); // Flush cookies to the cookie jar
     
@@ -841,16 +832,19 @@ static VALUE perform_request(VALUE self) {
  */
 static VALUE cleanup(VALUE self) {
   struct patron_curl_state *state = get_patron_curl_state(self);
-  curl_easy_reset(state->handle);
+  curl_easy_cleanup(state->handle);
 
   if (state->headers) {
     curl_slist_free_all(state->headers);
     state->headers = NULL;
   }
+  membuffer_clear(&state->header_buffer);
 
   if (state->download_file) {
     fclose(state->download_file);
     state->download_file = NULL;
+  } else {
+    membuffer_clear(&state->body_buffer);
   }
 
   if (state->request_body_file) {
@@ -910,7 +904,7 @@ static VALUE session_interrupt(VALUE self) {
  */
 static VALUE add_cookie_file(VALUE self, VALUE file) {
   struct patron_curl_state *state = get_patron_curl_state(self);
-  CURL* curl = state->handle;
+  CURL* curl = state->base_handle;
   char* file_path = NULL;
 
   // FIXME: http://websystemsengineering.blogspot.nl/2013/03/curloptcookiefile-vs-curloptcookiejar.html
@@ -931,7 +925,8 @@ static VALUE add_cookie_file(VALUE self, VALUE file) {
  */
 static VALUE set_debug_file(VALUE self, VALUE file) {
   struct patron_curl_state *state = get_patron_curl_state(self);
-  char* file_path = RSTRING_PTR(file);
+  CURL *curl = state->base_handle;
+  char *file_path = RSTRING_PTR(file);
 
   session_close_debug_file(state);
 
@@ -940,6 +935,8 @@ static VALUE set_debug_file(VALUE self, VALUE file) {
   } else {
     state->debug_file = stderr;
   }
+  curl_easy_setopt(curl, CURLOPT_VERBOSE, 1);
+  curl_easy_setopt(curl, CURLOPT_STDERR, state->debug_file);
 
   return self;
 }

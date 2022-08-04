@@ -262,7 +262,11 @@ describe Patron::Session do
       callback_args << [dltotal, dlnow, ultotal, ulnow]
     }
     session.get("/slow")
+    expect(callback_args).not_to be_empty
 
+    # Make sure that the callback setting was not reset.
+    callback_args = []
+    session.get("/slow")
     expect(callback_args).not_to be_empty
   end
 
