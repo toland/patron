@@ -19,4 +19,8 @@ if CONFIG['CC'] =~ /gcc/
   $CFLAGS << ' -pedantic -Wall'
 end
 
+if CONFIG['CC'] =~ /clang/
+  $CFLAGS << ' -pedantic -Wall -Wno-void-pointer-to-enum-cast'
+end
+
 create_makefile 'patron/session_ext'

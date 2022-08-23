@@ -253,6 +253,16 @@ describe Patron::Session do
     expect(body.request_method).to be == "GET"
   end
 
+  it "should allow to specify insecure mode per-request" do
+    @session.insecure = false
+    expect {
+      @session.request(:get, "/test", {}, insecure: true)
+    }.not_to raise_error
+    expect {
+      @session.request(:get, "/test", {})
+    }.to raise_error(Patron::Error)
+  end
+
   it "should work with different SSL versions" do
     ['TLSv1_0','TLSv1_1'].each do |version|
       @session.ssl_version = version

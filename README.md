@@ -89,7 +89,7 @@ Sharing Session objects between requests will also allow you to benefit from per
 
 ## Persistent connections
 
-Patron follows the libCURL guidelines on [connection reuse.](https://ec.haxx.se/libcurl-connectionreuse.html) If you create the Session
+Patron follows the libCURL guidelines on [connection reuse.](https://everything.curl.dev/libcurl/connectionreuse.html) If you create the Session
 object once and use it for multiple requests, the same libCURL handle is going to be used across these requests and if requests go to
 the same hostname/port/protocol the connection should get reused.
 
