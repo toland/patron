@@ -25,13 +25,13 @@ module Patron
       :ignore_content_length, :multipart, :action, :timeout, :connect_timeout, :dns_cache_timeout,
       :max_redirects, :headers, :auth_type, :upload_data, :buffer_size, :cacert,
       :ssl_version, :http_version, :automatic_content_encoding, :force_ipv4, :download_byte_limit,
-      :low_speed_time, :low_speed_limit, :progress_callback
+      :low_speed_time, :low_speed_limit, :progress_callback, :nameservers
     ]
 
     WRITER_VARS = [
       :url, :username, :password, :file_name, :proxy, :proxy_type, :insecure, :dns_cache_timeout,
       :ignore_content_length, :multipart, :cacert, :ssl_version, :http_version, :automatic_content_encoding, :force_ipv4, :download_byte_limit,
-      :low_speed_time, :low_speed_limit, :progress_callback
+      :low_speed_time, :low_speed_limit, :progress_callback, :nameservers
     ]
 
     attr_reader(*READER_VARS)
@@ -149,6 +149,20 @@ module Patron
       @buffer_size = buffer_size != nil ? buffer_size.to_i : nil
     end
 
+    # Sets the nameservers for the CURL request
+    # Can be an array or comma separated string of nameservers.
+    # Setting the value to nil will disable the given nameservers.
+    #
+    # @param new_nameservers=[String, Array, nil] list of nameservers
+    def nameservers=(new_nameservers)
+      unless %w[String Array NilClass].include?(new_nameservers.class.to_s)
+        raise ArgumentError, "Nameservers must be a string or an array of strings"
+      end
+      new_nameservers = new_nameservers.join(",") if new_nameservers.is_a?(Array)
+
+      @nameservers = new_nameservers
+    end
+
     # Returns the set HTTP authentication string for basic authentication.
     #
     # @return [String, NilClass] the authentication string or nil if no authentication is used
@@ -181,7 +195,7 @@ module Patron
     def marshal_dump
       [ @url, @username, @password, @file_name, @proxy, @proxy_type, @insecure,
         @ignore_content_length, @multipart, @action, @timeout, @connect_timeout,
-        @max_redirects, @headers, @auth_type, @upload_data, @buffer_size, @cacert ]
+        @max_redirects, @headers, @auth_type, @upload_data, @buffer_size, @cacert, @nameservers ]
     end
 
     # Reinstates instance variables from a marshaled representation
@@ -190,7 +204,7 @@ module Patron
     def marshal_load(data)
       @url, @username, @password, @file_name, @proxy, @proxy_type, @insecure,
       @ignore_content_length, @multipart, @action, @timeout, @connect_timeout,
-      @max_redirects, @headers, @auth_type, @upload_data, @buffer_size, @cacert = data
+      @max_redirects, @headers, @auth_type, @upload_data, @buffer_size, @cacert, @nameservers = data
     end
 
   end

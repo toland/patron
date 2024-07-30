@@ -480,6 +480,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE a_c_encoding          = rb_funcall(request, rb_intern("automatic_content_encoding"), 0);
   VALUE download_byte_limit   = rb_funcall(request, rb_intern("download_byte_limit"), 0);
   VALUE maybe_progress_proc   = rb_funcall(request, rb_intern("progress_callback"), 0);
+  VALUE nameservers           = Qnil;
 
   state->handle = curl;
   curl_easy_setopt(curl, CURLOPT_SHARE, state->share);
@@ -744,6 +745,11 @@ static void set_options_from_request(VALUE self, VALUE request) {
   buffer_size = rb_funcall(request, rb_intern("buffer_size"), 0);
   if (RTEST(buffer_size)) {
      curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, NUM2LONG(buffer_size));
+  }
+
+  nameservers = rb_funcall(request, rb_intern("nameservers"), 0);
+  if (RTEST(nameservers)) {
+    curl_easy_setopt(curl, CURLOPT_DNS_SERVERS, StringValuePtr(nameservers));
   }
 }
 

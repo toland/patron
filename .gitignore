@@ -8,3 +8,5 @@ pkg
 tmp
 .yardoc
 Gemfile.lock
+
+.idea/

@@ -108,6 +108,9 @@ module Patron
     #    All these arguments are in bytes.
     attr_accessor :progress_callback
 
+    # @return [String] DNS nameservers to use for requests.
+    attr_accessor :nameservers
+
     # Create a new Session object for performing requests.
     #
     # @param args[Hash] options for the Session (same names as the writable attributes of the Session)
@@ -380,6 +383,7 @@ module Patron
         req.buffer_size            = options.fetch :buffer_size,           self.buffer_size
         req.download_byte_limit    = options.fetch :download_byte_limit,   self.download_byte_limit
         req.progress_callback      = options.fetch :progress_callback,     self.progress_callback
+        req.nameservers            = options.fetch :nameservers,           self.nameservers
         req.multipart              = options[:multipart]
         req.upload_data            = options[:data]
         req.file_name              = options[:file]
