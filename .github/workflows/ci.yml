@@ -8,11 +8,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ruby-version: [2.4, 2.5, 2.6, 2.7, '3.0', 3.1]
+        ruby-version: [2.4, 2.5, 2.6, 2.7, '3.0', 3.1, 3.2, 3.3]
 
     name: Specs - Ruby ${{ matrix.ruby-version }}
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Install libcurl
       run: |
         sudo apt-get update
