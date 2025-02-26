@@ -1,8 +1,10 @@
 source 'https://rubygems.org'
 
-# Specify your gem's dependencies in patron.gemspec
+# Runtime dependencies are in the gemspec
 gemspec
 
+# Gems below are only needed for Patron development
+# and tests
 gem "rake", ">= 12.3.3"
 gem "rspec", ">= 2.3.0"
 gem "simplecov", "~> 0.10"
@@ -12,3 +14,4 @@ gem "rack", rack_version
 gem "puma", '~> 3.11'
 gem "rake-compiler"
 gem "webrick", "~> 1.8"
+gem "base64"
