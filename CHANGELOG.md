@@ -1,3 +1,18 @@
+### 0.13.4
+
+* Format README a bit better using code fences
+* Depend explicitly on base64 for running tests
+* Remove C code used for Ruby support below < 2.4 (GVL unlock etc.) and drop support for these versions
+* In tests, close Tempfiles before allowing libcurl to use them (cookie jar)
+* Fix incorrect ptr type in uses of `curl_easy_escape` / `_unescape`
+* Define methods on `Session` as private instance methods from C instead of privatising them from Ruby
+* Speed up the /slow endpoint test
+* Remove use of `curl_easy_reset`. This should fix the bug with sessions resetting each other's state during `session_free`
+
+### 0.13.3
+
+* Run Puma test servers in separate processes instead of threads
+
 ### 0.13.2
 
 * Eagerly initialize libCURL handle when creating the Session instance instead of initializing it lazily
