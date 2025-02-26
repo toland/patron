@@ -117,10 +117,11 @@ WrongContentLengthServlet = Proc.new {|env|
 
 # Serves a substantial amount of data
 LargeServlet = Proc.new {|env|
+  rng = Random.new
   len = 15 * 1024 * 1024
   body = Enumerator.new do |y|
     15.times do
-      y.yield(Random.new.bytes(1024 * 1024))
+      y.yield(rng.bytes(1024 * 1024))
     end
   end
   [200, {'Content-Type' => 'binary/octet-stream', 'Content-Length' => len.to_s}, body]
