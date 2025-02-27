@@ -8,8 +8,8 @@ Gem::Specification.new do |spec|
   spec.version     = Patron::VERSION
   spec.licenses    = ["MIT"]
   spec.platform    = Gem::Platform::RUBY
-  spec.authors     = ["Phillip Toland"]
-  spec.email       = ["phil.toland@gmail.com"]
+  spec.authors     = ["Aeryn Riley Dowling-Toland"]
+  spec.email       = ["aeryn.toland@gmail.com"]
   spec.homepage    = "https://github.com/toland/patron"
   spec.summary     = "Patron HTTP Client"
   spec.description = "Ruby HTTP client library based on libcurl"
@@ -31,7 +31,7 @@ Gem::Specification.new do |spec|
   spec.extensions   = ["ext/patron/extconf.rb"]
   spec.post_install_message = %q{
 Thank you for installing Patron. On OSX, make sure you are using libCURL with OpenSSL.
-SecureTransport-based builds might cause crashes in forking environment.
+SecureTransport-based builds might cause crashes in forking environments.
 
 For more info see https://github.com/curl/curl/issues/788
 }
