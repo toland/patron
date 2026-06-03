@@ -177,7 +177,9 @@ static void session_close_debug_file(struct patron_curl_state *curl) {
 }
 
 /* Cleans up the patron_curl_state data when the Session object is garbage collected. */
-void session_free(struct patron_curl_state *state) {
+static void session_free(void *ptr) {
+  struct patron_curl_state *state = ptr;
+
   curl_easy_cleanup(state->base_handle);
   curl_share_cleanup(state->share);
 
@@ -191,14 +193,28 @@ void session_free(struct patron_curl_state *state) {
   ruby_xfree(state);
 }
 
-static void session_mark(struct patron_curl_state *state) {
+static void session_mark(void *ptr) {
+  struct patron_curl_state *state = ptr;
+
   rb_gc_mark(state->user_progress_blk);
 }
+
+static size_t session_memsize(const void *ptr) {
+  const struct patron_curl_state *state = ptr;
+
+  return sizeof(*state) + state->header_buffer.capacity + state->body_buffer.capacity;
+}
+
+static const rb_data_type_t patron_session_data_type = {
+  "Patron::Session",
+  {session_mark, session_free, session_memsize,},
+  0, 0, RUBY_TYPED_FREE_IMMEDIATELY,
+};
 
 /* Allocates patron_curl_state data needed for a new Session object. */
 VALUE session_alloc(VALUE klass) {
   struct patron_curl_state* state;
-  VALUE obj = Data_Make_Struct(klass, struct patron_curl_state, session_mark, session_free, state);
+  VALUE obj = TypedData_Make_Struct(klass, struct patron_curl_state, &patron_session_data_type, state);
 
   membuffer_init(&state->header_buffer);
   membuffer_init(&state->body_buffer);
@@ -245,7 +261,7 @@ VALUE session_alloc(VALUE klass) {
 /* Return the patron_curl_state from the ruby VALUE which is the Session instance. */
 static struct patron_curl_state* get_patron_curl_state(VALUE self) {
   struct patron_curl_state* state;
-  Data_Get_Struct(self, struct patron_curl_state, state);
+  TypedData_Get_Struct(self, struct patron_curl_state, &patron_session_data_type, state);
   return state;
 }
 
