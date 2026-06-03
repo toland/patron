@@ -188,7 +188,7 @@ void session_free(struct patron_curl_state *state) {
 
   cs_list_remove(state);
 
-  free(state);
+  ruby_xfree(state);
 }
 
 static void session_mark(struct patron_curl_state *state) {
