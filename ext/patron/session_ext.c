@@ -191,10 +191,14 @@ void session_free(struct patron_curl_state *state) {
   free(state);
 }
 
+static void session_mark(struct patron_curl_state *state) {
+  rb_gc_mark(state->user_progress_blk);
+}
+
 /* Allocates patron_curl_state data needed for a new Session object. */
 VALUE session_alloc(VALUE klass) {
   struct patron_curl_state* state;
-  VALUE obj = Data_Make_Struct(klass, struct patron_curl_state, NULL, session_free, state);
+  VALUE obj = Data_Make_Struct(klass, struct patron_curl_state, session_mark, session_free, state);
 
   membuffer_init(&state->header_buffer);
   membuffer_init(&state->body_buffer);
