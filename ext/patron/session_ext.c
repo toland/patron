@@ -74,7 +74,7 @@ static size_t file_write_handler(void* stream, size_t size, size_t nmemb, FILE* 
   }
 }
 
-static int call_user_rb_progress_blk(void* vd_curl_state) {
+static void *call_user_rb_progress_blk(void *vd_curl_state) {
   struct patron_curl_state* state = (struct patron_curl_state*)vd_curl_state;
   // Invoke the block with the array
   rb_funcall(state->user_progress_blk,
@@ -83,7 +83,7 @@ static int call_user_rb_progress_blk(void* vd_curl_state) {
     LONG2NUM(state->dlnow),
     LONG2NUM(state->ultotal),
     LONG2NUM(state->ulnow));
-  return 0;
+  return NULL;
 }
 
 
@@ -103,7 +103,7 @@ static int session_progress_handler(void* clientp, size_t dltotal, size_t dlnow,
   // `call_user_rb_progress_blk`. TODO: use the retval of that proc
   // to permit premature abort 
   if(RTEST(state->user_progress_blk)) {
-    rb_thread_call_with_gvl((void *(*)(void *)) call_user_rb_progress_blk, (void*)state);
+    rb_thread_call_with_gvl(call_user_rb_progress_blk, state);
   }
 
   // Set the interrupt if the download byte limit has been reached
@@ -795,6 +795,18 @@ static VALUE select_error(CURLcode code) {
 }
 
 
+struct perform_context {
+  CURL *curl;
+  CURLcode code;
+};
+
+static void *perform_without_gvl(void *ptr) {
+  struct perform_context *context = ptr;
+
+  context->code = curl_easy_perform(context->curl);
+  return NULL;
+}
+
 /* Uses as the unblocking function when the thread running Patron gets
    signaled. The important difference with session_interrupt is that we
    are not allowed to touch any Ruby structures while outside the GIL,
@@ -809,16 +821,13 @@ void session_ubf_abort(void* patron_state) {
 static VALUE perform_request(VALUE self) {
   struct patron_curl_state *state = get_patron_curl_state(self);
   CURL* curl = state->handle;
-  CURLcode ret = 0;
+  struct perform_context context = {curl, 0};
 
   state->interrupt = 0;            /* clear the interrupt flag */
 
-  ret = (CURLcode) rb_thread_call_without_gvl(
-          (void *(*)(void *)) curl_easy_perform, curl,
-          session_ubf_abort, (void*)state
-        );
+  rb_thread_call_without_gvl(perform_without_gvl, &context, session_ubf_abort, state);
 
-  if (CURLE_OK == ret) {
+  if (CURLE_OK == context.code) {
     VALUE header_str = membuffer_to_rb_str(&state->header_buffer);
     VALUE body_str = Qnil;
     if (!state->download_file) { body_str = membuffer_to_rb_str(&state->body_buffer); }
@@ -827,7 +836,7 @@ static VALUE perform_request(VALUE self) {
     
     return create_response(self, curl, header_str, body_str);
   } else {
-    rb_raise(select_error(ret), "%s", state->error_buf);
+    rb_raise(select_error(context.code), "%s", state->error_buf);
   }
 }
 
