@@ -15,3 +15,4 @@ gem "puma", '~> 3.11'
 gem "rake-compiler"
 gem "webrick", "~> 1.8"
 gem "base64"
+gem "ostruct"
