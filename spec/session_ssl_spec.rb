@@ -162,10 +162,12 @@ describe Patron::Session do
   end
 
   it "should upload a file in full using chunked encoding with :put" do
-    # Patron streams the file using Transfer-Encoding: chunked. We can no longer
-    # assert on the header directly because puma de-chunks the request server-side
-    # (it deletes Transfer-Encoding and sets Content-Length to the decoded size),
-    # so we verify the file arrives intact instead.
+    # Patron streams the upload with Transfer-Encoding: chunked and no Content-Length
+    # (verifiable on the wire). Transfer-Encoding is a hop-by-hop header (RFC 7230 3.3.1):
+    # a conformant server decodes the chunked framing and hands the Rack app a plain,
+    # length-delimited body without the header. webrick and puma 3 leaked it into the
+    # Rack env, which the old assertion relied on; puma 5 does not. No server-visible
+    # trace of chunked framing remains, so we assert the file arrives intact instead.
     response = @session.put_file("/test", "LICENSE")
     body = yaml_load(response.body)
     expect(body.request_method).to be == "PUT"
@@ -210,10 +212,12 @@ describe Patron::Session do
   end
 
   it "should upload a file in full using chunked encoding with :post" do
-    # Patron streams the file using Transfer-Encoding: chunked. We can no longer
-    # assert on the header directly because puma de-chunks the request server-side
-    # (it deletes Transfer-Encoding and sets Content-Length to the decoded size),
-    # so we verify the file arrives intact instead.
+    # Patron streams the upload with Transfer-Encoding: chunked and no Content-Length
+    # (verifiable on the wire). Transfer-Encoding is a hop-by-hop header (RFC 7230 3.3.1):
+    # a conformant server decodes the chunked framing and hands the Rack app a plain,
+    # length-delimited body without the header. webrick and puma 3 leaked it into the
+    # Rack env, which the old assertion relied on; puma 5 does not. No server-visible
+    # trace of chunked framing remains, so we assert the file arrives intact instead.
     response = @session.post_file("/test", "LICENSE")
     body = yaml_load(response.body)
     expect(body.request_method).to be == "POST"
