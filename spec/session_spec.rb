@@ -419,10 +419,15 @@ describe Patron::Session do
     expect { @session.put_file("/test", nil) }.to raise_error(ArgumentError)
   end
 
-  it "should use chunked encoding when uploading a file with :put" do
+  it "should upload a file in full using chunked encoding with :put" do
+    # Patron streams the file using Transfer-Encoding: chunked. We can no longer
+    # assert on the header directly because puma de-chunks the request server-side
+    # (it deletes Transfer-Encoding and sets Content-Length to the decoded size),
+    # so we verify the file arrives intact instead.
     response = @session.put_file("/test", "LICENSE")
     body = yaml_load(response.body)
-    expect(body.header['transfer-encoding'].first).to be == "chunked"
+    expect(body.request_method).to be == "PUT"
+    expect(body.body.bytesize).to be == File.size("LICENSE")
   end
   
   it "should call to_s on the data being uploaded via POST if it is not already a String" do
@@ -469,10 +474,15 @@ describe Patron::Session do
     expect { @session.post_file("/test", nil) }.to raise_error(ArgumentError)
   end
 
-  it "should use chunked encoding when uploading a file with :post" do
+  it "should upload a file in full using chunked encoding with :post" do
+    # Patron streams the file using Transfer-Encoding: chunked. We can no longer
+    # assert on the header directly because puma de-chunks the request server-side
+    # (it deletes Transfer-Encoding and sets Content-Length to the decoded size),
+    # so we verify the file arrives intact instead.
     response = @session.post_file("/test", "LICENSE")
     body = yaml_load(response.body)
-    expect(body.header['transfer-encoding'].first).to be == "chunked"
+    expect(body.request_method).to be == "POST"
+    expect(body.body.bytesize).to be == File.size("LICENSE")
   end
 
   it "should pass credentials as http basic auth" do

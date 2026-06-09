@@ -11,7 +11,7 @@ gem "simplecov", "~> 0.10"
 gem "yard", "~> 0.9.20"
 rack_version = RUBY_VERSION >= "3.3" ? "~> 2.2" : "~> 2.1.4"
 gem "rack", rack_version
-gem "puma", '~> 3.11'
+gem "puma", '~> 5.6'
 gem "rake-compiler"
 gem "webrick", "~> 1.8"
 gem "base64"
