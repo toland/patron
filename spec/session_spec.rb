@@ -419,10 +419,17 @@ describe Patron::Session do
     expect { @session.put_file("/test", nil) }.to raise_error(ArgumentError)
   end
 
-  it "should use chunked encoding when uploading a file with :put" do
+  it "should upload a file in full using chunked encoding with :put" do
+    # Patron streams the upload with Transfer-Encoding: chunked and no Content-Length
+    # (verifiable on the wire). Transfer-Encoding is a hop-by-hop header (RFC 7230 3.3.1):
+    # a conformant server decodes the chunked framing and hands the Rack app a plain,
+    # length-delimited body without the header. webrick and puma 3 leaked it into the
+    # Rack env, which the old assertion relied on; puma 5 does not. No server-visible
+    # trace of chunked framing remains, so we assert the file arrives intact instead.
     response = @session.put_file("/test", "LICENSE")
     body = yaml_load(response.body)
-    expect(body.header['transfer-encoding'].first).to be == "chunked"
+    expect(body.request_method).to be == "PUT"
+    expect(body.body.bytesize).to be == File.size("LICENSE")
   end
   
   it "should call to_s on the data being uploaded via POST if it is not already a String" do
@@ -469,10 +476,17 @@ describe Patron::Session do
     expect { @session.post_file("/test", nil) }.to raise_error(ArgumentError)
   end
 
-  it "should use chunked encoding when uploading a file with :post" do
+  it "should upload a file in full using chunked encoding with :post" do
+    # Patron streams the upload with Transfer-Encoding: chunked and no Content-Length
+    # (verifiable on the wire). Transfer-Encoding is a hop-by-hop header (RFC 7230 3.3.1):
+    # a conformant server decodes the chunked framing and hands the Rack app a plain,
+    # length-delimited body without the header. webrick and puma 3 leaked it into the
+    # Rack env, which the old assertion relied on; puma 5 does not. No server-visible
+    # trace of chunked framing remains, so we assert the file arrives intact instead.
     response = @session.post_file("/test", "LICENSE")
     body = yaml_load(response.body)
-    expect(body.header['transfer-encoding'].first).to be == "chunked"
+    expect(body.request_method).to be == "POST"
+    expect(body.body.bytesize).to be == File.size("LICENSE")
   end
 
   it "should pass credentials as http basic auth" do

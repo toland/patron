@@ -5,10 +5,14 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.allow-failure || false }}
     strategy:
       fail-fast: false
       matrix:
         ruby-version: ["2.4", "3.0", "3.4.1", "4.0.5"]
+        include:
+          - ruby-version: "head"
+            allow-failure: true
 
     name: Specs - Ruby ${{ matrix.ruby-version }}
     steps:
