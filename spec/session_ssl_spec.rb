@@ -161,17 +161,21 @@ describe Patron::Session do
     expect { @session.put_file("/test", nil) }.to raise_error(ArgumentError)
   end
 
-  it "should upload a file in full using chunked encoding with :put" do
-    # Patron streams the upload with Transfer-Encoding: chunked and no Content-Length
-    # (verifiable on the wire). Transfer-Encoding is a hop-by-hop header (RFC 7230 3.3.1):
-    # a conformant server decodes the chunked framing and hands the Rack app a plain,
-    # length-delimited body without the header. webrick and puma 3 leaked it into the
-    # Rack env, which the old assertion relied on; puma 5 does not. No server-visible
-    # trace of chunked framing remains, so we assert the file arrives intact instead.
-    response = @session.put_file("/test", "LICENSE")
-    body = yaml_load(response.body)
-    expect(body.request_method).to be == "PUT"
-    expect(body.body.bytesize).to be == File.size("LICENSE")
+  it "should upload a file with :put using chunked transfer-encoding" do
+    # Transfer-Encoding is a hop-by-hop header (RFC 7230 3.3.1): a conformant server
+    # decodes the chunked framing and never exposes the header to the application, so
+    # we capture the raw request to assert how Patron actually frames the upload.
+    captured = capture_request(ssl: true) do |url|
+      session = Patron::Session.new
+      session.base_url = url
+      session.insecure = true
+      session.timeout = 5
+      session.put_file("/test", "LICENSE")
+    end
+    expect(captured.request_line).to start_with("PUT ")
+    expect(captured.headers["transfer-encoding"]).to be == "chunked"
+    expect(captured.headers).to_not have_key("content-length")
+    expect(captured.body.bytesize).to be == File.size("LICENSE")
   end
 
   it "should upload data with :post" do
@@ -211,17 +215,20 @@ describe Patron::Session do
     expect { @session.post_file("/test", nil) }.to raise_error(ArgumentError)
   end
 
-  it "should upload a file in full using chunked encoding with :post" do
-    # Patron streams the upload with Transfer-Encoding: chunked and no Content-Length
-    # (verifiable on the wire). Transfer-Encoding is a hop-by-hop header (RFC 7230 3.3.1):
-    # a conformant server decodes the chunked framing and hands the Rack app a plain,
-    # length-delimited body without the header. webrick and puma 3 leaked it into the
-    # Rack env, which the old assertion relied on; puma 5 does not. No server-visible
-    # trace of chunked framing remains, so we assert the file arrives intact instead.
-    response = @session.post_file("/test", "LICENSE")
-    body = yaml_load(response.body)
-    expect(body.request_method).to be == "POST"
-    expect(body.body.bytesize).to be == File.size("LICENSE")
+  it "should upload a file with :post using chunked transfer-encoding" do
+    # See the :put counterpart above: Transfer-Encoding is hop-by-hop and invisible
+    # to the application, so we capture the raw request to assert the framing.
+    captured = capture_request(ssl: true) do |url|
+      session = Patron::Session.new
+      session.base_url = url
+      session.insecure = true
+      session.timeout = 5
+      session.post_file("/test", "LICENSE")
+    end
+    expect(captured.request_line).to start_with("POST ")
+    expect(captured.headers["transfer-encoding"]).to be == "chunked"
+    expect(captured.headers).to_not have_key("content-length")
+    expect(captured.body.bytesize).to be == File.size("LICENSE")
   end
 
   it "should handle cookies if set" do
