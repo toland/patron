@@ -21,6 +21,6 @@ class PatronTestServer
     else
       '0.0.0.0'
     end
-    Rack::Handler::Puma.run(APP, {:Port => port.to_i, :Verbose => true, :Host => host})
+    Rack::Handler::Puma.run(APP, :Port => port.to_i, :Verbose => true, :Host => host)
   end
 end
