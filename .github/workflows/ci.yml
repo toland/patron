@@ -16,7 +16,7 @@ jobs:
 
     name: Specs - Ruby ${{ matrix.ruby-version }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Install libcurl
       run: |
         sudo apt-get update
