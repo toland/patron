@@ -1,6 +1,6 @@
 # Patron
 
-[![Build Status](https://travis-ci.org/toland/patron.svg?branch=master)](https://travis-ci.org/toland/patron)
+[![Tests](https://github.com/toland/patron/actions/workflows/ci.yml/badge.svg)](https://github.com/toland/patron/actions/workflows/ci.yml)
 
 Patron is a Ruby HTTP client library based on libcurl. It does not try to expose
 the full "power" (read complexity) of libcurl but instead tries to provide a
