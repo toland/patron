@@ -84,6 +84,19 @@ describe Patron::Session do
     expect(body.request_method).to be == "GET"
   end
 
+  it "should expose curl's cumulative transfer timings" do
+    timings = @session.get("/test").timings
+
+    expect(timings.keys).to contain_exactly(
+      :namelookup, :connect, :appconnect, :pretransfer, :starttransfer, :redirect, :total
+    )
+    expect(timings.values).to all(be_a(Float).and(be >= 0))
+    expect(timings[:namelookup]).to be <= timings[:connect]
+    expect(timings[:connect]).to be <= timings[:starttransfer]
+    expect(timings[:starttransfer]).to be <= timings[:total]
+    expect(timings[:total]).to be > 0
+  end
+
   it "should use full base url" do
     @session.base_url = "http://localhost:9001/api/v1"
     response = @session.get("/test")

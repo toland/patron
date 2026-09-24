@@ -1,3 +1,7 @@
+### Unreleased
+
+* Expose libcurl's transfer timings (name lookup, connect, TLS, first byte, total) as `Response#timings`
+
 ### 0.13.4
 
 * Format README a bit better using code fences

@@ -767,6 +767,28 @@ static void set_options_from_request(VALUE self, VALUE request) {
   }
 }
 
+/* Store one of curl's transfer marks (seconds since the request started) under +key+. */
+static void set_timing(CURL* curl, VALUE timings, const char* key, CURLINFO info) {
+  double seconds = 0;
+  if (curl_easy_getinfo(curl, info, &seconds) == CURLE_OK) {
+    rb_hash_aset(timings, ID2SYM(rb_intern(key)), rb_float_new(seconds));
+  }
+}
+
+/* curl's cumulative transfer marks: namelookup <= connect <= appconnect <= pretransfer
+ * <= starttransfer <= total. They are read after the transfer, so they cost no GVL time. */
+static VALUE create_timings(CURL* curl) {
+  VALUE timings = rb_hash_new();
+  set_timing(curl, timings, "namelookup",    CURLINFO_NAMELOOKUP_TIME);
+  set_timing(curl, timings, "connect",       CURLINFO_CONNECT_TIME);
+  set_timing(curl, timings, "appconnect",    CURLINFO_APPCONNECT_TIME);
+  set_timing(curl, timings, "pretransfer",   CURLINFO_PRETRANSFER_TIME);
+  set_timing(curl, timings, "starttransfer", CURLINFO_STARTTRANSFER_TIME);
+  set_timing(curl, timings, "redirect",      CURLINFO_REDIRECT_TIME);
+  set_timing(curl, timings, "total",         CURLINFO_TOTAL_TIME);
+  return timings;
+}
+
 /* Use the info in a Curl handle to create a new Response object. */
 static VALUE create_response(VALUE self, CURL* curl, VALUE header_buffer, VALUE body_buffer) {
   VALUE args[6] = { Qnil, Qnil, Qnil, Qnil, Qnil, Qnil };
@@ -774,6 +796,7 @@ static VALUE create_response(VALUE self, CURL* curl, VALUE header_buffer, VALUE 
   long code = 0;
   long count = 0;
   VALUE responseKlass = Qnil;
+  VALUE response = Qnil;
   
   curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &effective_url);
   args[0] = rb_str_new2(effective_url);
@@ -789,7 +812,10 @@ static VALUE create_response(VALUE self, CURL* curl, VALUE header_buffer, VALUE 
   args[5] = rb_funcall(self, rb_intern("default_response_charset"), 0);
   
   responseKlass = rb_funcall(self, rb_intern("response_class"), 0);
-  return rb_class_new_instance(6, args, responseKlass);
+  response = rb_class_new_instance(6, args, responseKlass);
+  /* Set after construction so custom response classes keep their #initialize signature. */
+  rb_iv_set(response, "@timings", create_timings(curl));
+  return response;
 }
 
 /* Raise an exception based on the Curl error code. */
