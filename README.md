@@ -70,6 +70,14 @@ You can ship custom headers with a single request:
 sess.post("/foo/stuff", "some data", {"Content-Type" => "text/plain"})
 ```
 
+libcurl's transfer timings are available on the response, in seconds since the request started:
+
+```ruby
+resp = sess.get("/foo/bar")
+resp.timings # => {namelookup: 0.001, connect: 0.012, appconnect: 0.045, pretransfer: 0.045,
+             #     starttransfer: 0.210, redirect: 0.0, total: 0.214}
+```
+
 ## Threading
 
 By itself, the `Patron::Session` objects are not thread safe (each `Session` holds a single `curl_state` pointer

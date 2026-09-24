@@ -28,6 +28,11 @@ module Patron
     #    to be a valid charset name, just stored. To check the charset for validity, use #body_decodable?
     attr_reader :charset
 
+    # @return [Hash{Symbol => Float}, nil] curl's cumulative transfer marks in seconds since the request
+    #   started: `:namelookup`, `:connect`, `:appconnect`, `:pretransfer`, `:starttransfer`, `:redirect`
+    #   and `:total`. `nil` when the response was not built from a curl transfer (e.g. a stub).
+    attr_reader :timings
+
     # Overridden so that the output is shorter and there is no response body printed
     def inspect
       # Avoid spamming the console with the header and body data
