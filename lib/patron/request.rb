@@ -25,13 +25,13 @@ module Patron
       :ignore_content_length, :multipart, :action, :timeout, :connect_timeout, :dns_cache_timeout,
       :max_redirects, :headers, :auth_type, :upload_data, :buffer_size, :cacert,
       :ssl_version, :http_version, :automatic_content_encoding, :force_ipv4, :download_byte_limit,
-      :low_speed_time, :low_speed_limit, :progress_callback, :ssl_cert, :ssl_cert_type, :ssl_key_password
+      :low_speed_time, :low_speed_limit, :progress_callback, :ssl_cert, :ssl_cert_type, :ssl_key, :ssl_key_password
     ]
 
     WRITER_VARS = [
       :url, :username, :password, :file_name, :proxy, :proxy_type, :insecure, :dns_cache_timeout,
       :ignore_content_length, :multipart, :cacert, :ssl_version, :http_version, :automatic_content_encoding, :force_ipv4, :download_byte_limit,
-      :low_speed_time, :low_speed_limit, :progress_callback, :ssl_cert, :ssl_cert_type, :ssl_key_password
+      :low_speed_time, :low_speed_limit, :progress_callback, :ssl_cert, :ssl_cert_type, :ssl_key, :ssl_key_password
     ]
 
     attr_reader(*READER_VARS)
@@ -182,7 +182,7 @@ module Patron
       [ @url, @username, @password, @file_name, @proxy, @proxy_type, @insecure,
         @ignore_content_length, @multipart, @action, @timeout, @connect_timeout,
         @max_redirects, @headers, @auth_type, @upload_data, @buffer_size, @cacert,
-        @ssl_cert, @ssl_cert_type, @ssl_key_password ]
+        @ssl_cert, @ssl_cert_type, @ssl_key, @ssl_key_password ]
     end
 
     # Reinstates instance variables from a marshaled representation
@@ -192,7 +192,7 @@ module Patron
       @url, @username, @password, @file_name, @proxy, @proxy_type, @insecure,
       @ignore_content_length, @multipart, @action, @timeout, @connect_timeout,
       @max_redirects, @headers, @auth_type, @upload_data, @buffer_size, @cacert,
-      @ssl_cert, @ssl_cert_type, @ssl_key_password = data
+      @ssl_cert, @ssl_cert_type, @ssl_key, @ssl_key_password = data
     end
 
   end

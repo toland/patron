@@ -73,6 +73,10 @@ module Patron
     # @return [String] the client SSL certificate file type, should be one of "P12" (PKCS#12) or "PEM"
     attr_accessor :ssl_cert_type
 
+    # @return [String] path to the private key for the client SSL certificate, if it is not bundled with
+    #   the certificate itself (as it is with PKCS#12)
+    attr_accessor :ssl_key
+
     # @return [String] the password for the client SSL certificate private key
     attr_accessor :ssl_key_password
 
@@ -387,6 +391,7 @@ module Patron
         req.cacert                 = options.fetch :cacert,                self.cacert
         req.ssl_cert               = options.fetch :ssl_cert,              self.ssl_cert
         req.ssl_cert_type          = options.fetch :ssl_cert_type,         self.ssl_cert_type
+        req.ssl_key                = options.fetch :ssl_key,               self.ssl_key
         req.ssl_key_password       = options.fetch :ssl_key_password,      self.ssl_key_password
         req.ignore_content_length  = options.fetch :ignore_content_length, self.ignore_content_length
         req.buffer_size            = options.fetch :buffer_size,           self.buffer_size

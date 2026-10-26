@@ -74,4 +74,16 @@ describe Patron::Request do
   it "should be able to serialize and deserialize itself" do
     expect(Marshal.load(Marshal.dump(@request))).to eql(@request)
   end
+
+  it "should preserve the client certificate settings when serialized" do
+    @request.ssl_cert = "client.pem"
+    @request.ssl_cert_type = "PEM"
+    @request.ssl_key = "client_key.pem"
+    @request.ssl_key_password = "secret"
+    restored = Marshal.load(Marshal.dump(@request))
+    expect(restored.ssl_cert).to eq("client.pem")
+    expect(restored.ssl_cert_type).to eq("PEM")
+    expect(restored.ssl_key).to eq("client_key.pem")
+    expect(restored.ssl_key_password).to eq("secret")
+  end
 end

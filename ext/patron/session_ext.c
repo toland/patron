@@ -24,6 +24,7 @@ static VALUE ePartialFileError = Qnil;
 static VALUE eTimeoutError = Qnil;
 static VALUE eTooManyRedirects = Qnil;
 static VALUE eAborted = Qnil;
+static VALUE eClientCertificateError = Qnil;
 
 struct patron_curl_state {
   CURL* handle;
@@ -496,6 +497,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE ssl_version           = Qnil;
   VALUE ssl_cert              = Qnil;
   VALUE ssl_cert_type         = Qnil;
+  VALUE ssl_key               = Qnil;
   VALUE ssl_key_password      = Qnil;
   VALUE http_version          = Qnil;
   VALUE buffer_size           = Qnil;
@@ -769,6 +771,11 @@ static void set_options_from_request(VALUE self, VALUE request) {
     curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE, StringValuePtr(ssl_cert_type));
   }
 
+  ssl_key = rb_funcall(request, rb_intern("ssl_key"), 0);
+  if(RTEST(ssl_key)) {
+    curl_easy_setopt(curl, CURLOPT_SSLKEY, StringValuePtr(ssl_key));
+  }
+
   ssl_key_password = rb_funcall(request, rb_intern("ssl_key_password"), 0);
   if(RTEST(ssl_key_password)) {
     curl_easy_setopt(curl, CURLOPT_KEYPASSWD, StringValuePtr(ssl_key_password));
@@ -848,6 +855,7 @@ static VALUE select_error(CURLcode code) {
     case CURLE_OPERATION_TIMEDOUT:    error = eTimeoutError;        break;
     case CURLE_TOO_MANY_REDIRECTS:    error = eTooManyRedirects;    break;
     case CURLE_ABORTED_BY_CALLBACK:   error = eAborted;             break;
+    case CURLE_SSL_CERTPROBLEM:       error = eClientCertificateError; break;
     default: error = ePatronError;
   }
 
@@ -1038,6 +1046,7 @@ void Init_session_ext() {
   eTimeoutError = rb_const_get(mPatron, rb_intern("TimeoutError"));
   eTooManyRedirects = rb_const_get(mPatron, rb_intern("TooManyRedirects"));
   eAborted = rb_const_get(mPatron, rb_intern("Aborted"));
+  eClientCertificateError = rb_const_get(mPatron, rb_intern("ClientCertificateError"));
 
   rb_define_module_function(mPatron, "libcurl_version",       libcurl_version, 0);
   rb_define_module_function(mPatron, "libcurl_version_exact", libcurl_version_exact, 0);

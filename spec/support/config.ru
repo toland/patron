@@ -127,6 +127,12 @@ LargeServlet = Proc.new {|env|
   [200, {'Content-Type' => 'binary/octet-stream', 'Content-Length' => len.to_s}, body]
 }
 
+# Echoes the subject of the client certificate Puma verified, if any
+PeerCertServlet = Proc.new {|env|
+  subject = env['puma.peercert'] ? env['puma.peercert'].subject.to_s : 'none'
+  [200, {'Content-Type' => 'text/plain', 'Content-Length' => subject.bytesize.to_s}, [subject]]
+}
+
 run Rack::URLMap.new({
   "/" => Proc.new {|env| [200, {'Content-Length' => '2'}, ['Welcome']]},
   "/test" => Readback,
@@ -143,4 +149,5 @@ run Rack::URLMap.new({
   "/repetitiveheader" => RepetitiveHeaderServlet,
   "/wrongcontentlength" => WrongContentLengthServlet,
   "/gzip-compressed" => GzipServlet,  
+  "/peercert" => PeerCertServlet,
 })

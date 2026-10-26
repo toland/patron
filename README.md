@@ -78,6 +78,24 @@ resp.timings # => {namelookup: 0.001, connect: 0.012, appconnect: 0.045, pretran
              #     starttransfer: 0.210, redirect: 0.0, total: 0.214}
 ```
 
+To authenticate with a client certificate (mutual TLS), point Patron at a PKCS#12 bundle:
+
+```ruby
+sess.ssl_cert = "/path/to/client.p12"
+sess.ssl_cert_type = "P12"
+sess.ssl_key_password = "secret"
+```
+
+or at a PEM certificate with a separate private key:
+
+```ruby
+sess.ssl_cert = "/path/to/client.pem"
+sess.ssl_key = "/path/to/client_key.pem"
+sess.ssl_key_password = "secret" # if the key is encrypted
+```
+
+If the certificate or key can't be loaded (wrong password, missing file) the request raises `Patron::ClientCertificateError`.
+
 ## Threading
 
 By itself, the `Patron::Session` objects are not thread safe (each `Session` holds a single `curl_state` pointer
