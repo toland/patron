@@ -378,6 +378,17 @@ describe Patron::Session do
       expect { @session.get("/peercert") }.to raise_error(Patron::ClientCertificateError)
     end
 
+    it "fails when the server does not trust the client certificate" do
+      @session.ssl_cert = File.join(certs, 'rogue_client.p12')
+      @session.ssl_cert_type = 'P12'
+      @session.ssl_key_password = 'patron'
+      # The certificate loads fine on our end, so it is the server refusing us and not a ClientCertificateError
+      expect { @session.get("/peercert") }.to raise_error { |e|
+        expect(e).to be_kind_of(Patron::Error)
+        expect(e).not_to be_kind_of(Patron::ClientCertificateError)
+      }
+    end
+
     it "fails when no client certificate is presented" do
       # Depending on the TLS version the server rejects us either during or right after the handshake
       expect { @session.get("/peercert") }.to raise_error(Patron::Error)
