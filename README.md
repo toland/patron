@@ -95,6 +95,9 @@ sess.ssl_key_password = "secret" # if the key is encrypted
 ```
 
 If the certificate or key can't be loaded (wrong password, missing file) the request raises `Patron::ClientCertificateError`.
+This depends on the TLS library libcurl is built against: with GnuTLS these surface as a plain `Patron::Error`.
+Client certificates are tested with the OpenSSL and LibreSSL backends - libcurl's Secure Transport backend
+can't load a PEM certificate from a file at all.
 
 ## Threading
 

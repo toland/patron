@@ -70,10 +70,10 @@ module Patron
     # @return [String] path to the client SSL certificate file, or `nil` if no client certificate is used
     attr_accessor :ssl_cert
 
-    # @return [String] the client SSL certificate file type, should be one of "P12" (PKCS#12) or "PEM"
+    # @return [String] the client SSL certificate file type: "PEM" (the libcurl default), "DER" or "P12" (PKCS#12)
     attr_accessor :ssl_cert_type
 
-    # @return [String] path to the private key for the client SSL certificate, if it is not bundled with
+    # @return [String] path to the PEM private key for the client SSL certificate, if it is not bundled with
     #   the certificate itself (as it is with PKCS#12)
     attr_accessor :ssl_key
 

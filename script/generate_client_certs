@@ -1,8 +1,8 @@
-# Regenerates the client certificate fixtures used by the mutual TLS specs.
-# Run with `ruby spec/support/certs/generate_client_certs.rb`
+#!/usr/bin/env ruby
+# Regenerates the client certificate fixtures used by the mutual TLS specs
 require 'openssl'
 
-DIR = __dir__
+DIR = File.expand_path('../spec/support/certs', __dir__)
 PASSWORD = 'patron'
 NOT_BEFORE = Time.utc(2025, 1, 1)
 NOT_AFTER = Time.utc(2045, 1, 1)
