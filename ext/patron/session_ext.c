@@ -494,6 +494,9 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE insecure              = Qnil;
   VALUE cacert                = Qnil;
   VALUE ssl_version           = Qnil;
+  VALUE ssl_cert              = Qnil;
+  VALUE ssl_cert_type         = Qnil;
+  VALUE ssl_key_password      = Qnil;
   VALUE http_version          = Qnil;
   VALUE buffer_size           = Qnil;
   VALUE action_name           = rb_funcall(request, rb_intern("action"), 0);
@@ -754,6 +757,21 @@ static void set_options_from_request(VALUE self, VALUE request) {
     else {
       rb_raise(eUnsupportedHTTPVersion, "Unsupported HTTP version: %s", version);
     }
+  }
+
+  ssl_cert = rb_funcall(request, rb_intern("ssl_cert"), 0);
+  if(RTEST(ssl_cert)) {
+    curl_easy_setopt(curl, CURLOPT_SSLCERT, StringValuePtr(ssl_cert));
+  }
+
+  ssl_cert_type = rb_funcall(request, rb_intern("ssl_cert_type"), 0);
+  if(RTEST(ssl_cert_type)) {
+    curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE, StringValuePtr(ssl_cert_type));
+  }
+
+  ssl_key_password = rb_funcall(request, rb_intern("ssl_key_password"), 0);
+  if(RTEST(ssl_key_password)) {
+    curl_easy_setopt(curl, CURLOPT_KEYPASSWD, StringValuePtr(ssl_key_password));
   }
 
   cacert = rb_funcall(request, rb_intern("cacert"), 0);

@@ -67,6 +67,15 @@ module Patron
     # @return [String] path to the CA file used for certificate verification, or `nil` if CURL default is used
     attr_accessor :cacert
 
+    # @return [String] path to the client SSL certificate file, or `nil` if no client certificate is used
+    attr_accessor :ssl_cert
+
+    # @return [String] the client SSL certificate file type, should be one of "P12" (PKCS#12) or "PEM"
+    attr_accessor :ssl_cert_type
+
+    # @return [String] the password for the client SSL certificate private key
+    attr_accessor :ssl_key_password
+
     # @return [Boolean] whether Content-Range and Content-Length headers should be ignored
     attr_accessor :ignore_content_length
 
@@ -376,6 +385,9 @@ module Patron
         req.ssl_version            = options.fetch :ssl_version,           self.ssl_version
         req.http_version           = options.fetch :http_version,          self.http_version
         req.cacert                 = options.fetch :cacert,                self.cacert
+        req.ssl_cert               = options.fetch :ssl_cert,              self.ssl_cert
+        req.ssl_cert_type          = options.fetch :ssl_cert_type,         self.ssl_cert_type
+        req.ssl_key_password       = options.fetch :ssl_key_password,      self.ssl_key_password
         req.ignore_content_length  = options.fetch :ignore_content_length, self.ignore_content_length
         req.buffer_size            = options.fetch :buffer_size,           self.buffer_size
         req.download_byte_limit    = options.fetch :download_byte_limit,   self.download_byte_limit
