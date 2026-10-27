@@ -465,9 +465,8 @@ describe Patron::Session do
   end
 
   it "keeps a request body built by #to_s alive for the duration of the transfer" do
-    # The body String only exists as the return value of #to_s. libcurl reads it
-    # from its buffer while the GVL is released, so it must be kept from being
-    # collected until the transfer is done. GC.stress makes the window reliable.
+    # The body only exists as the return value of #to_s, and libcurl reads it
+    # while the GVL is released - GC.stress makes that window reliable
     payload = Random.new.bytes(64 * 1024)
     body_object = Object.new
     body_object.define_singleton_method(:to_s) { payload + '' }
@@ -556,8 +555,8 @@ describe Patron::Session do
   end
 
   it "sends multipart field names and binary values intact" do
-    # Symbol keys get stringified into temporaries libcurl must copy rather than
-    # point at, and a value with NUL bytes must not be cut at the first one.
+    # A Symbol key gets stringified into a temporary libcurl must copy,
+    # and a value with NUL bytes must survive past the first one
     value = "before\0middle\0after".b
     response = @session.post_multipart("/test", { :sym_key => value }, { :test_file => "LICENSE" })
     body = yaml_load(response.body)
@@ -659,7 +658,7 @@ describe Patron::Session do
     expect(refused.first.message).to include("another thread")
     expect(outcomes - refused).to be == [:completed]
 
-    # The Session is free again once the in-flight request is done
+    # ...and is free again once the in-flight request is done
     expect(session.get("/test").status).to be == 200
   end
 
