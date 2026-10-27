@@ -122,8 +122,6 @@ end
 
 Sharing Session objects between requests will also allow you to benefit from persistent connections (connection reuse), see below.
 
-Patron is Ractor-safe: a `Session` created inside a Ractor can be used there like anywhere else.
-
 ## Persistent connections
 
 Every `Session` owns a libcurl multi handle with its own connection cache, plus a share handle for
@@ -153,6 +151,32 @@ end
 
 Each fiber needs its own `Session`, just like each thread does. `Async::Task#stop` and
 `Task#with_timeout` interrupt a request in flight the same way `Thread#kill` and `Timeout` do.
+
+## Ractors
+
+Patron works from non-main Ractors, so Ractors give you parallelism for the Ruby side of your
+requests as well, not just for the waits. A `Session` belongs to the Ractor that created it: Ruby refuses
+to copy, move or share one (`Ractor::Error`), so create the `Session` inside the Ractor and ship
+`Response` objects out. A worker pool looks like this on Ruby 4.0:
+
+```ruby
+results = Ractor::Port.new
+workers = 4.times.map do
+  Ractor.new(results) do |results|
+    session = Patron::Session.new(timeout: 10)
+    while (url = Ractor.receive)
+      results << Ractor.make_shareable(session.get(url))
+    end
+  end
+end
+urls.each_with_index { |url, i| workers[i % workers.size].send(url) }
+responses = urls.size.times.map { results.receive }
+```
+
+`Ractor.make_shareable` on the `Response` is optional: it saves copying the body when the Response crosses
+over, and a shareable (frozen) `Response` still decodes its body. A `Patron::Error` raised inside the
+Ractor comes out of `Ractor#value` as the `cause` of a `Ractor::RemoteError`, `curl_code` and all.
+`Patron::Request` objects can be made shareable and used from any Ractor too.
 
 ## How the GVL is handled
 

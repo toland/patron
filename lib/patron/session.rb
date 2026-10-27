@@ -18,7 +18,8 @@ module Patron
   # A Session owns a libcurl multi handle with its connection cache, so requests to the
   # same host reuse connections. A Session performs one request at a time: use one Session
   # per thread (or per fiber). Performing a request while another thread is already
-  # performing one on the same Session raises Patron::Error.
+  # performing one on the same Session raises Patron::Error. A Session belongs to the Ractor
+  # that created it and cannot be sent to or shared with another one; Requests and Responses can.
   class Session
 
     # @return [Numeric] HTTP connection timeout in seconds. Defaults to 1 second.

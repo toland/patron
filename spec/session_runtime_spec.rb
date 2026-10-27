@@ -218,19 +218,6 @@ describe Patron::Session, :session do
     end
   end
 
-  describe "with Ractors" do
-    it "can escape strings and perform requests from a non-main Ractor" do
-      skip "Ractors are not available" unless defined?(Ractor)
-      ractor = Ractor.new do
-        session = Patron::Session.new
-        session.base_url = "http://localhost:#{HTTP_PORT}"
-        [Patron::Session.escape("a b"), session.get("/test").status]
-      end
-      result = ractor.respond_to?(:value) ? ractor.value : ractor.take
-      expect(result).to eq(["a%20b", 200])
-    end
-  end
-
   describe "#response_class" do
     it "receives keyword arguments" do
       custom = Class.new do

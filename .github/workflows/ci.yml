@@ -129,12 +129,13 @@ jobs:
       # The ruby process itself is under valgrind (bundle exec only sets up the environment).
       # Specs tagged :timing assert on wall-clock windows that valgrind's slowdown breaks.
       # Specs tagged :fibers switch fiber stacks, which memcheck reports as invalid reads inside
-      # Ruby's coroutine code and io-event's selector, none of it ours.
+      # Ruby's coroutine code and io-event's selector, none of it ours. Specs tagged :ractors
+      # skip on the 3.4 used here anyway, and would spawn Ractor threads under memcheck otherwise.
       run: |
         bundle exec valgrind --error-exitcode=99 --leak-check=no --undef-value-errors=no \
           --child-silent-after-fork=yes --num-callers=30 \
           --suppressions=spec/support/valgrind.supp \
-          ruby -S rspec --tag ~timing --tag ~fibers
+          ruby -S rspec --tag ~timing --tag ~fibers --tag ~ractors
 
   malloc-check:
     runs-on: ubuntu-latest

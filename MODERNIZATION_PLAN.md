@@ -179,6 +179,19 @@ several (happy eyeballs), `rb_fiber_scheduler_kernel_sleep` while it has none (t
 calling fiber yields, other fibers on the thread run, `Async::Task#stop` and `with_timeout` unwind through
 the existing `rb_ensure`. No API change: a `Session` used inside `Async { }` just stops blocking the thread.
 
+### Phase 5c: Ractors (branch `ractors`, stacked on 5a)
+
+Audit on Ruby 4.0.9: with `rb_ext_ractor_safe(true)` and no mutable C statics, every Session feature
+(requests, multipart, cookies, file downloads, debug output, progress callbacks, compaction, eight Ractors
+in parallel) already worked from a non-main Ractor. What did not: the compat shim's warn-once Hash lived in
+a module ivar (`Ractor::IsolationError`), and `decoded_body`/`inspectable_body` memoized into a frozen
+(shareable) Response (`FrozenError`). Both fixed in Ruby. A Session cannot cross Ractors: Ruby refuses to
+copy or move any T_DATA, and `make_shareable` needs `RUBY_TYPED_FROZEN_SHAREABLE`, which a Session must
+not claim since its struct is written during a request. That is the documented model: one Session per
+Ractor, Responses (optionally `make_shareable`) travel. Specs target the Ruby 4.0 API (`Ractor::Port`,
+`#value`, `#join`) and skip on 3.x. Found along the way: `curl_easy_duphandle` drops `CURLOPT_SHARE`,
+so cookies never persisted across requests in 1.0 (fixed in the 1.0 branch).
+
 ### Phase 5b (design parked, see issue #210): `MultiSession`
 
 Decided shape, from the discussion on 2026-10-27:

@@ -33,7 +33,10 @@ team's guidance in `doc/efficient_extensions.md`. It requires **Ruby 3.3+** and 
 
 * The `Session` TypedData is write-barrier protected and compaction-aware; the request body is pinned
   only while libcurl reads it; memory size is reported to `ObjectSpace`
-* The extension declares itself Ractor-safe: Patron can be used from non-main Ractors
+* The extension declares itself Ractor-safe: Patron can be used from non-main Ractors. A `Session`
+  belongs to the Ractor that created it (Ruby refuses to copy, move or share one); `Response` and
+  `Request` objects can be made shareable, and a frozen `Response` still decodes its body. The 0.x
+  compatibility warnings are tracked per Ractor. Covered by specs on Ruby 4.0+
 * Statically held exception classes are registered with the GC (they could dangle under compaction before)
 * The global list of live sessions, the `at_exit` hook and the bundled `sglib.h` are gone
 

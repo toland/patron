@@ -6,12 +6,13 @@
 # its require in session.rb and spec/compat_spec.rb. See https://github.com/toland/patron/issues/209
 module Patron
   module Compat
-    @warned = {}
+    # Kept per Ractor since a non-main Ractor may not touch module state, so each Ractor warns once
+    def self.warned = Ractor.current[:patron_compat_warned] ||= {}
 
     # uplevel counts frames up to the user's call site: deprecated -> shim method -> caller
     def self.deprecated(form, replacement, uplevel: 2)
-      return if @warned[form]
-      @warned[form] = true
+      return if warned[form]
+      warned[form] = true
       warn "Patron: #{form} is deprecated and will be removed in Patron 1.1, use #{replacement} instead (https://github.com/toland/patron/issues/209)", uplevel: uplevel
     end
 

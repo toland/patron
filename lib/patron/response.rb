@@ -103,6 +103,7 @@ module Patron
     # @return [String, nil]
     def decoded_body
       return unless @body
+      return decode_body(true) if frozen? # a shareable Response may not memoize
       @decoded_body ||= decode_body(true)
     end
 
@@ -116,6 +117,7 @@ module Patron
     # @return [String, nil]
     def inspectable_body
       return unless @body
+      return decode_body(false) if frozen?
       @inspectable_body ||= decode_body(false)
     end
 
