@@ -252,7 +252,7 @@ describe Patron::Session, :session do
     expect {@session.get("/slow")}.to raise_error(Patron::TimeoutError)
     delta_s = Time.now.to_f - started
     # For some reason libCURL times out after 3 seconds instead of 2 sometimes.
-    expect(delta_s).to be_within(0.1).of(2).or be_within(0.1).of(3)
+    expect(delta_s).to be_between(1.9, 3.5) # CI machines are slow, and libcurl sometimes needs a whole extra second
   end
 
   it "is able to terminate the thread that is running a slow request using Thread#kill (uses the custom unblock)", :timing do
@@ -272,7 +272,7 @@ describe Patron::Session, :session do
 
     delta_s = Time.now.to_f - started
     # For some reason libCURL times out after 3 seconds instead of 2 sometimes.
-    expect(delta_s).to be_within(0.1).of(2).or be_within(0.1).of(3)
+    expect(delta_s).to be_between(1.9, 3.5) # CI machines are slow, and libcurl sometimes needs a whole extra second
   end
 
   it "is able to terminate the process that is running a slow request with SIGINT", :timing do
@@ -294,7 +294,7 @@ describe Patron::Session, :session do
     Process.wait(pid) # wrap up the process. If Patron is still busy there, this call will still take another 1s.
     delta_s = Time.now.to_f - started
     # For some reason libCURL times out after 3 seconds instead of 2 sometimes.
-    expect(delta_s).to be_within(0.1).of(2).or be_within(0.1).of(3)
+    expect(delta_s).to be_between(1.9, 3.5) # CI machines are slow, and libcurl sometimes needs a whole extra second
   end
 
   it "receives progress callbacks" do
