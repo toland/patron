@@ -418,6 +418,27 @@ describe Patron::Session do
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
 
+  it "keeps a request body built by #to_s alive for the duration of the transfer" do
+    # The body String only exists as the return value of #to_s. libcurl reads it
+    # from its buffer while the GVL is released, so it must be kept from being
+    # collected until the transfer is done. GC.stress makes the window reliable.
+    payload = Random.new.bytes(64 * 1024)
+    body_object = Object.new
+    body_object.define_singleton_method(:to_s) { payload + '' }
+
+    begin
+      GC.stress = true
+      [:post, :put, :delete].each do |verb|
+        response = @session.request(verb, "/test", {}, :data => body_object)
+        body = yaml_load(response.body)
+        expect(body.request_method).to be == verb.to_s.upcase
+        expect(body.body.b).to be == payload
+      end
+    ensure
+      GC.stress = false
+    end
+  end
+
   it "should raise when no data is provided to :put" do
     expect { @session.put("/test", nil) }.to raise_error(ArgumentError)
   end

@@ -30,7 +30,9 @@ struct patron_curl_state {
   CURL* handle;
   CURL* base_handle;
   CURLSH* share;
-  char* upload_buf;
+  /* The String libcurl reads the request body from. CURLOPT_POSTFIELDS does not copy,
+     so the String has to stay alive (and marked) until cleanup() */
+  VALUE upload_data;
   FILE* download_file;
   FILE* debug_file;
   FILE* request_body_file;
@@ -198,6 +200,7 @@ static void session_mark(void *ptr) {
   struct patron_curl_state *state = ptr;
 
   rb_gc_mark(state->user_progress_blk);
+  rb_gc_mark(state->upload_data);
 }
 
 static size_t session_memsize(const void *ptr) {
@@ -219,6 +222,8 @@ VALUE session_alloc(VALUE klass) {
 
   membuffer_init(&state->header_buffer);
   membuffer_init(&state->body_buffer);
+  state->user_progress_blk = Qnil;
+  state->upload_data = Qnil;
   cs_list_append(state);
 
   /*
@@ -413,13 +418,17 @@ static int formadd_files(VALUE data_key, VALUE data_value, VALUE self) {
   return 0;
 }
 
-// Set the given char pointer and it's length to be the CURL request body
-static void set_curl_request_body(CURL* curl, char* buf, curl_off_t len) {
-  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, buf);
+// Use the given String as the CURL request body. The String is kept in the state
+// so that it outlives the (GVL-less) transfer which reads from its buffer.
+static void set_curl_request_body(struct patron_curl_state* state, VALUE data) {
+  CURL* curl = state->handle;
+  StringValue(data);
+  state->upload_data = data;
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, RSTRING_PTR(state->upload_data));
   #ifdef CURLOPT_POSTFIELDSIZE_LARGE
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, len);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t) RSTRING_LEN(state->upload_data));
   #else
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long) RSTRING_LEN(state->upload_data));
   #endif
 }
 
@@ -458,7 +467,6 @@ static long floating_rb_seconds_to_milliseconds(VALUE r_seconds) {
 }
 
 static void set_request_body(struct patron_curl_state* state, VALUE stringable_or_file) {
-  CURL* curl = state->handle;
   if(rb_respond_to(stringable_or_file, rb_intern("to_path"))) {
     // Set up a file read callback (read the entire request body from a file).
     // Instead of using the Ruby file reads, use #to_path to obtain the
@@ -468,10 +476,7 @@ static void set_request_body(struct patron_curl_state* state, VALUE stringable_o
     set_request_body_file(state, r_path_str);
   } else {
     // Set the request body from a String
-    VALUE data = rb_funcall(stringable_or_file, rb_intern("to_s"), 0);
-    long len = RSTRING_LEN(data);
-    state->upload_buf = StringValuePtr(data);
-    set_curl_request_body(curl, state->upload_buf, len);
+    set_curl_request_body(state, rb_funcall(stringable_or_file, rb_intern("to_s"), 0));
   }
 }
 
@@ -602,11 +607,8 @@ static void set_options_from_request(VALUE self, VALUE request) {
   } else if (action == rb_intern("delete")) {
       VALUE data = rb_funcall(request, rb_intern("upload_data"), 0);
       if (RTEST(data)) {
-        long len = RSTRING_LEN(data);
-        state->upload_buf = StringValuePtr(data);
         curl_easy_setopt(curl, CURLOPT_POST, 1);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, state->upload_buf);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
+        set_request_body(state, data);
       }
       curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
 
@@ -960,7 +962,7 @@ static VALUE cleanup(VALUE self) {
     state->last = NULL;
   }
 
-  state->upload_buf = NULL;
+  state->upload_data = Qnil;
 
   return Qnil;
 }
