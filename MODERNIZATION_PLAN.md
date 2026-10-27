@@ -1,5 +1,8 @@
 # Patron modernization plan (C bindings for Ruby 3.3+)
 
+Status: phases 0 through 4 landed together in the `hypermodernization` branch (the Patron 1.0 PR).
+Phase 5 (Fiber scheduler integration, multiplexed concurrent transfers) remains future work.
+
 Date: 2026-10-27. Basis: the Ruby core doc "Tips for updating Ruby C extensions for
 efficiently using Ruby 4 VM APIs" (`doc/efficient_extensions.md` in ruby/ruby, which is
 what Ivo Anjo's 2026-09-23 post points at), four parallel audits of this repo

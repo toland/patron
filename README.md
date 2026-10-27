@@ -37,10 +37,11 @@ sess = Patron::Session.new do |patron|
 end
 ```
 
-Output debug log:
+Output libcurl's verbose log to a file, to any IO, or to `$stderr` when called without arguments:
 
 ```ruby
 sess.enable_debug "/tmp/patron.debug"
+sess.enable_debug $stdout
 ```
 
 The Session is used to make HTTP requests.
@@ -57,12 +58,17 @@ if resp.status < 400
 end
 ```
 
-The GET, HEAD, PUT, POST and DELETE operations are all supported.
+The GET, HEAD, PUT, PATCH, POST and DELETE operations have their own methods, and any other
+HTTP verb can be sent through `request`:
 
 ```ruby
 sess.put("/foo/baz", "some data")
 sess.delete("/foo/baz")
+sess.request(:propfind, "/foo", {"Depth" => "1"})
 ```
+
+A failed transfer raises a subclass of `Patron::Error` (`Patron::TimeoutError`, `Patron::ConnectionFailed`,
+`Patron::HostResolutionError` and so on). Every such error carries the libcurl error code as `curl_code`.
 
 You can ship custom headers with a single request:
 
@@ -102,9 +108,9 @@ can't load a PEM certificate from a file at all.
 ## Threading
 
 A `Patron::Session` performs one request at a time and must not be shared between threads: each `Session`
-owns a single libcurl handle and its buffers, and using it from two threads at once raises `Patron::Error`.
-The code that talks to libcurl releases the GVL (the global VM lock) for the duration of the transfer,
-so using one `Session` per thread gives you real parallelism.
+owns its own libcurl handles and buffers, and using it from two threads at once raises `Patron::Error`.
+Patron releases the GVL (the global VM lock) whenever it waits for the network, so using one `Session`
+per thread gives you real parallelism.
 For sharing a pool of sessions between threads we recommend the excellent [connection_pool](https://rubygems.org/gems/connection_pool) gem by Mike Perham.
 
 ```ruby
@@ -116,19 +122,30 @@ end
 
 Sharing Session objects between requests will also allow you to benefit from persistent connections (connection reuse), see below.
 
+Patron is Ractor-safe: a `Session` created inside a Ractor can be used there like anywhere else.
+
 ## Persistent connections
 
-Patron follows the libCURL guidelines on [connection reuse.](https://everything.curl.dev/libcurl/connectionreuse.html) If you create the Session
-object once and use it for multiple requests, the same libCURL handle is going to be used across these requests and if requests go to
-the same hostname/port/protocol the connection should get reused.
+Every `Session` owns a libcurl multi handle with its own connection cache, plus a share handle for
+cookies, DNS entries and TLS sessions. If you create the Session once and use it for multiple requests
+to the same hostname/port/protocol, the connection gets reused, following libcurl's rules on
+[connection reuse.](https://everything.curl.dev/libcurl/connectionreuse.html)
 
-## Performance with parallel requests
+## Interrupting requests
 
-When performing the libCURL request, Patron goes out of it's way to unlock the GVL (global VM lock) to allow other threads to be scheduled
-in parallel. The GVL is going to be released when the libCURL request starts, and will then be shortly re-acquired to provide the progress
-callback - if the callback has been configured, and then released again until the libCURL request has been performed and the response has
-been read in full. This allows one to execute multiple libCURL requests in parallel, as well as perform other activities on other MRI threads
-that are currently active in the process.
+A request in flight can be aborted from another thread with `Session#interrupt`, after which the
+request raises `Patron::Aborted`. `Thread#kill`, `Thread#raise`, `Timeout.timeout` and signals interrupt
+a request the same way, immediately and in any phase of the transfer, including DNS resolution and
+connecting. A `progress_callback` that returns `false` aborts the request as well, and an exception
+raised inside the callback propagates out of the request once libcurl is done with it.
+
+## How the GVL is handled
+
+Patron drives libcurl through its multi interface. The part of libcurl that moves bytes
+(`curl_multi_perform`) runs with the GVL held, which is what makes it safe to run your progress callback
+and to write straight into Ruby Strings from inside libcurl. Whenever libcurl has nothing to do but wait
+for the network, Patron releases the GVL (`curl_multi_poll`), so other Ruby threads run in parallel with
+the transfer, and that wait is what Ruby interrupts when it needs the thread back.
 
 ## Requirements
 
