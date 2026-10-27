@@ -22,9 +22,9 @@ sess.headers['User-Agent'] = 'myapp/1.0'
 You can set options with a hash in the constructor:
 
 ```ruby
-sess = Patron::Session.new({ :timeout => 10,
-                             :base_url => 'http://myserver.com:9900',
-                             :headers => {'User-Agent' => 'myapp/1.0'} } )
+sess = Patron::Session.new(timeout: 10,
+                           base_url: 'http://myserver.com:9900',
+                           headers: {'User-Agent' => 'myapp/1.0'})
 ```
 
 Or the set options in a block:
@@ -101,11 +101,11 @@ can't load a PEM certificate from a file at all.
 
 ## Threading
 
-By itself, the `Patron::Session` objects are not thread safe (each `Session` holds a single `curl_state` pointer
-from initialization to garbage collection). At this time, Patron has no support for `curl_multi_*` family of functions 
-for doing concurrent requests. However, the actual code that interacts with libCURL does unlock the RVM GIL,
-so using multiple `Session` objects in different threads actually enables a high degree of parallelism.
-For sharing a resource of sessions between threads we recommend using the excellent [connection_pool](https://rubygems.org/gems/connection_pool) gem by Mike Perham.
+A `Patron::Session` performs one request at a time and must not be shared between threads: each `Session`
+owns a single libcurl handle and its buffers, and using it from two threads at once raises `Patron::Error`.
+The code that talks to libcurl releases the GVL (the global VM lock) for the duration of the transfer,
+so using one `Session` per thread gives you real parallelism.
+For sharing a pool of sessions between threads we recommend the excellent [connection_pool](https://rubygems.org/gems/connection_pool) gem by Mike Perham.
 
 ```ruby
 patron_pool = ConnectionPool.new(size: 5, timeout: 5) { Patron::Session.new }
@@ -132,48 +132,26 @@ that are currently active in the process.
 
 ## Requirements
 
-Patron 1.0 and up requires MRI Ruby 2.3 or newer. The 0.x versions support
-Ruby 1.9.3 and these versions get tagged and developed on the `v0.x` branch.
+Patron 1.0 and up requires Ruby 3.3 or newer and libcurl 7.81.0 or newer (Ubuntu 22.04 and up,
+Debian 12 and up, any current macOS). The 0.x versions support older Rubies and stay on the `v0.x` branch.
 
-A recent version of libCURL is required. We recommend at least 7.19.4 because
-it [supports limiting the protocols](https://curl.haxx.se/libcurl/c/CURLOPT_PROTOCOLS.html),
-and that is very important for security - especially if you follow redirects. 
+You will have to install the libcurl development package on Debian or Ubuntu (`libcurl4-openssl-dev`),
+Alpine (`curl-dev`) and the like. The build looks libcurl up through `pkg-config`, then `curl-config`,
+then the default include and library paths. To build against a specific libcurl, for example
+Homebrew's OpenSSL-backed one instead of the SecureTransport-backed one macOS ships:
 
-On OSX the provided libcurl is sufficient if you are not using fork+SSL combination (see below).
-You will have to install the libcurl development packages on Debian or Ubuntu. Other Linux systems are probably
-similar. For Windows we do not have an established build instruction at the moment, unfortunately.
+    $ gem install patron -- --with-curl-dir=$(brew --prefix curl)
 
-## Forking webservers on macOS and SSL
+or, for every Bundler-driven install:
 
-Currently, [an issue is at play](https://github.com/curl/curl/issues/788) with OSX builds of `curl` which use
-Apple's SecureTransport. Such builds (which Patron is linking to), are causing segfaults when performing HTTPS
-requests in forked subprocesses. If you need to check whether your system is affected,
-run the Patron test suite by performing
+    $ bundle config build.patron --with-curl-dir=$(brew --prefix curl)
 
-    $ bundle install && bundle exec rspec
-
-in the Patron install directory. Most default curl configurations on OSX (both
-the Apple-shipped version and the version available via Homebrew) are linked to
-SecureTransport and are likely to be affected. This issue may also manifest in
-forking webserver implementations (such as Unicorn or Passenger) and in forking
-job execution engines (such as resque), so even though you may not be using
-`fork()` directly your server engine might be doing it for you.
-
-To circumvent the issue, you need to build `curl` with OpenSSL via homebrew.
-When doing so, `curl` will use openssl as it's SSL driver. You also need to
-change the Patron compile flag:
-
-
-    $ brew install curl-openssl && \
-        gem install patron -- --with-curl-config=/usr/local/opt/curl-openssl/bin/curl-config
-
-You can also save this parameter for all future Bundler-driven gem installs by
-setting this flag in Bundler proper:
-
-    $ bundle config build.patron --with-curl-config=/usr/local/opt/curl-openssl/bin/curl-config
+The SecureTransport backend of the macOS system libcurl cannot load PEM client certificates,
+and [older versions of it crash](https://github.com/curl/curl/issues/788) when doing HTTPS in a forked
+subprocess, so the Homebrew libcurl is the better choice on macOS.
 
 ## Installation
 
-    sudo gem install patron
+    gem install patron
 
 Copyright (c) 2008 The Hive

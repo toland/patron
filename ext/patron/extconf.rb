@@ -54,4 +54,8 @@ have_func("curl_easy_header", "curl/curl.h")
 append_cflags(%w[-Werror=implicit-function-declaration -Werror=incompatible-pointer-types])
 append_cflags("-Werror") if enable_config("werror")
 
+# For sanitizer builds in CI: plain CFLAGS gets clobbered by RbConfig, so use our own names
+$CFLAGS << " " << ENV["PATRON_CFLAGS"] if ENV["PATRON_CFLAGS"]
+$LDFLAGS << " " << ENV["PATRON_LDFLAGS"] if ENV["PATRON_LDFLAGS"]
+
 create_makefile "patron/session_ext"
