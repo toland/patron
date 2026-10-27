@@ -1175,7 +1175,7 @@ void Init_session_ext(void) {
   rb_define_module_function(mPatron, "libcurl_features", libcurl_features, 0);
 
   cSession = rb_define_class_under(mPatron, "Session", rb_cObject);
-  /* Defined in Ruby as a Data subclass; we only hang constants off it */
+  /* Defined in Ruby; we only hang constants off it */
   cRequest = rb_path2class("Patron::Request");
   rb_define_alloc_func(cSession, session_alloc);
 

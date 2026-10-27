@@ -33,8 +33,9 @@ team's guidance in `doc/efficient_extensions.md`. It requires **Ruby 3.3+** and 
 
 **Ruby API**
 
-* `Patron::Request` is an immutable `Data` value object constructed with keyword arguments. Any HTTP token is
-  accepted as a verb (#180); verbs libcurl does not know natively are sent as custom requests
+* `Patron::Request` keeps its setters (build one, change the URL, send it again) and also takes keyword
+  arguments; any HTTP token is accepted as a verb (#180), verbs libcurl does not know natively are sent as
+  custom requests, and `Marshal` now covers every attribute instead of 22 of 31
 * `Session.new` takes keyword arguments
 * `Response.new` takes keyword arguments (`url:`, `status:`, `redirect_count:`, `header_data:`, `body:`,
   `default_charset:`, `timings:`); a custom `response_class` must accept the same
@@ -51,7 +52,7 @@ team's guidance in `doc/efficient_extensions.md`. It requires **Ruby 3.3+** and 
 
 * `Session#reset` (it was an alias of `interrupt`)
 * `ssl_version` values `"SSLv2"` and `"SSLv3"` (refused by every supported libcurl anyway)
-* Positional arguments to `Response.new`, mutable `Request` setters, `Request#marshal_dump`
+* Positional arguments to `Response.new`; `Request::READER_VARS`, `WRITER_VARS` and `VALID_ACTIONS` (see `Request::ATTRIBUTES`)
 * Ruby < 3.3, libcurl < 7.81, and the `#if LIBCURL_VERSION_NUM` compatibility branches for libcurl 7.19 through 7.6x
 
 **Build, packaging and tests**
