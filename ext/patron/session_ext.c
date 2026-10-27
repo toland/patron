@@ -44,6 +44,10 @@ struct patron_curl_state {
   membuffer body_buffer;
   size_t download_byte_limit;
   VALUE user_progress_blk;
+  /* A non-local exit (raise, Thread#raise, Thread#kill...) from the progress proc can't
+     unwind through libcurl's frames, so it is parked here and resumed after perform() */
+  int pending_tag;
+  VALUE pending_exception;
   int interrupt;
   size_t dltotal;
   size_t dlnow;
@@ -77,15 +81,30 @@ static size_t file_write_handler(void* stream, size_t size, size_t nmemb, FILE* 
   }
 }
 
-static void *call_user_rb_progress_blk(void *vd_curl_state) {
+static VALUE call_user_rb_progress_blk_unprotected(VALUE vd_curl_state) {
   struct patron_curl_state* state = (struct patron_curl_state*)vd_curl_state;
-  // Invoke the block with the array
-  rb_funcall(state->user_progress_blk,
+  return rb_funcall(state->user_progress_blk,
     rb_intern("call"), 4,
     LONG2NUM(state->dltotal),
     LONG2NUM(state->dlnow),
     LONG2NUM(state->ultotal),
     LONG2NUM(state->ulnow));
+}
+
+/* Runs with the GVL re-acquired, from inside a libcurl callback. Whatever the proc
+   throws must not propagate from here (see pending_tag), so park it and tell libcurl
+   to abort the transfer instead. */
+static void *call_user_rb_progress_blk(void *vd_curl_state) {
+  struct patron_curl_state* state = (struct patron_curl_state*)vd_curl_state;
+  int tag = 0;
+
+  rb_protect(call_user_rb_progress_blk_unprotected, (VALUE)state, &tag);
+  if (tag) {
+    state->pending_tag = tag;
+    state->pending_exception = rb_errinfo();
+    rb_set_errinfo(Qnil);
+    state->interrupt = INTERRUPT_ABORT;
+  }
   return NULL;
 }
 
@@ -201,6 +220,7 @@ static void session_mark(void *ptr) {
 
   rb_gc_mark(state->user_progress_blk);
   rb_gc_mark(state->upload_data);
+  rb_gc_mark(state->pending_exception);
 }
 
 static size_t session_memsize(const void *ptr) {
@@ -224,6 +244,7 @@ VALUE session_alloc(VALUE klass) {
   membuffer_init(&state->body_buffer);
   state->user_progress_blk = Qnil;
   state->upload_data = Qnil;
+  state->pending_exception = Qnil;
   cs_list_append(state);
 
   /*
@@ -915,8 +936,21 @@ static VALUE perform_request(VALUE self) {
   struct perform_context context = {curl, 0};
 
   state->interrupt = 0;            /* clear the interrupt flag */
+  state->pending_tag = 0;
+  state->pending_exception = Qnil;
 
   rb_thread_call_without_gvl(perform_without_gvl, &context, session_ubf_abort, state);
+
+  /* The progress proc threw: resume that exit now that libcurl is done with the handle.
+     cleanup() still runs, since we are inside the rb_ensure of session_handle_request. */
+  if (state->pending_tag) {
+    int tag = state->pending_tag;
+    VALUE exception = state->pending_exception;
+    state->pending_tag = 0;
+    state->pending_exception = Qnil;
+    rb_set_errinfo(exception);
+    rb_jump_tag(tag);
+  }
 
   if (CURLE_OK == context.code) {
     VALUE header_str = membuffer_to_rb_str(&state->header_buffer);
@@ -974,6 +1008,8 @@ static VALUE cleanup(VALUE self) {
   }
 
   state->upload_data = Qnil;
+  state->pending_tag = 0;
+  state->pending_exception = Qnil;
 
   return Qnil;
 }

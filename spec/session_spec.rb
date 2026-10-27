@@ -4,6 +4,7 @@ require 'yaml'
 require 'base64'
 require 'fileutils'
 require 'securerandom'
+require 'timeout'
 
 describe Patron::Session do
 
@@ -303,6 +304,33 @@ describe Patron::Session do
     callback_args = []
     session.get("/slow")
     expect(callback_args).not_to be_empty
+  end
+
+  it "propagates an exception raised in the progress callback and keeps the session usable" do
+    session = Patron::Session.new
+    session.timeout = 10
+    session.base_url = "http://localhost:9001"
+    boom = Class.new(StandardError)
+    session.progress_callback = Proc.new { raise boom, "from the callback" }
+
+    expect { session.get("/slow") }.to raise_error(boom, "from the callback")
+
+    session.progress_callback = nil
+    expect(session.get("/test").status).to be == 200
+  end
+
+  it "can be interrupted with Timeout.timeout while a progress callback is set" do
+    session = Patron::Session.new
+    session.timeout = 10
+    session.base_url = "http://localhost:9001"
+    session.progress_callback = Proc.new { |*| }
+
+    started = Time.now.to_f
+    expect { Timeout.timeout(1) { session.get("/slow") } }.to raise_error(Timeout::Error)
+    expect(Time.now.to_f - started).to be < 3
+
+    session.progress_callback = nil
+    expect(session.get("/test").status).to be == 200
   end
 
   it "should follow redirects by default" do
