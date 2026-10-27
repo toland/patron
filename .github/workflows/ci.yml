@@ -104,31 +104,8 @@ jobs:
       env:
         PATRON_GC_STRESS: "1"
 
-  asan:
-    name: Specs with AddressSanitizer
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-    - uses: actions/checkout@v7
-    - name: Install libcurl
-      run: |
-        sudo apt-get update
-        sudo apt-get -y install libcurl4-openssl-dev
-    - uses: ruby/setup-ruby@v1
-      with:
-        ruby-version: "3.4"
-        bundler-cache: true
-    - name: Compile with ASan
-      run: bundle exec rake clobber compile
-      env:
-        PATRON_CFLAGS: "-fsanitize=address -fno-omit-frame-pointer -g"
-        PATRON_LDFLAGS: "-fsanitize=address"
-    - name: Run tests
-      # Ruby itself is not instrumented, so leak checking only reports noise
-      run: |
-        export LD_PRELOAD="$(gcc -print-file-name=libasan.so)"
-        export ASAN_OPTIONS="detect_leaks=0:halt_on_error=1"
-        bundle exec rspec
+  # No AddressSanitizer job: an LD_PRELOADed libasan under an uninstrumented Ruby dies in
+  # ASan's own allocator when Ruby's GC unmaps heap pages, before a single spec runs
 
   gem:
     name: Build and install the gem, check docs
