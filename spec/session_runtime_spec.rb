@@ -68,6 +68,25 @@ describe Patron::Session do
       expect(@session.get("/test").status).to eq(200)
     end
 
+    it "lets a throw from the callback unwind to the catch around the request" do
+      @session.timeout = 10
+      @session.progress_callback = proc { throw :bail, :bailed }
+      expect(catch(:bail) { @session.get("/test") }).to eq(:bailed)
+      @session.progress_callback = nil
+      expect(@session.get("/test").status).to eq(200)
+    end
+
+    it "lets Thread#kill terminate a thread that is inside the callback" do
+      @session.timeout = 10
+      @session.progress_callback = proc { sleep 0.05 } # the kill will land inside here
+      t = Thread.new { @session.get("/slow") }
+      sleep 0.5
+      t.kill
+      expect(t.join(2)).to eq(t) # not stuck, not a TypeError about $!
+      @session.progress_callback = nil
+      expect(@session.get("/test").status).to eq(200)
+    end
+
     it "aborts the request when the callback returns false" do
       @session.timeout = 10
       @session.progress_callback = proc { false }

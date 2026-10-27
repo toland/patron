@@ -237,6 +237,9 @@ static void park_exception(struct patron_session *s, int tag) {
   s->interrupt = INTERRUPT_ABORT;
 }
 
+/* A raise can be re-raised as such. A throw or a Thread#kill leaves a non-exception in
+ * errinfo, which rb_set_errinfo refuses, so those jump by tag and rely on errinfo being
+ * untouched since the callback parked it (nothing in between rescues). */
 NORETURN(static void reraise_parked(struct patron_session *s));
 static void reraise_parked(struct patron_session *s) {
   int tag = s->pending_tag;
@@ -244,7 +247,7 @@ static void reraise_parked(struct patron_session *s) {
 
   s->pending_tag = 0;
   SESSION_WRITE(s, pending_errinfo, Qnil);
-  rb_set_errinfo(errinfo);
+  if (RB_TYPE_P(errinfo, T_OBJECT) && rb_obj_is_kind_of(errinfo, rb_eException)) rb_exc_raise(errinfo);
   rb_jump_tag(tag);
 }
 
