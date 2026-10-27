@@ -337,6 +337,19 @@ describe Patron::Session do
     expect(session.get("/test").status).to be == 200
   end
 
+  it "lets a throw from the progress callback unwind to the catch around the request" do
+    # Timeout.timeout on Rubies before 3.1 unwinds with throw rather than raise
+    session = Patron::Session.new
+    session.timeout = 10
+    session.base_url = "http://localhost:9001"
+    session.progress_callback = Proc.new { throw :stop_right_there, :thrown }
+
+    expect(catch(:stop_right_there) { session.get("/slow") }).to be == :thrown
+
+    session.progress_callback = nil
+    expect(session.get("/test").status).to be == 200
+  end
+
   it "can be interrupted with Timeout.timeout while a progress callback is set" do
     session = Patron::Session.new
     session.timeout = 10
@@ -354,8 +367,13 @@ describe Patron::Session do
   it "raises the right exception class after the heap has been compacted" do
     # The exception classes are looked up from C once at load time; if they
     # were not registered with the GC, compaction would move them away
+    skip "no compaction on this Ruby" unless GC.respond_to?(:verify_compaction_references)
     begin
-      GC.verify_compaction_references(expand_heap: true, toward: :empty)
+      begin
+        GC.verify_compaction_references(expand_heap: true, toward: :empty)
+      rescue ArgumentError # expand_heap: is double_heap: on Rubies before 3.2
+        GC.verify_compaction_references(double_heap: true, toward: :empty)
+      end
     rescue NotImplementedError
       skip "compaction is not supported on this platform"
     end

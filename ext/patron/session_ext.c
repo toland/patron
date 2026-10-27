@@ -104,9 +104,11 @@ static void *call_user_rb_progress_blk(void *vd_curl_state) {
 
   rb_protect(call_user_rb_progress_blk_unprotected, (VALUE)state, &tag);
   if (tag) {
+    /* Whatever rb_protect caught stays in the errinfo of the thread: for a throw (which is
+       how Timeout.timeout unwinds on Rubies before 3.1) it is not an Exception and can't be
+       put back with rb_set_errinfo, so we only hold a reference to keep it marked */
     state->pending_tag = tag;
     state->pending_exception = rb_errinfo();
-    rb_set_errinfo(Qnil);
     state->interrupt = INTERRUPT_ABORT;
   }
   return NULL;
@@ -128,7 +130,7 @@ static int session_progress_handler(void* clientp, curl_off_t dltotal, curl_off_
   // If a progress proc has been set, re-acquire the GIL and call it using
   // `call_user_rb_progress_blk`. TODO: use the retval of that proc
   // to permit premature abort 
-  if(RTEST(state->user_progress_blk)) {
+  if(RTEST(state->user_progress_blk) && !state->pending_tag) {
     rb_thread_call_with_gvl(call_user_rb_progress_blk, state);
   }
 
@@ -975,7 +977,11 @@ static VALUE perform_request(VALUE self) {
     VALUE exception = state->pending_exception;
     state->pending_tag = 0;
     state->pending_exception = Qnil;
-    rb_set_errinfo(exception);
+    /* errinfo is only an Exception for a raise; a throw leaves an internal object there and
+       Thread#kill a Fixnum, both of which rb_obj_is_kind_of must not be asked about */
+    if (RB_TYPE_P(exception, T_OBJECT) && rb_obj_is_kind_of(exception, rb_eException)) {
+      rb_exc_raise(exception);
+    }
     rb_jump_tag(tag);
   }
 
