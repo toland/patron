@@ -184,7 +184,7 @@ module Patron
       @debug_io = case destination
       when nil then $stderr
       when ->(d) { d.respond_to?(:write) } then destination
-      else File.open(destination.to_s, 'wb')
+      else File.open(destination.to_s, 'wb').tap { |f| f.sync = true }
       end
       set_debug_io(@debug_io)
       self

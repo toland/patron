@@ -1,6 +1,7 @@
 require File.expand_path("./spec") + '/spec_helper.rb'
 require 'stringio'
 require 'tempfile'
+require 'timeout'
 
 # Behaviour of the libcurl multi-based transfer loop: interruption, concurrency,
 # callbacks, GC and process lifecycle.
@@ -122,7 +123,7 @@ describe Patron::Session do
       ensure
         GC.stress = false
       end
-      expect(response.body).to eq("x" * 65536)
+      expect(readback(response.body).body).to eq("x" * 65536)
     end
 
     it "sends multipart field values with NUL bytes intact" do
