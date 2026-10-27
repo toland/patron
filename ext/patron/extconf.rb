@@ -23,4 +23,8 @@ if CONFIG['CC'] =~ /clang/
   $CFLAGS << ' -pedantic -Wall -Wno-void-pointer-to-enum-cast'
 end
 
+# Lets CI build with debug info for valgrind without editing this file, like so:
+# PATRON_EXTRA_CFLAGS="-g -O1" rake compile
+$CFLAGS << ' ' << ENV['PATRON_EXTRA_CFLAGS'] if ENV['PATRON_EXTRA_CFLAGS']
+
 create_makefile 'patron/session_ext'

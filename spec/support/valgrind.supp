@@ -1,0 +1,2 @@
+# Suppressions for the valgrind CI job. Keep this to things that are demonstrably
+# not Patron's: nothing from session_ext.c or membuffer.c may be suppressed here.

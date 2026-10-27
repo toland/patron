@@ -5,6 +5,16 @@
 * Raise `Patron::ClientCertificateError` when the client certificate or its key can't be used
 * Accept a `Pathname` for `cacert`
 * Fix a request whose options fail to apply (for example an option of the wrong type) leaking its headers and open files into the next request on the same `Session`
+* Fix the request body being read from freed memory when `upload_data` is not a String (its `#to_s` result was not kept alive during the transfer)
+* Fix multipart field names and values pointing at temporary Strings, and binary multipart values being cut at the first NUL byte
+* Fix an exception raised inside `progress_callback` (including `Timeout.timeout` and `Thread#raise`) unwinding through libcurl; it is now re-raised after the transfer is aborted
+* Raise `Patron::Error` when a second thread uses a `Session` that is already performing a request, instead of corrupting both requests
+* Fix the progress callback being declared with `size_t` arguments where libcurl passes `curl_off_t`
+* Accept `download_byte_limit` above 2 GiB, and Floats for `dns_cache_timeout`, `low_speed_time` and `low_speed_limit`
+* Fix `Session#unescape` cutting the result at a `%00`, and raise instead of crashing when libcurl fails to escape or unescape
+* Reject file paths containing NUL bytes for cookie files, debug output and uploads
+* Raise `NoMemoryError` instead of crashing later when libcurl cannot allocate a Session's handles
+* Register the exception classes the extension looks up at load time with the GC, so heap compaction (`GC.compact`, `GC.auto_compact`) cannot move them out from under `rb_raise`
 
 ### 0.13.4
 

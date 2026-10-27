@@ -18,6 +18,8 @@ describe Patron::Session do
     @session = Patron::Session.new
     @session.base_url = "https://localhost:9043"
     @session.insecure = true
+    # The first TLS handshake takes a few seconds when both ends run under valgrind
+    @session.connect_timeout = 10
   end
 
   it "should retrieve a url with :get" do

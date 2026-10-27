@@ -30,7 +30,9 @@ struct patron_curl_state {
   CURL* handle;
   CURL* base_handle;
   CURLSH* share;
-  char* upload_buf;
+  /* The String libcurl reads the request body from. CURLOPT_POSTFIELDS does not copy,
+     so the String has to stay alive (and marked) until cleanup() */
+  VALUE upload_data;
   FILE* download_file;
   FILE* debug_file;
   FILE* request_body_file;
@@ -40,13 +42,21 @@ struct patron_curl_state {
   struct curl_httppost* last;
   membuffer header_buffer;
   membuffer body_buffer;
-  size_t download_byte_limit;
+  curl_off_t download_byte_limit;
   VALUE user_progress_blk;
+  /* A non-local exit (raise, Thread#raise, Thread#kill...) from the progress proc can't
+     unwind through libcurl's frames, so it is parked here and resumed after perform() */
+  int pending_tag;
+  VALUE pending_exception;
+  /* Set while a request is in flight. There is one handle and one set of buffers per
+     Session, and the transfer runs without the GVL, so a second thread entering
+     handle_request would corrupt the first one's request */
+  volatile int busy;
   int interrupt;
-  size_t dltotal;
-  size_t dlnow;
-  size_t ultotal;
-  size_t ulnow;
+  curl_off_t dltotal;
+  curl_off_t dlnow;
+  curl_off_t ultotal;
+  curl_off_t ulnow;
 };
 
 
@@ -75,15 +85,32 @@ static size_t file_write_handler(void* stream, size_t size, size_t nmemb, FILE* 
   }
 }
 
+static VALUE call_user_rb_progress_blk_unprotected(VALUE vd_curl_state) {
+  struct patron_curl_state* state = (struct patron_curl_state*)vd_curl_state;
+  return rb_funcall(state->user_progress_blk,
+    rb_intern("call"), 4,
+    LL2NUM(state->dltotal),
+    LL2NUM(state->dlnow),
+    LL2NUM(state->ultotal),
+    LL2NUM(state->ulnow));
+}
+
+/* Runs with the GVL re-acquired, from inside a libcurl callback. Whatever the proc
+   throws must not propagate from here (see pending_tag), so park it and tell libcurl
+   to abort the transfer instead. */
 static void *call_user_rb_progress_blk(void *vd_curl_state) {
   struct patron_curl_state* state = (struct patron_curl_state*)vd_curl_state;
-  // Invoke the block with the array
-  rb_funcall(state->user_progress_blk,
-    rb_intern("call"), 4,
-    LONG2NUM(state->dltotal),
-    LONG2NUM(state->dlnow),
-    LONG2NUM(state->ultotal),
-    LONG2NUM(state->ulnow));
+  int tag = 0;
+
+  rb_protect(call_user_rb_progress_blk_unprotected, (VALUE)state, &tag);
+  if (tag) {
+    /* Whatever rb_protect caught stays in the errinfo of the thread: for a throw (which is
+       how Timeout.timeout unwinds on Rubies before 3.1) it is not an Exception and can't be
+       put back with rb_set_errinfo, so we only hold a reference to keep it marked */
+    state->pending_tag = tag;
+    state->pending_exception = rb_errinfo();
+    state->interrupt = INTERRUPT_ABORT;
+  }
   return NULL;
 }
 
@@ -93,7 +120,7 @@ static void *call_user_rb_progress_blk(void *vd_curl_state) {
  * user calls the "interrupt" method on the session or when the Ruby interpreter
  * is attempting to exit.
  */
-static int session_progress_handler(void* clientp, size_t dltotal, size_t dlnow, size_t ultotal, size_t ulnow) {
+static int session_progress_handler(void* clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow) {
   struct patron_curl_state* state = (struct patron_curl_state*) clientp;
   state->dltotal = dltotal;
   state->dlnow = dlnow;
@@ -103,7 +130,7 @@ static int session_progress_handler(void* clientp, size_t dltotal, size_t dlnow,
   // If a progress proc has been set, re-acquire the GIL and call it using
   // `call_user_rb_progress_blk`. TODO: use the retval of that proc
   // to permit premature abort 
-  if(RTEST(state->user_progress_blk)) {
+  if(RTEST(state->user_progress_blk) && !state->pending_tag) {
     rb_thread_call_with_gvl(call_user_rb_progress_blk, state);
   }
 
@@ -120,6 +147,13 @@ static int session_progress_handler(void* clientp, size_t dltotal, size_t dlnow,
   // See https://sourceforge.net/p/curl/bugs/1318/
   return state->interrupt;
 }
+
+#if LIBCURL_VERSION_NUM < 0x072000
+/* Before 7.32.0 there is only CURLOPT_PROGRESSFUNCTION, which hands over doubles */
+static int session_legacy_progress_handler(void* clientp, double dltotal, double dlnow, double ultotal, double ulnow) {
+  return session_progress_handler(clientp, (curl_off_t) dltotal, (curl_off_t) dlnow, (curl_off_t) ultotal, (curl_off_t) ulnow);
+}
+#endif
 
 
 /*
@@ -198,6 +232,8 @@ static void session_mark(void *ptr) {
   struct patron_curl_state *state = ptr;
 
   rb_gc_mark(state->user_progress_blk);
+  rb_gc_mark(state->upload_data);
+  rb_gc_mark(state->pending_exception);
 }
 
 static size_t session_memsize(const void *ptr) {
@@ -219,6 +255,9 @@ VALUE session_alloc(VALUE klass) {
 
   membuffer_init(&state->header_buffer);
   membuffer_init(&state->body_buffer);
+  state->user_progress_blk = Qnil;
+  state->upload_data = Qnil;
+  state->pending_exception = Qnil;
   cs_list_append(state);
 
   /*
@@ -228,12 +267,20 @@ VALUE session_alloc(VALUE klass) {
     gets accessed over and over with requests.
   */
   state->share = curl_share_init();
+  if (!state->share) {
+    rb_raise(rb_eNoMemError, "libcurl could not allocate a share handle");
+  }
   curl_share_setopt(state->share, CURLSHOPT_SHARE, CURL_LOCK_DATA_COOKIE);
   curl_share_setopt(state->share, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
   curl_share_setopt(state->share, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
   curl_share_setopt(state->share, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
   curl_share_setopt(state->share, CURLSHOPT_SHARE, CURL_LOCK_DATA_PSL);
   state->base_handle = curl_easy_init();
+  if (!state->base_handle) {
+    /* obj is already allocated, so session_free() will release the share; curl_share_cleanup(NULL)
+       and curl_easy_cleanup(NULL) are no-ops, which keeps that path safe for a half-built state */
+    rb_raise(rb_eNoMemError, "libcurl could not allocate an easy handle");
+  }
   curl_easy_setopt(state->base_handle, CURLOPT_SHARE, state->share);
   curl_easy_setopt(state->base_handle, CURLOPT_WRITEFUNCTION, &session_write_handler);
   curl_easy_setopt(state->base_handle, CURLOPT_WRITEDATA, &state->body_buffer);
@@ -245,7 +292,7 @@ VALUE session_alloc(VALUE klass) {
   /* this is libCURLv7.32.0 or later, supports CURLOPT_XFERINFOFUNCTION */
   curl_easy_setopt(state->base_handle, CURLOPT_XFERINFOFUNCTION, &session_progress_handler);
 #else
-  curl_easy_setopt(state->base_handle, CURLOPT_PROGRESSFUNCTION, &session_progress_handler);
+  curl_easy_setopt(state->base_handle, CURLOPT_PROGRESSFUNCTION, &session_legacy_progress_handler);
 #endif
   curl_easy_setopt(state->base_handle, CURLOPT_PROGRESSDATA, state);
 #ifdef CURLPROTO_HTTP
@@ -314,14 +361,17 @@ static VALUE session_escape(VALUE self, VALUE value) {
 #endif
   escaped = curl_easy_escape(curl,
                              RSTRING_PTR(string),
-                             (int) RSTRING_LEN(string));
-
-  retval = rb_str_new2(escaped);
+                             rb_long2int(RSTRING_LEN(string)));
 #if LIBCURL_VERSION_NUM >= 0x075200
   /* this is libCURLv7.82.0 or later, the curl parameter is ignored */
 #else
   curl_easy_cleanup(curl);
 #endif
+  if (!escaped) {
+    rb_raise(ePatronError, "libcurl could not escape the string");
+  }
+
+  retval = rb_str_new2(escaped);
   curl_free(escaped);
 
   return retval;
@@ -336,6 +386,7 @@ static VALUE session_escape(VALUE self, VALUE value) {
 static VALUE session_unescape(VALUE self, VALUE value) {
   VALUE string = StringValue(value);
   char* unescaped = NULL;
+  int unescaped_len = 0;
   VALUE retval = Qnil;
 
 #if LIBCURL_VERSION_NUM >= 0x075200
@@ -344,18 +395,22 @@ static VALUE session_unescape(VALUE self, VALUE value) {
 #else
   CURL *curl = curl_easy_init();
 #endif
+  /* Ask for the length: the decoded bytes may contain NUL ("%00"), so strlen would cut it short */
   unescaped = curl_easy_unescape(curl,
                                  RSTRING_PTR(string),
-                                 (int) RSTRING_LEN(string),
-                                 NULL);
-
-  retval = rb_str_new2(unescaped);
-  curl_free(unescaped);
+                                 rb_long2int(RSTRING_LEN(string)),
+                                 &unescaped_len);
 #if LIBCURL_VERSION_NUM >= 0x075200
   /* this is libCURLv7.82.0 or later, the curl parameter is ignored */
 #else
   curl_easy_cleanup(curl);
 #endif
+  if (!unescaped) {
+    rb_raise(ePatronError, "libcurl could not unescape the string");
+  }
+
+  retval = rb_str_new(unescaped, unescaped_len);
+  curl_free(unescaped);
 
   return retval;
 }
@@ -396,8 +451,18 @@ static int formadd_values(VALUE data_key, VALUE data_value, VALUE self) {
   VALUE name = rb_obj_as_string(data_key);
   VALUE value = rb_obj_as_string(data_value);
 
-  curl_formadd(&state->post, &state->last, CURLFORM_PTRNAME, RSTRING_PTR(name),
-                CURLFORM_PTRCONTENTS, RSTRING_PTR(value), CURLFORM_END);
+  /* COPY* makes libcurl copy both strings: the PTR* variants would keep pointers into
+     Strings nothing holds on to (a Symbol key gets stringified into a temporary), and
+     PTRCONTENTS stops at the first NUL byte. Passing the length keeps binary values intact. */
+  curl_formadd(&state->post, &state->last,
+                CURLFORM_COPYNAME, RSTRING_PTR(name), CURLFORM_NAMELENGTH, (long) RSTRING_LEN(name),
+                CURLFORM_COPYCONTENTS, RSTRING_PTR(value),
+#if LIBCURL_VERSION_NUM >= 0x072E00
+                CURLFORM_CONTENTLEN, (curl_off_t) RSTRING_LEN(value),
+#else
+                CURLFORM_CONTENTSLENGTH, (long) RSTRING_LEN(value),
+#endif
+                CURLFORM_END);
 
   return 0;
 }
@@ -407,19 +472,24 @@ static int formadd_files(VALUE data_key, VALUE data_value, VALUE self) {
   VALUE name = rb_obj_as_string(data_key);
   VALUE value = rb_obj_as_string(data_value);
 
-  curl_formadd(&state->post, &state->last, CURLFORM_PTRNAME, RSTRING_PTR(name),
-                CURLFORM_FILE, RSTRING_PTR(value), CURLFORM_END);
+  curl_formadd(&state->post, &state->last,
+                CURLFORM_COPYNAME, RSTRING_PTR(name), CURLFORM_NAMELENGTH, (long) RSTRING_LEN(name),
+                CURLFORM_FILE, StringValueCStr(value), CURLFORM_END);
 
   return 0;
 }
 
-// Set the given char pointer and it's length to be the CURL request body
-static void set_curl_request_body(CURL* curl, char* buf, curl_off_t len) {
-  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, buf);
+// Use the given String as the CURL request body. The String is kept in the state
+// so that it outlives the (GVL-less) transfer which reads from its buffer.
+static void set_curl_request_body(struct patron_curl_state* state, VALUE data) {
+  CURL* curl = state->handle;
+  StringValue(data);
+  state->upload_data = data;
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, RSTRING_PTR(state->upload_data));
   #ifdef CURLOPT_POSTFIELDSIZE_LARGE
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, len);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t) RSTRING_LEN(state->upload_data));
   #else
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long) RSTRING_LEN(state->upload_data));
   #endif
 }
 
@@ -428,7 +498,7 @@ static void set_chunked_encoding(struct patron_curl_state *state) {
 }
 
 static FILE* open_file(VALUE filename, const char* perms) {
-  FILE* handle = fopen(StringValuePtr(filename), perms);
+  FILE* handle = fopen(StringValueCStr(filename), perms);
   if (!handle) {
     rb_raise(rb_eArgError, "Unable to open specified file.");
   }
@@ -458,7 +528,6 @@ static long floating_rb_seconds_to_milliseconds(VALUE r_seconds) {
 }
 
 static void set_request_body(struct patron_curl_state* state, VALUE stringable_or_file) {
-  CURL* curl = state->handle;
   if(rb_respond_to(stringable_or_file, rb_intern("to_path"))) {
     // Set up a file read callback (read the entire request body from a file).
     // Instead of using the Ruby file reads, use #to_path to obtain the
@@ -468,10 +537,7 @@ static void set_request_body(struct patron_curl_state* state, VALUE stringable_o
     set_request_body_file(state, r_path_str);
   } else {
     // Set the request body from a String
-    VALUE data = rb_funcall(stringable_or_file, rb_intern("to_s"), 0);
-    long len = RSTRING_LEN(data);
-    state->upload_buf = StringValuePtr(data);
-    set_curl_request_body(curl, state->upload_buf, len);
+    set_curl_request_body(state, rb_funcall(stringable_or_file, rb_intern("to_s"), 0));
   }
 }
 
@@ -516,7 +582,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
   curl_easy_setopt(curl, CURLOPT_SHARE, state->share);
 
   if (RTEST(download_byte_limit)) {
-    state->download_byte_limit = FIX2INT(download_byte_limit);
+    state->download_byte_limit = (curl_off_t) NUM2LL(download_byte_limit);
   } else {
     state->download_byte_limit = 0;
   }
@@ -602,11 +668,8 @@ static void set_options_from_request(VALUE self, VALUE request) {
   } else if (action == rb_intern("delete")) {
       VALUE data = rb_funcall(request, rb_intern("upload_data"), 0);
       if (RTEST(data)) {
-        long len = RSTRING_LEN(data);
-        state->upload_buf = StringValuePtr(data);
         curl_easy_setopt(curl, CURLOPT_POST, 1);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, state->upload_buf);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
+        set_request_body(state, data);
       }
       curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
 
@@ -652,22 +715,22 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
   timeout = rb_funcall(request, rb_intern("dns_cache_timeout"), 0);
   if (RTEST(timeout)) {
-    curl_easy_setopt(curl, CURLOPT_DNS_CACHE_TIMEOUT, FIX2INT(timeout));
+    curl_easy_setopt(curl, CURLOPT_DNS_CACHE_TIMEOUT, NUM2LONG(timeout));
   }
 
   VALUE low_speed_time = rb_funcall(request, rb_intern("low_speed_time"), 0);
   if(RTEST(low_speed_time)) {
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, FIX2LONG(low_speed_time));
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, NUM2LONG(low_speed_time));
   }
 
   VALUE low_speed_limit_bytes_per_second = rb_funcall(request, rb_intern("low_speed_limit"), 0);
   if(RTEST(low_speed_limit_bytes_per_second)) {
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, FIX2LONG(low_speed_limit_bytes_per_second));
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, NUM2LONG(low_speed_limit_bytes_per_second));
   }
 
   redirects = rb_funcall(request, rb_intern("max_redirects"), 0);
   if (RTEST(redirects)) {
-    int r = FIX2INT(redirects);
+    long r = NUM2LONG(redirects);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, r == 0 ? 0 : 1);
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, r);
   }
@@ -902,8 +965,25 @@ static VALUE perform_request(VALUE self) {
   struct perform_context context = {curl, 0};
 
   state->interrupt = 0;            /* clear the interrupt flag */
+  state->pending_tag = 0;
+  state->pending_exception = Qnil;
 
   rb_thread_call_without_gvl(perform_without_gvl, &context, session_ubf_abort, state);
+
+  /* The progress proc threw: resume that exit now that libcurl is done with the handle.
+     cleanup() still runs, since we are inside the rb_ensure of session_handle_request. */
+  if (state->pending_tag) {
+    int tag = state->pending_tag;
+    VALUE exception = state->pending_exception;
+    state->pending_tag = 0;
+    state->pending_exception = Qnil;
+    /* errinfo is only an Exception for a raise; a throw leaves an internal object there and
+       Thread#kill a Fixnum, both of which rb_obj_is_kind_of must not be asked about */
+    if (RB_TYPE_P(exception, T_OBJECT) && rb_obj_is_kind_of(exception, rb_eException)) {
+      rb_exc_raise(exception);
+    }
+    rb_jump_tag(tag);
+  }
 
   if (CURLE_OK == context.code) {
     VALUE header_str = membuffer_to_rb_str(&state->header_buffer);
@@ -960,7 +1040,10 @@ static VALUE cleanup(VALUE self) {
     state->last = NULL;
   }
 
-  state->upload_buf = NULL;
+  state->upload_data = Qnil;
+  state->pending_tag = 0;
+  state->pending_exception = Qnil;
+  state->busy = 0;
 
   return Qnil;
 }
@@ -979,7 +1062,15 @@ static VALUE cleanup(VALUE self) {
  * @return [Patron::Response] the result of calling `response_class` on the Session
  */
 static VALUE session_handle_request(VALUE self, VALUE request) {
-  VALUE args = rb_ary_new3(2, self, request);
+  struct patron_curl_state *state = get_patron_curl_state(self);
+  VALUE args = Qnil;
+
+  if (state->busy) {
+    rb_raise(ePatronError, "Session is already performing a request on another thread; use one Session per thread");
+  }
+  state->busy = 1;
+
+  args = rb_ary_new3(2, self, request);
   return rb_ensure(&prepare_and_perform_request, args, &cleanup, self);
 }
 
@@ -1010,8 +1101,8 @@ static VALUE add_cookie_file(VALUE self, VALUE file) {
   char* file_path = NULL;
 
   // FIXME: http://websystemsengineering.blogspot.nl/2013/03/curloptcookiefile-vs-curloptcookiejar.html
-  file_path = RSTRING_PTR(file);
-  if (file_path != NULL && strlen(file_path) != 0) {
+  file_path = StringValueCStr(file);
+  if (strlen(file_path) != 0) {
     curl_easy_setopt(curl, CURLOPT_COOKIEJAR, file_path);
   }
   curl_easy_setopt(curl, CURLOPT_COOKIEFILE, file_path);
@@ -1028,11 +1119,11 @@ static VALUE add_cookie_file(VALUE self, VALUE file) {
 static VALUE set_debug_file(VALUE self, VALUE file) {
   struct patron_curl_state *state = get_patron_curl_state(self);
   CURL *curl = state->base_handle;
-  char *file_path = RSTRING_PTR(file);
+  char *file_path = StringValueCStr(file);
 
   session_close_debug_file(state);
 
-  if(file_path != NULL && strlen(file_path) != 0) {
+  if(strlen(file_path) != 0) {
     state->debug_file = open_file(file, "wb");
   } else {
     state->debug_file = stderr;
@@ -1054,6 +1145,22 @@ void Init_session_ext() {
   rb_set_end_proc(&cs_list_interrupt, Qnil);
 
   mPatron = rb_define_module("Patron");
+
+  /* These classes are defined in Ruby and only looked up here, so unlike the ones from
+     rb_define_class the GC does not know we hold them: register them, or compaction moves
+     them out from under us and rb_raise ends up instantiating garbage */
+  rb_global_variable(&ePatronError);
+  rb_global_variable(&eUnsupportedProtocol);
+  rb_global_variable(&eUnsupportedSSLVersion);
+  rb_global_variable(&eUnsupportedHTTPVersion);
+  rb_global_variable(&eURLFormatError);
+  rb_global_variable(&eHostResolutionError);
+  rb_global_variable(&eConnectionFailed);
+  rb_global_variable(&ePartialFileError);
+  rb_global_variable(&eTimeoutError);
+  rb_global_variable(&eTooManyRedirects);
+  rb_global_variable(&eAborted);
+  rb_global_variable(&eClientCertificateError);
 
   ePatronError = rb_const_get(mPatron, rb_intern("Error"));
 
