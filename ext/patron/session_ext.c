@@ -48,6 +48,10 @@ struct patron_curl_state {
      unwind through libcurl's frames, so it is parked here and resumed after perform() */
   int pending_tag;
   VALUE pending_exception;
+  /* Set while a request is in flight. There is one handle and one set of buffers per
+     Session, and the transfer runs without the GVL, so a second thread entering
+     handle_request would corrupt the first one's request */
+  volatile int busy;
   int interrupt;
   size_t dltotal;
   size_t dlnow;
@@ -1010,6 +1014,7 @@ static VALUE cleanup(VALUE self) {
   state->upload_data = Qnil;
   state->pending_tag = 0;
   state->pending_exception = Qnil;
+  state->busy = 0;
 
   return Qnil;
 }
@@ -1028,7 +1033,15 @@ static VALUE cleanup(VALUE self) {
  * @return [Patron::Response] the result of calling `response_class` on the Session
  */
 static VALUE session_handle_request(VALUE self, VALUE request) {
-  VALUE args = rb_ary_new3(2, self, request);
+  struct patron_curl_state *state = get_patron_curl_state(self);
+  VALUE args = Qnil;
+
+  if (state->busy) {
+    rb_raise(ePatronError, "Session is already performing a request on another thread; use one Session per thread");
+  }
+  state->busy = 1;
+
+  args = rb_ary_new3(2, self, request);
   return rb_ensure(&prepare_and_perform_request, args, &cleanup, self);
 }
 

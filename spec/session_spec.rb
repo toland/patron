@@ -620,6 +620,31 @@ describe Patron::Session do
     expect { @session.handle_cookies("/trash/clash/foo") }.to raise_error(ArgumentError)
   end
 
+  it "refuses to run two requests on one Session from two threads at the same time" do
+    session = Patron::Session.new
+    session.timeout = 10
+    session.base_url = "http://localhost:9001"
+
+    outcomes = Array.new(2) do
+      Thread.new do
+        begin
+          session.get("/slow")
+          :completed
+        rescue Patron::Error => e
+          e
+        end
+      end
+    end.map(&:value)
+
+    refused = outcomes.grep(Patron::Error)
+    expect(refused.size).to be == 1
+    expect(refused.first.message).to include("another thread")
+    expect(outcomes - refused).to be == [:completed]
+
+    # The Session is free again once the in-flight request is done
+    expect(session.get("/test").status).to be == 200
+  end
+
   it "should work with multiple threads" do
     threads = []
     3.times do
