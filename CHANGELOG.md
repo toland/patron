@@ -63,7 +63,7 @@ team's guidance in `doc/efficient_extensions.md`. It requires **Ruby 3.3+** and 
 * Stop shipping test fixtures and CI configuration inside the gem
 * Test suite: Puma 6 and Rack 3, JSON request readback, configurable ports (`PATRON_TEST_HTTP_PORT` and friends), `PATRON_GC_STRESS=1` for GC and compaction stress runs
 
-### 0.13.5 (unreleased)
+### 0.14.0
 
 * Expose libcurl's transfer timings (name lookup, connect, TLS, first byte, total) as `Response#timings`
 * Add `ssl_cert`, `ssl_cert_type`, `ssl_key` and `ssl_key_password` for presenting a client certificate (mutual TLS). Thanks @lenage for the original contribution in #165
