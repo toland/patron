@@ -8,6 +8,7 @@ require 'patron/response'
 require 'patron/session_ext'
 require 'patron/util'
 require 'patron/header_parser'
+require 'patron/compat'
 
 module Patron
 
