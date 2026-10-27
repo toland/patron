@@ -527,6 +527,13 @@ describe Patron::Session, :session do
     expect(readback(response).header['cookie'].first).to be == "session_id=foo123"
   end
 
+  it "keeps cookies across requests on the same Session, not just across redirects" do
+    @session.handle_cookies
+    @session.get("/setcookie")
+    response = @session.get("/test").body
+    expect(readback(response).header['cookie']).to eq(["session_id=foo123"])
+  end
+
   it "should not handle cookies by default" do
     response = @session.get("/setcookie").body
     expect(readback(response).header).to_not include('cookie')

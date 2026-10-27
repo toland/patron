@@ -707,6 +707,9 @@ static void set_options_from_request(struct patron_session *s, VALUE request) {
   if (!easy) rb_memerror();
   /* Assigned before anything can raise so that cleanup() releases it. */
   s->easy = easy;
+  /* duphandle() hands back a handle "as if CURLOPT_SHARE was unset" (its man page), so the
+   * share with the cookies and TLS sessions must be attached to every request handle anew. */
+  curl_easy_setopt(easy, CURLOPT_SHARE, s->share);
 
   value = request_attr(request, id_download_byte_limit);
   s->download_byte_limit = RTEST(value) ? NUM2OFFT(value) : 0;

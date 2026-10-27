@@ -20,6 +20,8 @@ team's guidance in `doc/efficient_extensions.md`. It requires **Ruby 3.3+** and 
   previously they unwound through libcurl's frames. Returning `false` from the callback aborts the request
 * Every `Patron::Error` raised for a transfer carries the libcurl code as `#curl_code`
 * A forked child no longer reuses the parent's libcurl handles and connections
+* Cookies collected with `handle_cookies` (and TLS sessions) are kept across requests on the same
+  `Session`, not only across the redirects of one request
 * `enable_debug` accepts an `IO` as well as a path, writes libcurl's verbose output through Ruby, and
   never clobbers the process' stderr
 
