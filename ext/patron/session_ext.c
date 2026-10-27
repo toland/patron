@@ -351,7 +351,7 @@ static VALUE session_escape(VALUE self, VALUE value) {
 #endif
   escaped = curl_easy_escape(curl,
                              RSTRING_PTR(string),
-                             (int) RSTRING_LEN(string));
+                             rb_long2int(RSTRING_LEN(string)));
 
   retval = rb_str_new2(escaped);
 #if LIBCURL_VERSION_NUM >= 0x075200
@@ -383,7 +383,7 @@ static VALUE session_unescape(VALUE self, VALUE value) {
 #endif
   unescaped = curl_easy_unescape(curl,
                                  RSTRING_PTR(string),
-                                 (int) RSTRING_LEN(string),
+                                 rb_long2int(RSTRING_LEN(string)),
                                  NULL);
 
   retval = rb_str_new2(unescaped);
@@ -564,7 +564,7 @@ static void set_options_from_request(VALUE self, VALUE request) {
   curl_easy_setopt(curl, CURLOPT_SHARE, state->share);
 
   if (RTEST(download_byte_limit)) {
-    state->download_byte_limit = FIX2INT(download_byte_limit);
+    state->download_byte_limit = (curl_off_t) NUM2LL(download_byte_limit);
   } else {
     state->download_byte_limit = 0;
   }
@@ -697,22 +697,22 @@ static void set_options_from_request(VALUE self, VALUE request) {
 
   timeout = rb_funcall(request, rb_intern("dns_cache_timeout"), 0);
   if (RTEST(timeout)) {
-    curl_easy_setopt(curl, CURLOPT_DNS_CACHE_TIMEOUT, FIX2INT(timeout));
+    curl_easy_setopt(curl, CURLOPT_DNS_CACHE_TIMEOUT, NUM2LONG(timeout));
   }
 
   VALUE low_speed_time = rb_funcall(request, rb_intern("low_speed_time"), 0);
   if(RTEST(low_speed_time)) {
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, FIX2LONG(low_speed_time));
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, NUM2LONG(low_speed_time));
   }
 
   VALUE low_speed_limit_bytes_per_second = rb_funcall(request, rb_intern("low_speed_limit"), 0);
   if(RTEST(low_speed_limit_bytes_per_second)) {
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, FIX2LONG(low_speed_limit_bytes_per_second));
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, NUM2LONG(low_speed_limit_bytes_per_second));
   }
 
   redirects = rb_funcall(request, rb_intern("max_redirects"), 0);
   if (RTEST(redirects)) {
-    int r = FIX2INT(redirects);
+    long r = NUM2LONG(redirects);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, r == 0 ? 0 : 1);
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, r);
   }

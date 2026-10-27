@@ -184,6 +184,14 @@ describe Patron::Session do
     # on 1.9 it will be Patron::PartialFileError
   end
 
+  it "accepts a download body limit above 2 GiB and timeouts given as Floats" do
+    @session.download_byte_limit = 5 * 1024 * 1024 * 1024
+    @session.dns_cache_timeout = 2.5
+    @session.low_speed_time = 2.5
+    @session.low_speed_limit = 1.5
+    expect(@session.get("/test").status).to be == 200
+  end
+
   it "should not send the user-agent if it has been deleted from headers" do
     @session.headers.delete 'User-Agent'
     response = @session.get("/test")
