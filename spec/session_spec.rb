@@ -251,7 +251,7 @@ describe Patron::Session do
     expect {@session.get("/timeout?millis=400")}.to raise_error(Patron::TimeoutError)
   end
 
-  it "should raise an exception on timeout when reading from a slow resource and low speed limit is set" do
+  it "should raise an exception on timeout when reading from a slow resource and low speed limit is set", :timing do
     @session.timeout = 10 # Greater than the low_speed_time
     @session.low_speed_time = 2
     @session.low_speed_limit = 10
@@ -265,7 +265,7 @@ describe Patron::Session do
     expect(delta_s).to be_within(0.1).of(2).or be_within(0.1).of(3)
   end
 
-  it "is able to terminate the thread that is running a slow request using Thread#kill (uses the custom unblock)" do
+  it "is able to terminate the thread that is running a slow request using Thread#kill (uses the custom unblock)", :timing do
     t = Thread.new do
       session = Patron::Session.new
       session.timeout = 10 # Greater than the sleep duration
@@ -285,7 +285,7 @@ describe Patron::Session do
     expect(delta_s).to be_within(0.1).of(2).or be_within(0.1).of(3)
   end
 
-  it "is able to terminate the process that is running a slow request with SIGINT" do
+  it "is able to terminate the process that is running a slow request with SIGINT", :timing do
     pid = Process.fork do
       trap('SIGINT') do
         exit # exit the process
@@ -350,7 +350,7 @@ describe Patron::Session do
     expect(session.get("/test").status).to be == 200
   end
 
-  it "can be interrupted with Timeout.timeout while a progress callback is set" do
+  it "can be interrupted with Timeout.timeout while a progress callback is set", :timing do
     session = Patron::Session.new
     session.timeout = 10
     session.base_url = "http://localhost:9001"
