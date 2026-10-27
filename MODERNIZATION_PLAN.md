@@ -169,9 +169,39 @@ One `CURLM` per Session. `handle_request` adds the duplicated easy handle, then 
 
 Spec: interrupt latency assertions (< 100 ms) for `/slow`, during connect to a black-holed address, and during DNS (unresolvable host with a slow resolver stub if feasible).
 
-### Phase 5 (later, separate design): Fiber scheduler and multiplexing
+### Phase 5a: Fiber scheduler integration (branch `fiber-scheduler`, stacked on 1.0)
 
-`CURLMOPT_SOCKETFUNCTION`/`TIMERFUNCTION` + `curl_multi_socket_action`, sockets wrapped with `rb_io_open_descriptor(..., RUBY_IO_MODE_EXTERNAL)` (3.3+) and waited on with `rb_io_wait` (dispatches to the Fiber scheduler when one is installed, else blocks the thread). Enables HTTP/2 multiplexing (`CURLPIPE_MULTIPLEX`) and `async` compatibility, answers issue #138 and relates to #158 (streaming bodies). Needs an API discussion first (connection pool scope, concurrency limits, what `interrupt` means).
+When `Fiber.scheduler` is set for the current thread, the wait between `curl_multi_perform` calls goes
+through the scheduler instead of `curl_multi_poll`: `curl_multi_fdset` + `curl_multi_timeout`, the
+socket wrapped once with `rb_io_open_descriptor(..., FMODE_EXTERNAL)` so Ruby never closes it, then
+`rb_fiber_scheduler_io_wait` for the usual single socket, `rb_fiber_scheduler_io_select` when libcurl has
+several (happy eyeballs), `rb_fiber_scheduler_kernel_sleep` while it has none (threaded resolver). The
+calling fiber yields, other fibers on the thread run, `Async::Task#stop` and `with_timeout` unwind through
+the existing `rb_ensure`. No API change: a `Session` used inside `Async { }` just stops blocking the thread.
+
+### Phase 5b (design parked, see issue #210): `MultiSession`
+
+Decided shape, from the discussion on 2026-10-27:
+
+- `Patron::MultiSession` owns the `CURLM` (connection cache, DNS cache), the connection limits
+  (`CURLMOPT_MAXCONNECTS`, `CURLMOPT_MAX_HOST_CONNECTIONS`) and any pool counters. `multi.create_session`
+  (same as `Session.new(multi_session: multi)`) returns Sessions bound to it. A `Session.new` from
+  nowhere holds an implicit, private `MultiSession`, which is exactly 1.0's behaviour.
+- Has-a, not is-a: the pool outlives any one Session and the GC handles its lifetime through the
+  references the Sessions hold. A `Session` is request defaults, a cookie jar and the verb methods.
+- Per-Session share handle stays (cookies, TLS sessions) so cookie semantics do not change; the
+  `MultiSession` only owns the multi handle. One easy handle carries one share and sits in one multi.
+- libcurl rule that shapes everything: a multi handle is driven by one thread at a time, and the share
+  handle's connection cache is explicitly "not supported between multiple concurrent threads". So a
+  `MultiSession` is shared by fibers of one thread, never by threads. It records the driving thread while a
+  transfer runs and raises if one of its Sessions is used from another thread. Threads keep using a
+  `connection_pool` of Sessions.
+- Usage shapes to design for: (1) many fibers in one thread, each with `multi.create_session`, driven
+  cooperatively by whichever fiber is waiting (HTTP/2 multiplexing across them comes for free);
+  (2) `multi.perform(requests)` batch on one thread without a scheduler, Hydra-style;
+  (3) one `MultiSession` per thread for a thread that churns through short-lived Sessions.
+- Introspection parked with it: `Response#timings` already shows reuse (`connect` and `appconnect` are
+  0.0); the negotiated HTTP version is the one missing fact; counters and knobs belong on `MultiSession`.
 
 ### Free libcurl features to expose along the way (any phase after 0)
 
