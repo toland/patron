@@ -42,7 +42,7 @@ struct patron_curl_state {
   struct curl_httppost* last;
   membuffer header_buffer;
   membuffer body_buffer;
-  size_t download_byte_limit;
+  curl_off_t download_byte_limit;
   VALUE user_progress_blk;
   /* A non-local exit (raise, Thread#raise, Thread#kill...) from the progress proc can't
      unwind through libcurl's frames, so it is parked here and resumed after perform() */
@@ -53,10 +53,10 @@ struct patron_curl_state {
      handle_request would corrupt the first one's request */
   volatile int busy;
   int interrupt;
-  size_t dltotal;
-  size_t dlnow;
-  size_t ultotal;
-  size_t ulnow;
+  curl_off_t dltotal;
+  curl_off_t dlnow;
+  curl_off_t ultotal;
+  curl_off_t ulnow;
 };
 
 
@@ -89,10 +89,10 @@ static VALUE call_user_rb_progress_blk_unprotected(VALUE vd_curl_state) {
   struct patron_curl_state* state = (struct patron_curl_state*)vd_curl_state;
   return rb_funcall(state->user_progress_blk,
     rb_intern("call"), 4,
-    LONG2NUM(state->dltotal),
-    LONG2NUM(state->dlnow),
-    LONG2NUM(state->ultotal),
-    LONG2NUM(state->ulnow));
+    LL2NUM(state->dltotal),
+    LL2NUM(state->dlnow),
+    LL2NUM(state->ultotal),
+    LL2NUM(state->ulnow));
 }
 
 /* Runs with the GVL re-acquired, from inside a libcurl callback. Whatever the proc
@@ -118,7 +118,7 @@ static void *call_user_rb_progress_blk(void *vd_curl_state) {
  * user calls the "interrupt" method on the session or when the Ruby interpreter
  * is attempting to exit.
  */
-static int session_progress_handler(void* clientp, size_t dltotal, size_t dlnow, size_t ultotal, size_t ulnow) {
+static int session_progress_handler(void* clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow) {
   struct patron_curl_state* state = (struct patron_curl_state*) clientp;
   state->dltotal = dltotal;
   state->dlnow = dlnow;
@@ -145,6 +145,13 @@ static int session_progress_handler(void* clientp, size_t dltotal, size_t dlnow,
   // See https://sourceforge.net/p/curl/bugs/1318/
   return state->interrupt;
 }
+
+#if LIBCURL_VERSION_NUM < 0x072000
+/* Before 7.32.0 there is only CURLOPT_PROGRESSFUNCTION, which hands over doubles */
+static int session_legacy_progress_handler(void* clientp, double dltotal, double dlnow, double ultotal, double ulnow) {
+  return session_progress_handler(clientp, (curl_off_t) dltotal, (curl_off_t) dlnow, (curl_off_t) ultotal, (curl_off_t) ulnow);
+}
+#endif
 
 
 /*
@@ -275,7 +282,7 @@ VALUE session_alloc(VALUE klass) {
   /* this is libCURLv7.32.0 or later, supports CURLOPT_XFERINFOFUNCTION */
   curl_easy_setopt(state->base_handle, CURLOPT_XFERINFOFUNCTION, &session_progress_handler);
 #else
-  curl_easy_setopt(state->base_handle, CURLOPT_PROGRESSFUNCTION, &session_progress_handler);
+  curl_easy_setopt(state->base_handle, CURLOPT_PROGRESSFUNCTION, &session_legacy_progress_handler);
 #endif
   curl_easy_setopt(state->base_handle, CURLOPT_PROGRESSDATA, state);
 #ifdef CURLPROTO_HTTP
