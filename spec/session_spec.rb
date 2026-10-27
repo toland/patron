@@ -509,6 +509,19 @@ describe Patron::Session do
     expect(body.request_method).to be == "POST"
   end
 
+  it "sends multipart field names and binary values intact" do
+    # Symbol keys get stringified into temporaries libcurl must copy rather than
+    # point at, and a value with NUL bytes must not be cut at the first one.
+    value = "before\0middle\0after".b
+    response = @session.post_multipart("/test", { :sym_key => value }, { :test_file => "LICENSE" })
+    body = yaml_load(response.body)
+    raw = body.body.b
+    expect(raw).to include('name="sym_key"')
+    expect(raw).to include(value)
+    expect(raw).to include('name="test_file"; filename="LICENSE"')
+    expect(raw).to include(File.read("LICENSE").b)
+  end
+
   it "should raise when no file is provided to :post" do
     expect { @session.post_file("/test", nil) }.to raise_error(ArgumentError)
   end

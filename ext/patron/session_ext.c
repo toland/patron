@@ -401,8 +401,18 @@ static int formadd_values(VALUE data_key, VALUE data_value, VALUE self) {
   VALUE name = rb_obj_as_string(data_key);
   VALUE value = rb_obj_as_string(data_value);
 
-  curl_formadd(&state->post, &state->last, CURLFORM_PTRNAME, RSTRING_PTR(name),
-                CURLFORM_PTRCONTENTS, RSTRING_PTR(value), CURLFORM_END);
+  /* COPY* makes libcurl copy both strings: the PTR* variants would keep pointers into
+     Strings nothing holds on to (a Symbol key gets stringified into a temporary), and
+     PTRCONTENTS stops at the first NUL byte. Passing the length keeps binary values intact. */
+  curl_formadd(&state->post, &state->last,
+                CURLFORM_COPYNAME, RSTRING_PTR(name), CURLFORM_NAMELENGTH, (long) RSTRING_LEN(name),
+                CURLFORM_COPYCONTENTS, RSTRING_PTR(value),
+#if LIBCURL_VERSION_NUM >= 0x072E00
+                CURLFORM_CONTENTLEN, (curl_off_t) RSTRING_LEN(value),
+#else
+                CURLFORM_CONTENTSLENGTH, (long) RSTRING_LEN(value),
+#endif
+                CURLFORM_END);
 
   return 0;
 }
@@ -412,8 +422,9 @@ static int formadd_files(VALUE data_key, VALUE data_value, VALUE self) {
   VALUE name = rb_obj_as_string(data_key);
   VALUE value = rb_obj_as_string(data_value);
 
-  curl_formadd(&state->post, &state->last, CURLFORM_PTRNAME, RSTRING_PTR(name),
-                CURLFORM_FILE, RSTRING_PTR(value), CURLFORM_END);
+  curl_formadd(&state->post, &state->last,
+                CURLFORM_COPYNAME, RSTRING_PTR(name), CURLFORM_NAMELENGTH, (long) RSTRING_LEN(name),
+                CURLFORM_FILE, StringValueCStr(value), CURLFORM_END);
 
   return 0;
 }
