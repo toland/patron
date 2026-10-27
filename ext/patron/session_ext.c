@@ -265,12 +265,20 @@ VALUE session_alloc(VALUE klass) {
     gets accessed over and over with requests.
   */
   state->share = curl_share_init();
+  if (!state->share) {
+    rb_raise(rb_eNoMemError, "libcurl could not allocate a share handle");
+  }
   curl_share_setopt(state->share, CURLSHOPT_SHARE, CURL_LOCK_DATA_COOKIE);
   curl_share_setopt(state->share, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
   curl_share_setopt(state->share, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
   curl_share_setopt(state->share, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
   curl_share_setopt(state->share, CURLSHOPT_SHARE, CURL_LOCK_DATA_PSL);
   state->base_handle = curl_easy_init();
+  if (!state->base_handle) {
+    /* obj is already allocated, so session_free() will release the share; curl_share_cleanup(NULL)
+       and curl_easy_cleanup(NULL) are no-ops, which keeps that path safe for a half-built state */
+    rb_raise(rb_eNoMemError, "libcurl could not allocate an easy handle");
+  }
   curl_easy_setopt(state->base_handle, CURLOPT_SHARE, state->share);
   curl_easy_setopt(state->base_handle, CURLOPT_WRITEFUNCTION, &session_write_handler);
   curl_easy_setopt(state->base_handle, CURLOPT_WRITEDATA, &state->body_buffer);
