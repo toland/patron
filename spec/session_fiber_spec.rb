@@ -4,7 +4,7 @@ require 'async'
 
 # A Session inside a Fiber scheduler (here: async) yields to it while libcurl waits for the
 # network, so other fibers on the same thread keep running
-describe "Patron::Session under a Fiber scheduler", :session do
+describe "Patron::Session under a Fiber scheduler", :session, :fibers do
   let(:base_url) { "http://localhost:#{HTTP_PORT}" }
   let(:session) { Patron::Session.new(base_url: base_url, timeout: 10) }
 
