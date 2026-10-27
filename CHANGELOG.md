@@ -14,6 +14,7 @@
 * Fix `Session#unescape` cutting the result at a `%00`, and raise instead of crashing when libcurl fails to escape or unescape
 * Reject file paths containing NUL bytes for cookie files, debug output and uploads
 * Raise `NoMemoryError` instead of crashing later when libcurl cannot allocate a Session's handles
+* Register the exception classes the extension looks up at load time with the GC, so heap compaction (`GC.compact`, `GC.auto_compact`) cannot move them out from under `rb_raise`
 
 ### 0.13.4
 

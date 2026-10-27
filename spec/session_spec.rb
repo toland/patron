@@ -351,6 +351,19 @@ describe Patron::Session do
     expect(session.get("/test").status).to be == 200
   end
 
+  it "raises the right exception class after the heap has been compacted" do
+    # The exception classes are looked up from C once at load time; if they
+    # were not registered with the GC, compaction would move them away
+    begin
+      GC.verify_compaction_references(expand_heap: true, toward: :empty)
+    rescue NotImplementedError
+      skip "compaction is not supported on this platform"
+    end
+
+    session = Patron::Session.new
+    expect { session.get("http://localhost:1/") }.to raise_error(Patron::ConnectionFailed)
+  end
+
   it "should follow redirects by default" do
     @session.max_redirects = 1
     response = @session.get("/redirect")

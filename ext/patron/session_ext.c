@@ -1140,6 +1140,22 @@ void Init_session_ext() {
 
   mPatron = rb_define_module("Patron");
 
+  /* These classes are defined in Ruby and only looked up here, so unlike the ones from
+     rb_define_class the GC does not know we hold them: register them, or compaction moves
+     them out from under us and rb_raise ends up instantiating garbage */
+  rb_global_variable(&ePatronError);
+  rb_global_variable(&eUnsupportedProtocol);
+  rb_global_variable(&eUnsupportedSSLVersion);
+  rb_global_variable(&eUnsupportedHTTPVersion);
+  rb_global_variable(&eURLFormatError);
+  rb_global_variable(&eHostResolutionError);
+  rb_global_variable(&eConnectionFailed);
+  rb_global_variable(&ePartialFileError);
+  rb_global_variable(&eTimeoutError);
+  rb_global_variable(&eTooManyRedirects);
+  rb_global_variable(&eAborted);
+  rb_global_variable(&eClientCertificateError);
+
   ePatronError = rb_const_get(mPatron, rb_intern("Error"));
 
   eUnsupportedProtocol = rb_const_get(mPatron, rb_intern("UnsupportedProtocol"));
