@@ -20,12 +20,14 @@
 #include <ruby/ractor.h>
 #include <ruby/encoding.h>
 #include <ruby/io.h>
+#include <ruby/fiber/scheduler.h>
 
 #include <stdio.h>
 #include <string.h>
 #include <signal.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/select.h>
 #include <pthread.h>
 
 #include <curl/curl.h>
@@ -95,6 +97,7 @@ struct patron_session {
   pthread_mutex_t share_locks[CURL_LOCK_DATA_LAST];
   pid_t pid;                          /* handles must not be reused across fork() */
   VALUE debug_io;                     /* IO receiving CURLOPT_VERBOSE output, or nil */
+  VALUE socket_ios;                   /* fd => IO wrapping one of libcurl's sockets, for the Fiber scheduler */
 
   /* Per request, torn down in cleanup() */
   CURL *easy;
@@ -137,6 +140,7 @@ static void session_mark(void *ptr) {
   struct patron_session *s = ptr;
 
   rb_gc_mark_movable(s->debug_io);
+  rb_gc_mark_movable(s->socket_ios);
   rb_gc_mark_movable(s->progress_proc);
   rb_gc_mark_movable(s->header_buf);
   rb_gc_mark_movable(s->body_buf);
@@ -150,6 +154,7 @@ static void session_compact(void *ptr) {
   struct patron_session *s = ptr;
 
   s->debug_io = rb_gc_location(s->debug_io);
+  s->socket_ios = rb_gc_location(s->socket_ios);
   s->progress_proc = rb_gc_location(s->progress_proc);
   s->header_buf = rb_gc_location(s->header_buf);
   s->body_buf = rb_gc_location(s->body_buf);
@@ -465,6 +470,7 @@ static VALUE session_alloc(VALUE klass) {
 
   s->self = obj;
   s->debug_io = Qnil;
+  s->socket_ios = Qnil;
   s->progress_proc = Qnil;
   s->upload_data = Qnil;
   s->header_buf = Qnil;
@@ -934,9 +940,106 @@ static void wakeup_poll(void *ptr) {
   curl_multi_wakeup(s->multi);
 }
 
+/* Blocks the whole thread until libcurl has something to do, with the GVL released */
+static void wait_without_scheduler(struct patron_session *s) {
+  struct poll_context ctx = { s->multi, CURLM_OK };
+  /* Pending Ruby interrupts are raised right here as rb_nogvl returns; the rb_ensure
+   * around the request takes care of the half-finished transfer. */
+  rb_nogvl(poll_without_gvl, &ctx, wakeup_poll, s, RB_NOGVL_UBF_ASYNC_SAFE);
+  if (ctx.rc != CURLM_OK) rb_raise(ePatronError, "%s", curl_multi_strerror(ctx.rc));
+}
+
+static VALUE float_seconds(long milliseconds) {
+  return rb_float_new((double)milliseconds / 1000.0);
+}
+
+/* An IO wrapping one of libcurl's sockets, for handing to the scheduler. FMODE_EXTERNAL keeps
+ * Ruby from ever closing the descriptor; libcurl owns it. The wrappers are dropped whenever the
+ * set of sockets changes, so a descriptor number the kernel reused gets a fresh one. */
+static VALUE socket_io(struct patron_session *s, int fd) {
+  VALUE key = INT2FIX(fd);
+  VALUE io = rb_hash_lookup2(s->socket_ios, key, Qnil);
+
+  if (NIL_P(io)) {
+    io = rb_io_open_descriptor(rb_cIO, fd, FMODE_READWRITE | FMODE_EXTERNAL, Qnil, Qnil, NULL);
+    rb_hash_aset(s->socket_ios, key, io);
+  }
+  return io;
+}
+
+#define MAX_WAIT_FDS 16
+
+/* Yields to the Fiber scheduler until libcurl has something to do, so other fibers on this thread
+ * run meanwhile. Uses io_wait for the usual single socket, io_select when libcurl juggles several
+ * (happy eyeballs), and a plain sleep while it has none (threaded resolver at work). */
+static void wait_with_scheduler(struct patron_session *s, VALUE scheduler) {
+  fd_set rd, wr, ex;
+  int maxfd = -1, fd, nfds = 0, i;
+  int fds[MAX_WAIT_FDS], events[MAX_WAIT_FDS];
+  long timeout_ms = -1;
+  VALUE timeout;
+
+  FD_ZERO(&rd); FD_ZERO(&wr); FD_ZERO(&ex);
+  curl_multi_fdset(s->multi, &rd, &wr, &ex, &maxfd);
+  curl_multi_timeout(s->multi, &timeout_ms);
+  if (timeout_ms < 0 || timeout_ms > POLL_TIMEOUT_MS) timeout_ms = POLL_TIMEOUT_MS;
+
+  for (fd = 0; fd <= maxfd && nfds < MAX_WAIT_FDS; fd++) {
+    int ev = 0;
+    if (FD_ISSET(fd, &rd)) ev |= RUBY_IO_READABLE;
+    if (FD_ISSET(fd, &wr)) ev |= RUBY_IO_WRITABLE;
+    if (FD_ISSET(fd, &ex)) ev |= RUBY_IO_PRIORITY;
+    if (!ev) continue;
+    fds[nfds] = fd;
+    events[nfds] = ev;
+    nfds++;
+  }
+
+  if (nfds == 0) {
+    /* libcurl asks to be called back within 100 ms when it has no socket to wait on */
+    if (timeout_ms > 100) timeout_ms = 100;
+    rb_fiber_scheduler_kernel_sleep(scheduler, float_seconds(timeout_ms));
+    return;
+  }
+
+  if (NIL_P(s->socket_ios)) SESSION_WRITE(s, socket_ios, rb_hash_new());
+  if (RHASH_SIZE(s->socket_ios) != (st_index_t)nfds) rb_hash_clear(s->socket_ios);
+  for (i = 0; i < nfds; i++) {
+    if (rb_hash_lookup2(s->socket_ios, INT2FIX(fds[i]), Qundef) == Qundef) {
+      rb_hash_clear(s->socket_ios);
+      break;
+    }
+  }
+
+  timeout = float_seconds(timeout_ms);
+  if (nfds == 1) {
+    rb_fiber_scheduler_io_wait(scheduler, socket_io(s, fds[0]), INT2NUM(events[0]), timeout);
+    return;
+  }
+
+  {
+    VALUE readables = rb_ary_new(), writables = rb_ary_new(), exceptables = rb_ary_new();
+    VALUE ready;
+
+    for (i = 0; i < nfds; i++) {
+      VALUE io = socket_io(s, fds[i]);
+      if (events[i] & RUBY_IO_READABLE) rb_ary_push(readables, io);
+      if (events[i] & RUBY_IO_WRITABLE) rb_ary_push(writables, io);
+      if (events[i] & RUBY_IO_PRIORITY) rb_ary_push(exceptables, io);
+    }
+    ready = rb_fiber_scheduler_io_select(scheduler, readables, writables, exceptables, timeout);
+    if (ready == Qundef) {
+      /* A scheduler without io_select; poll instead. Only ever happens while connecting. */
+      rb_fiber_scheduler_kernel_sleep(scheduler, float_seconds(timeout_ms > 50 ? 50 : timeout_ms));
+    }
+  }
+}
+
 static void drive_transfer(struct patron_session *s) {
   int running = 1;
   CURLMcode mc;
+  /* Set per thread; a Session inside Async { } yields to it instead of blocking the thread */
+  VALUE scheduler = rb_fiber_scheduler_current();
 
   mc = curl_multi_add_handle(s->multi, s->easy);
   if (mc != CURLM_OK) rb_raise(ePatronError, "%s", curl_multi_strerror(mc));
@@ -947,11 +1050,11 @@ static void drive_transfer(struct patron_session *s) {
     if (s->pending_tag || s->interrupt) break;
     if (!running) break;
 
-    struct poll_context ctx = { s->multi, CURLM_OK };
-    /* Pending Ruby interrupts are raised right here as rb_nogvl returns; the rb_ensure
-     * around the request takes care of the half-finished transfer. */
-    rb_nogvl(poll_without_gvl, &ctx, wakeup_poll, s, RB_NOGVL_UBF_ASYNC_SAFE);
-    if (ctx.rc != CURLM_OK) rb_raise(ePatronError, "%s", curl_multi_strerror(ctx.rc));
+    if (NIL_P(scheduler)) {
+      wait_without_scheduler(s);
+    } else {
+      wait_with_scheduler(s, scheduler);
+    }
     if (s->interrupt) break;
   }
 }
@@ -1051,7 +1154,7 @@ static VALUE session_handle_request(VALUE self, VALUE request) {
   struct perform_args args = { s, request };
 
   if (s->busy) {
-    rb_raise(ePatronError, "This Session is already performing a request in another thread; use one Session per thread");
+    rb_raise(ePatronError, "This Session is already performing a request in another thread or fiber; use one Session per thread or fiber");
   }
   ensure_handles_for_this_process(s);
   s->busy = 1;

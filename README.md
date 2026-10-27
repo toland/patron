@@ -139,6 +139,21 @@ a request the same way, immediately and in any phase of the transfer, including 
 connecting. A `progress_callback` that returns `false` aborts the request as well, and an exception
 raised inside the callback propagates out of the request once libcurl is done with it.
 
+## Fibers and the async gem
+
+When a Fiber scheduler is installed for the current thread (as inside `Async { }`), Patron hands the
+wait for the network to the scheduler instead of blocking the thread, so requests from several fibers
+overlap and other fibers keep running while one waits:
+
+```ruby
+Async do |task|
+  pages = urls.map { |url| task.async { Patron::Session.new(timeout: 10).get(url) } }.map(&:wait)
+end
+```
+
+Each fiber needs its own `Session`, just like each thread does. `Async::Task#stop` and
+`Task#with_timeout` interrupt a request in flight the same way `Thread#kill` and `Timeout` do.
+
 ## How the GVL is handled
 
 Patron drives libcurl through its multi interface. The part of libcurl that moves bytes

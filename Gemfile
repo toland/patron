@@ -12,3 +12,4 @@ gem "simplecov", "~> 0.22"
 gem "yard", "~> 0.9"
 gem "rack", "~> 3.1"
 gem "puma", "~> 6.6"
+gem "async", "~> 2.25" # exercises the Fiber scheduler integration

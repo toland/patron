@@ -5,6 +5,10 @@ team's guidance in `doc/efficient_extensions.md`. It requires **Ruby 3.3+** and 
 
 **Transfers**
 
+* A `Session` used inside a Fiber scheduler (`Async { }`, Falcon) yields to the scheduler while libcurl
+  waits for the network instead of blocking the thread, so requests from several fibers overlap and
+  `Async::Task#stop` / `with_timeout` interrupt a request cleanly. No API change, nothing to configure
+
 * Requests are driven through libcurl's multi interface: every `Session` owns a multi handle with its own
   connection cache (connection pooling, #138), `curl_multi_perform` runs with the GVL held and only
   `curl_multi_poll` releases it, and `curl_multi_wakeup` is the unblocking function. `Thread#kill`,
