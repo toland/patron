@@ -92,10 +92,10 @@ describe "Patron inside Ractors", :session, :ractors do
 
   it "refuses to copy, move or share a Session, since it belongs to the Ractor that made it" do
     session = Patron::Session.new(base_url: base_url)
-    expect { Ractor.new(session) { |s| s } }.to raise_error(Ractor::Error, /can not copy Patron::Session/)
+    expect { Ractor.new(session) { |s| s } }.to raise_error(Ractor::Error, /can not copy (a )?Patron::Session/)
 
     receiver = Ractor.new { Ractor.receive }
-    expect { receiver.send(session, move: true) }.to raise_error(Ractor::Error, /can not move Patron::Session/)
+    expect { receiver.send(session, move: true) }.to raise_error(Ractor::Error, /can not move (a )?Patron::Session/)
 
     expect { Ractor.make_shareable(session) }.to raise_error(Ractor::Error, /can not make shareable/)
     expect(session.get("/test").status).to eq(200) # and the Session is none the worse for it
