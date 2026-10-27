@@ -68,6 +68,16 @@ describe Patron::Session do
       unescaped = @session.unescape(escaped)
       expect(unescaped).to be == string
     end
+
+    it "unescapes a %00 to a NUL byte instead of cutting the string there" do
+      expect(@session.unescape("a%00b").b).to be == "a\0b".b
+      expect(@session.escape("a\0b")).to be == "a%00b"
+    end
+
+    it "rejects a file path with an embedded NUL byte" do
+      expect { @session.enable_debug("/tmp/x\0y") }.to raise_error(ArgumentError)
+      expect { @session.handle_cookies("/tmp/x\0y") }.to raise_error(ArgumentError)
+    end
   end
   
   it "should raise an error when passed an invalid action" do

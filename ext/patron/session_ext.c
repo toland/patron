@@ -352,13 +352,16 @@ static VALUE session_escape(VALUE self, VALUE value) {
   escaped = curl_easy_escape(curl,
                              RSTRING_PTR(string),
                              rb_long2int(RSTRING_LEN(string)));
-
-  retval = rb_str_new2(escaped);
 #if LIBCURL_VERSION_NUM >= 0x075200
   /* this is libCURLv7.82.0 or later, the curl parameter is ignored */
 #else
   curl_easy_cleanup(curl);
 #endif
+  if (!escaped) {
+    rb_raise(ePatronError, "libcurl could not escape the string");
+  }
+
+  retval = rb_str_new2(escaped);
   curl_free(escaped);
 
   return retval;
@@ -373,6 +376,7 @@ static VALUE session_escape(VALUE self, VALUE value) {
 static VALUE session_unescape(VALUE self, VALUE value) {
   VALUE string = StringValue(value);
   char* unescaped = NULL;
+  int unescaped_len = 0;
   VALUE retval = Qnil;
 
 #if LIBCURL_VERSION_NUM >= 0x075200
@@ -381,18 +385,22 @@ static VALUE session_unescape(VALUE self, VALUE value) {
 #else
   CURL *curl = curl_easy_init();
 #endif
+  /* Ask for the length: the decoded bytes may contain NUL ("%00"), so strlen would cut it short */
   unescaped = curl_easy_unescape(curl,
                                  RSTRING_PTR(string),
                                  rb_long2int(RSTRING_LEN(string)),
-                                 NULL);
-
-  retval = rb_str_new2(unescaped);
-  curl_free(unescaped);
+                                 &unescaped_len);
 #if LIBCURL_VERSION_NUM >= 0x075200
   /* this is libCURLv7.82.0 or later, the curl parameter is ignored */
 #else
   curl_easy_cleanup(curl);
 #endif
+  if (!unescaped) {
+    rb_raise(ePatronError, "libcurl could not unescape the string");
+  }
+
+  retval = rb_str_new(unescaped, unescaped_len);
+  curl_free(unescaped);
 
   return retval;
 }
@@ -480,7 +488,7 @@ static void set_chunked_encoding(struct patron_curl_state *state) {
 }
 
 static FILE* open_file(VALUE filename, const char* perms) {
-  FILE* handle = fopen(StringValuePtr(filename), perms);
+  FILE* handle = fopen(StringValueCStr(filename), perms);
   if (!handle) {
     rb_raise(rb_eArgError, "Unable to open specified file.");
   }
@@ -1079,8 +1087,8 @@ static VALUE add_cookie_file(VALUE self, VALUE file) {
   char* file_path = NULL;
 
   // FIXME: http://websystemsengineering.blogspot.nl/2013/03/curloptcookiefile-vs-curloptcookiejar.html
-  file_path = RSTRING_PTR(file);
-  if (file_path != NULL && strlen(file_path) != 0) {
+  file_path = StringValueCStr(file);
+  if (strlen(file_path) != 0) {
     curl_easy_setopt(curl, CURLOPT_COOKIEJAR, file_path);
   }
   curl_easy_setopt(curl, CURLOPT_COOKIEFILE, file_path);
@@ -1097,11 +1105,11 @@ static VALUE add_cookie_file(VALUE self, VALUE file) {
 static VALUE set_debug_file(VALUE self, VALUE file) {
   struct patron_curl_state *state = get_patron_curl_state(self);
   CURL *curl = state->base_handle;
-  char *file_path = RSTRING_PTR(file);
+  char *file_path = StringValueCStr(file);
 
   session_close_debug_file(state);
 
-  if(file_path != NULL && strlen(file_path) != 0) {
+  if(strlen(file_path) != 0) {
     state->debug_file = open_file(file, "wb");
   } else {
     state->debug_file = stderr;
