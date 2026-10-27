@@ -1,9 +1,12 @@
+# frozen_string_literal: true
+
 require 'rack'
 require 'puma'
 require 'rack/handler/puma'
 
 class PatronTestServer
-  APP = Rack::Builder.new { eval(File.read(File.join(__dir__, 'config.ru'))) }
+  CONFIG_RU = File.join(__dir__, 'config.ru')
+  APP = Rack::Builder.new_from_string(File.read(CONFIG_RU), CONFIG_RU)
 
   def self.start(ssl = false, port = 9001, client_ca: nil)
     # Reset the RSpec's SIGINT handler that does not really terminate after

@@ -1,4 +1,5 @@
-require 'spec_helper'
+# frozen_string_literal: true
+
 
 describe Patron::HeaderParser do
   it 'parses a standard header' do

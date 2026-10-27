@@ -1,4 +1,5 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 # Regenerates the client certificate fixtures used by the mutual TLS specs
 require 'openssl'
 

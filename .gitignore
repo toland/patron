@@ -8,3 +8,8 @@ pkg
 tmp
 .yardoc
 Gemfile.lock
+*.so
+*.o
+*.dll
+lib/patron/session_ext.*
+.claude/settings.local.json

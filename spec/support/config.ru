@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'yaml'
 require 'ostruct'
 require 'zlib'
@@ -102,9 +104,9 @@ RepetitiveHeaderServlet = Proc.new {|env|
 }
 
 PictureServlet = Proc.new {|env|
-  # Rack::File allows us to test Range support as well
-  env_with_adjusted_path = env.merge('PATH_INFO' => Rack::Utils.escape('/pic.png'))
-  Rack::File.new('./').call(env_with_adjusted_path)
+  # Rack::Files gives us Range support for free
+  env_with_adjusted_path = env.merge('PATH_INFO' => '/pic.png')
+  Rack::Files.new(__dir__).call(env_with_adjusted_path)
 }
 
 RedirectToPictureServlet = Proc.new {|env|

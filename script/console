@@ -1,10 +1,11 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 # File: script/console
 irb = RUBY_PLATFORM =~ /(:?mswin|mingw)/ ? 'irb.bat' : 'irb'
 
 cwd = File.dirname(__FILE__)
 
-libs =  " -I#{cwd + '/../lib'} -I#{cwd + '/../ext'}"
+libs = +" -I#{cwd + '/../lib'}"
 libs << " -r patron -r irb/completion"
 
 puts "Loading Patron"

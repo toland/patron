@@ -1,4 +1,5 @@
-require File.expand_path("./spec") + '/spec_helper.rb'
+# frozen_string_literal: true
+
 require 'webrick'
 require 'yaml'
 require 'base64'
@@ -137,7 +138,7 @@ describe Patron::Session do
 
     response = @session.get_file "/picture", tmpfile
     expect(response.body).to be_nil
-    expect(File.size(File.join(File.dirname(__FILE__),"../pic.png"))).to be == File.size(tmpfile)
+    expect(File.size(File.join(__dir__, "support", "pic.png"))).to be == File.size(tmpfile)
   end
 
   it "should follow a 307 redirect with Range headers" do

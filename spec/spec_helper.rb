@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 if ENV["COVERAGE"]
   require 'simplecov'
   SimpleCov.start do
@@ -10,13 +12,11 @@ require 'rspec'
 # to fail with another exception
 RSpec::Expectations.configuration.warn_about_potential_false_positives = false
 
-$:.unshift(File.dirname(__FILE__) + '/../lib')
-$:.unshift(File.dirname(__FILE__) + '/../ext')
 require 'patron'
 
 $stderr.puts "Build against #{Patron.libcurl_version}"
 
-Dir['./spec/support/**/*.rb'].each { |fn| require fn }
+Dir[File.join(__dir__, 'support', '**', '*.rb')].sort.each { |fn| require fn }
 
 http_server = Fork.new { PatronTestServer.start(false, 9001) }
 

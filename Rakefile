@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'rake/clean'
 require 'rake/extensiontask'
 require 'rspec/core/rake_task'
@@ -17,7 +19,7 @@ CLOBBER.include %w( doc coverage pkg )
 
 desc "Start an IRB shell"
 task :shell => :compile do
-  sh 'irb -I./lib -I./ext -r patron'
+  sh 'irb -I./lib -r patron'
 end
 
 desc "Generate YARD documentation"

@@ -1,4 +1,5 @@
-require File.expand_path("./spec") + '/spec_helper.rb'
+# frozen_string_literal: true
+
 
 describe Patron::Util do
 
