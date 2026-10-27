@@ -14,6 +14,7 @@ describe Patron::Session, :session do
 
   before(:each) do
     @session = Patron::Session.new
+    @session.connect_timeout = 10 # the first TLS handshake with both ends under valgrind blows the 1 s default
     @session.base_url = "https://localhost:#{HTTPS_PORT}"
     @session.insecure = true
     # The first TLS handshake takes a few seconds when both ends run under valgrind

@@ -107,6 +107,55 @@ jobs:
   # No AddressSanitizer job: an LD_PRELOADed libasan under an uninstrumented Ruby dies in
   # ASan's own allocator when Ruby's GC unmaps heap pages, before a single spec runs
 
+  valgrind:
+    runs-on: ubuntu-latest
+    name: Specs under valgrind memcheck
+    steps:
+    - uses: actions/checkout@v7
+    - name: Install libcurl and valgrind
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install libcurl4-openssl-dev valgrind
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: "3.4"
+        bundler-cache: true
+    - name: Compile the extension with debug info
+      run: bundle exec rake clobber compile
+      env:
+        PATRON_CFLAGS: "-g -O1"
+    - name: Run the specs under memcheck
+      # The ruby process itself is under valgrind (bundle exec only sets up the environment).
+      # Specs tagged :timing assert on wall-clock windows that valgrind's slowdown breaks.
+      run: |
+        bundle exec valgrind --error-exitcode=99 --leak-check=no --undef-value-errors=no \
+          --child-silent-after-fork=yes --num-callers=30 \
+          --suppressions=spec/support/valgrind.supp \
+          ruby -S rspec --tag ~timing
+
+  malloc-check:
+    runs-on: ubuntu-latest
+    name: Specs with glibc malloc checking
+    steps:
+    - uses: actions/checkout@v7
+    - name: Install libcurl
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install libcurl4-openssl-dev
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: "3.4"
+        bundler-cache: true
+    - name: Run tests
+      # glibc aborts on heap corruption and fills freed memory with 0xA5, so a use-after-free
+      # shows up as garbage data rather than passing by luck
+      run: bundle exec rake
+      env:
+        MALLOC_CHECK_: "3"
+        MALLOC_PERTURB_: "165"
+
   gem:
     name: Build and install the gem, check docs
     runs-on: ubuntu-latest

@@ -12,7 +12,7 @@ describe Patron::Session do
   end
 
   describe "#interrupt" do
-    it "aborts a request in flight from another thread, promptly" do
+    it "aborts a request in flight from another thread, promptly", :timing do
       @session.timeout = 10
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       interrupter = Thread.new do
@@ -30,7 +30,7 @@ describe Patron::Session do
   end
 
   describe "with Timeout.timeout" do
-    it "is interrupted during a slow request without waiting for the server" do
+    it "is interrupted during a slow request without waiting for the server", :timing do
       @session.timeout = 10
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       expect {
@@ -76,7 +76,7 @@ describe Patron::Session do
       expect(@session.get("/test").status).to eq(200)
     end
 
-    it "lets Thread#kill terminate a thread that is inside the callback" do
+    it "lets Thread#kill terminate a thread that is inside the callback", :timing do
       @session.timeout = 10
       @session.progress_callback = proc { sleep 0.05 } # the kill will land inside here
       t = Thread.new { @session.get("/slow") }
