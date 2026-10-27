@@ -287,7 +287,7 @@ describe Patron::Session do
   end
 
   it "should work with different SSL versions" do
-    ['TLSv1_0','TLSv1_1'].each do |version|
+    ['TLSv1', 'TLSv1_2'].each do |version|
       @session.ssl_version = version
       response = @session.get("/test")
       expect(response.status).to be == 200
@@ -393,7 +393,7 @@ describe Patron::Session do
       @session.ssl_cert_type = 'P12'
       @session.ssl_key_password = 'patron'
       expect {
-        @session.request(:get, "/test", {'X-Leaked' => 'yes'}, ssl_key_password: 1234)
+        @session.request(:get, "/test", {'X-Leaked' => 'yes'}, proxy_type: :not_a_proxy_type)
       }.to raise_error(TypeError)
 
       body = yaml_load(@session.get("/test").body)

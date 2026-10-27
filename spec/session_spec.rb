@@ -81,7 +81,7 @@ describe Patron::Session do
   end
   
   it "should raise an error when passed an invalid action" do
-    expect { @session.request(:bogus, "/test", {}) }.to raise_error(ArgumentError)
+    expect { @session.request("not a verb", "/test", {}) }.to raise_error(ArgumentError)
   end
 
   it "should raise an error when no URL is provided" do
@@ -754,7 +754,7 @@ describe Patron::Session do
     
     class CustomResponse
       attr_reader :constructor_args
-      def initialize(*constructor_args)
+      def initialize(**constructor_args)
         @constructor_args = constructor_args
       end
     end
@@ -771,7 +771,7 @@ describe Patron::Session do
       response = @session.request(:get, "/test", {}, :query => {:foo => "bar"})
       
       expect(response).to be_kind_of(CustomResponse)
-      expect(response.constructor_args.length).to eq(6)
+      expect(response.constructor_args.keys).to include(:url, :status, :redirect_count, :header_data, :body, :default_charset, :timings)
     end
   end
   
@@ -784,7 +784,7 @@ describe Patron::Session do
         :headers => {'User-Agent' => 'myapp/1.0'}
     } }
 
-    let(:session) { Patron::Session.new(args) }
+    let(:session) { Patron::Session.new(**args) }
 
     it 'sets the base_url' do
       expect(session.base_url).to be == args[:base_url]
