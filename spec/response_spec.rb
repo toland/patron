@@ -24,11 +24,9 @@
 ## THE SOFTWARE.
 ##
 ## -------------------------------------------------------------------
-require 'webrick'
-require 'base64'
 require 'fileutils'
 
-describe Patron::Response do
+describe Patron::Response, :session do
   around(:each) do |example|
     previous_internal = Encoding.default_internal
     example.run
@@ -37,7 +35,7 @@ describe Patron::Response do
   
   before(:each) do
     @session = Patron::Session.new
-    @session.base_url = "http://localhost:9001"
+    @session.base_url = "http://localhost:#{HTTP_PORT}"
   end
 
   it 'recovers the status code' do

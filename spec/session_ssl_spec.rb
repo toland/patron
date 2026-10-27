@@ -1,23 +1,20 @@
 # frozen_string_literal: true
 
-require 'webrick'
-require 'yaml'
-require 'base64'
 require 'fileutils'
+require 'tmpdir'
 
-describe Patron::Session do
+describe Patron::Session, :session do
 
-  def yaml_load(str)
-    if RUBY_VERSION >= '3.1.0'
-      YAML::safe_load(str, permitted_classes: [OpenStruct])
-    else
-      YAML::load(str)
+  around(:each) do |example|
+    Dir.mktmpdir('patron') do |dir|
+      @tmpdir = dir
+      example.run
     end
   end
 
   before(:each) do
     @session = Patron::Session.new
-    @session.base_url = "https://localhost:9043"
+    @session.base_url = "https://localhost:#{HTTPS_PORT}"
     @session.insecure = true
     # The first TLS handshake takes a few seconds when both ends run under valgrind
     @session.connect_timeout = 10
@@ -25,15 +22,15 @@ describe Patron::Session do
 
   it "should retrieve a url with :get" do
     response = @session.get("/test")
-    body = yaml_load(response.body)
+    body = readback(response.body)
     expect(body.request_method).to be == "GET"
   end
 
   it "should download content with :get and a file path" do
-    tmpfile = "/tmp/patron_test.yaml"
+    tmpfile = File.join(@tmpdir, "patron_test.json")
     response = @session.get_file "/test", tmpfile
     expect(response.body).to be_nil
-    body = yaml_load(File.open(tmpfile).read)
+    body = readback(File.open(tmpfile).read)
     expect(body.request_method).to be == "GET"
     FileUtils.rm tmpfile
   end
@@ -42,7 +39,7 @@ describe Patron::Session do
   # Basically any HTTPS operation crashes on OSX with securetransport-enabled libCURL
   it "should download content in a forked subprocess" do
     # To trigger the bug, we need to perform a request in the master process first
-    tmpfile = "/tmp/patron_test.yaml"
+    tmpfile = File.join(@tmpdir, "patron_test.json")
     @session.get_file "/test", tmpfile
     FileUtils.rm tmpfile
     
@@ -50,7 +47,7 @@ describe Patron::Session do
     pid = fork do
       response = @session.get_file "/test", tmpfile
       expect(response.body).to be_nil
-      body = yaml_load(File.open(tmpfile).read)
+      body = readback(File.open(tmpfile).read)
       expect(body.request_method).to be == "GET"
       FileUtils.rm tmpfile
     end
@@ -60,7 +57,7 @@ describe Patron::Session do
   end
   
   it "should download correctly(md5 ok) with get_file" do
-    tmpfile = "/tmp/picture"
+    tmpfile = File.join(@tmpdir, "picture")
     response = @session.get_file "/picture", tmpfile
     expect(response.body).to be_nil
     expect(File.size(File.join(__dir__, "support", "pic.png"))).to be == File.size(tmpfile)
@@ -69,14 +66,14 @@ describe Patron::Session do
 
   it "should include custom headers in a request" do
     response = @session.get("/test", {"User-Agent" => "PatronTest"})
-    body = yaml_load(response.body)
+    body = readback(response.body)
     expect(body.header["user-agent"]).to be == ["PatronTest"]
   end
 
   it "should merge custom headers with session headers" do
     @session.headers["X-Test"] = "Testing"
     response = @session.get("/test", {"User-Agent" => "PatronTest"})
-    body = yaml_load(response.body)
+    body = readback(response.body)
     expect(body.header["user-agent"]).to be == ["PatronTest"]
     expect(body.header["x-test"]).to be == ["Testing"]
   end
@@ -91,7 +88,7 @@ describe Patron::Session do
   it "should follow redirects by default" do
     @session.max_redirects = 1
     response = @session.get("/redirect")
-    body = yaml_load(response.body)
+    body = readback(response.body)
     expect(response.status).to be == 200
     expect(body.path).to be == "/test"
   end
@@ -118,26 +115,26 @@ describe Patron::Session do
 
   it "should send a delete request with :delete" do
     response = @session.delete("/test")
-    body = yaml_load(response.body)
+    body = readback(response.body)
     expect(body.request_method).to be == "DELETE"
   end
 
   it "should send a COPY request with :copy" do
     response = @session.copy("/test", "/test2")
-    body = yaml_load(response.body)
+    body = readback(response.body)
     expect(body.request_method).to be == "COPY"
   end
 
   it "should include a Destination header in COPY requests" do
     response = @session.copy("/test", "/test2")
-    body = yaml_load(response.body)
+    body = readback(response.body)
     expect(body.header['destination'].first).to be == "/test2"
   end
 
   it "should upload data with :get" do
     data = "upload data"
     response = @session.request(:get, "/test", {}, :data => data)
-    body = yaml_load(response.body)
+    body = readback(response.body)
     expect(body.request_method).to be == "GET"
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
@@ -145,7 +142,7 @@ describe Patron::Session do
   it "should upload data with :put" do
     data = "upload data"
     response = @session.put("/test", data)
-    body = yaml_load(response.body)
+    body = readback(response.body)
     expect(body.request_method).to be == "PUT"
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
@@ -156,7 +153,7 @@ describe Patron::Session do
 
   it "should upload a file with :put" do
     response = @session.put_file("/test", "LICENSE")
-    body = yaml_load(response.body)
+    body = readback(response.body)
     expect(body.request_method).to be == "PUT"
   end
 
@@ -184,7 +181,7 @@ describe Patron::Session do
   it "should upload data with :post" do
     data = "upload data"
     response = @session.post("/test", data)
-    body = yaml_load(response.body)
+    body = readback(response.body)
     expect(body.request_method).to be == "POST"
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
@@ -192,7 +189,7 @@ describe Patron::Session do
   it "should post a hash of arguments as a urlencoded form" do
     data = {:foo => 123, 'baz' => '++hello world++'}
     response = @session.post("/testpost", data)
-    body = yaml_load(response.body)
+    body = readback(response.body)
     expect(body['content_type']).to be == "application/x-www-form-urlencoded"
     expect(body['body']).to match(/baz=%2B%2Bhello%20world%2B%2B/)
     expect(body['body']).to match(/foo=123/)
@@ -204,13 +201,13 @@ describe Patron::Session do
 
   it "should upload a file with :post" do
     response = @session.post_file("/test", "LICENSE")
-    body = yaml_load(response.body)
+    body = readback(response.body)
     expect(body.request_method).to be == "POST"
   end
 
   it "should upload a multipart with :post" do
     response = @session.post_multipart("/test", { :test_data => "123" }, { :test_file => "LICENSE" } )
-    body = yaml_load(response.body)
+    body = readback(response.body)
     expect(body.request_method).to be == "POST"
   end
 
@@ -237,12 +234,12 @@ describe Patron::Session do
   it "should handle cookies if set" do
     @session.handle_cookies
     response = @session.get("/setcookie").body
-    expect(yaml_load(response).header['cookie'].first).to be == "session_id=foo123"
+    expect(readback(response).header['cookie'].first).to be == "session_id=foo123"
   end
 
   it "should not handle cookies by default" do
     response = @session.get("/setcookie").body
-    expect(yaml_load(response).header).to_not include('cookie')
+    expect(readback(response).header).to_not include('cookie')
   end
 
   it "should raise exception if cookie store is not writable or readable" do
@@ -254,7 +251,7 @@ describe Patron::Session do
     3.times do
       threads << Thread.new do
         session = Patron::Session.new
-        session.base_url = "https://localhost:9043"
+        session.base_url = "https://localhost:#{HTTPS_PORT}"
         session.insecure = true
         session.post_file("/test", "LICENSE")
       end
@@ -273,7 +270,7 @@ describe Patron::Session do
     @session.insecure = nil
     @session.cacert = File.join(__dir__, 'support', 'certs', 'cacert.pem')
     response = @session.get("/test")
-    body = yaml_load(response.body)
+    body = readback(response.body)
     expect(body.request_method).to be == "GET"
   end
 
@@ -349,7 +346,7 @@ describe Patron::Session do
     end
 
     before(:each) do
-      @session.base_url = "https://localhost:9044"
+      @session.base_url = "https://localhost:#{MTLS_PORT}"
       @session.insecure = false
       @session.cacert = File.join(certs, 'cacert.pem')
     end
@@ -397,7 +394,7 @@ describe Patron::Session do
         @session.request(:get, "/test", {'X-Leaked' => 'yes'}, proxy_type: :not_a_proxy_type)
       }.to raise_error(TypeError)
 
-      body = yaml_load(@session.get("/test").body)
+      body = readback(@session.get("/test").body)
       expect(body.header).not_to have_key('x-leaked')
     end
 

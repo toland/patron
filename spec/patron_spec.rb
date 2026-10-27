@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 
-describe Patron do
+describe Patron, :unit do
 
   it 'should return the user agent string' do
     ua_str = Patron.user_agent_string

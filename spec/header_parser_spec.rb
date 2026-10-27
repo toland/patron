@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 
-describe Patron::HeaderParser do
+describe Patron::HeaderParser, :unit do
   it 'parses a standard header' do
     simple_headers_path = File.dirname(__FILE__) + '/sample_response_headers/headers_wetransfer.txt'
     responses = Patron::HeaderParser.parse(File.read(simple_headers_path))
