@@ -1,6 +1,10 @@
 ### Unreleased
 
 * Expose libcurl's transfer timings (name lookup, connect, TLS, first byte, total) as `Response#timings`
+* Add `ssl_cert`, `ssl_cert_type`, `ssl_key` and `ssl_key_password` for presenting a client certificate (mutual TLS). Thanks @lenage for the original contribution in #165
+* Raise `Patron::ClientCertificateError` when the client certificate or its key can't be used
+* Accept a `Pathname` for `cacert`
+* Fix a request whose options fail to apply (for example an option of the wrong type) leaking its headers and open files into the next request on the same `Session`
 
 ### 0.13.4
 

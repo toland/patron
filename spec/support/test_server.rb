@@ -5,7 +5,7 @@ require 'rack/handler/puma'
 class PatronTestServer
   APP = Rack::Builder.new { eval(File.read(File.join(__dir__, 'config.ru'))) }
 
-  def self.start(ssl = false, port = 9001 )
+  def self.start(ssl = false, port = 9001, client_ca: nil)
     # Reset the RSpec's SIGINT handler that does not really terminate after
     # the first Ctrl+C pressed.
     # Useful to terminate the forked process before Puma is actually started:
@@ -16,7 +16,10 @@ class PatronTestServer
     keypath = File.join(__dir__, 'certs', 'privkey.pem')
     certpath = File.join(__dir__, 'certs', 'cacert.pem')
 
-    host = if ssl
+    host = if ssl && client_ca
+      # force_peer makes Puma drop the handshake when no valid client certificate is presented
+      'ssl://0.0.0.0:%d?key=%s&cert=%s&ca=%s&verify_mode=force_peer' % [port, keypath, certpath, client_ca]
+    elsif ssl
       'ssl://0.0.0.0:%d?key=%s&cert=%s' % [port, keypath, certpath]
     else
       '0.0.0.0'

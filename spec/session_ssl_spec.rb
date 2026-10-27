@@ -331,4 +331,99 @@ describe Patron::Session do
     end
   end
 
+  describe 'with a server that requires a client certificate' do
+    let(:certs) { File.join(__dir__, 'support', 'certs') }
+
+    # libcurl's GnuTLS backend reports any client certificate it can't load as CURLE_SSL_CONNECT_ERROR
+    let(:gnutls) { Patron.libcurl_version.include?('GnuTLS') }
+
+    def refused_by_server
+      raise_error { |e|
+        expect(e).to be_kind_of(Patron::Error)
+        expect(e).not_to be_kind_of(Patron::ClientCertificateError)
+        expect(e).not_to be_kind_of(Patron::TimeoutError)
+      }
+    end
+
+    before(:each) do
+      @session.base_url = "https://localhost:9044"
+      @session.insecure = false
+      @session.cacert = File.join(certs, 'cacert.pem')
+    end
+
+    it "presents a PKCS#12 client certificate" do
+      @session.ssl_cert = File.join(certs, 'client.p12')
+      @session.ssl_cert_type = 'P12'
+      @session.ssl_key_password = 'patron'
+      response = @session.get("/peercert")
+      expect(response.status).to be == 200
+      expect(response.body).to include('CN=patron-test-client')
+    end
+
+    it "presents a PEM client certificate with a separate encrypted key" do
+      @session.ssl_cert = File.join(certs, 'client_cert.pem')
+      @session.ssl_cert_type = 'PEM'
+      @session.ssl_key = File.join(certs, 'client_key.pem')
+      @session.ssl_key_password = 'patron'
+      response = @session.get("/peercert")
+      expect(response.status).to be == 200
+      expect(response.body).to include('CN=patron-test-client')
+    end
+
+    it "accepts the client certificate as a per-request option" do
+      response = @session.request(:get, "/peercert", {},
+        ssl_cert: File.join(certs, 'client.p12'), ssl_cert_type: 'P12', ssl_key_password: 'patron')
+      expect(response.body).to include('CN=patron-test-client')
+    end
+
+    it "accepts Pathnames for the certificate and key and a Symbol for the type" do
+      @session.cacert = Pathname(certs).join('cacert.pem')
+      @session.ssl_cert = Pathname(certs).join('client_cert.pem')
+      @session.ssl_cert_type = :PEM
+      @session.ssl_key = Pathname(certs).join('client_key.pem')
+      @session.ssl_key_password = 'patron'
+      response = @session.get("/peercert")
+      expect(response.body).to include('CN=patron-test-client')
+    end
+
+    it "does not leak a failed request's options into the next one" do
+      @session.ssl_cert = File.join(certs, 'client.p12')
+      @session.ssl_cert_type = 'P12'
+      @session.ssl_key_password = 'patron'
+      expect {
+        @session.request(:get, "/test", {'X-Leaked' => 'yes'}, ssl_key_password: 1234)
+      }.to raise_error(TypeError)
+
+      body = yaml_load(@session.get("/test").body)
+      expect(body.header).not_to have_key('x-leaked')
+    end
+
+    it "raises ClientCertificateError when the key password is wrong" do
+      skip "GnuTLS does not tell this apart from a handshake failure" if gnutls
+      @session.ssl_cert = File.join(certs, 'client.p12')
+      @session.ssl_cert_type = 'P12'
+      @session.ssl_key_password = 'wrong'
+      expect { @session.get("/peercert") }.to raise_error(Patron::ClientCertificateError)
+    end
+
+    it "raises ClientCertificateError when the certificate file does not exist" do
+      skip "GnuTLS does not tell this apart from a handshake failure" if gnutls
+      @session.ssl_cert = File.join(certs, 'nonexistent.p12')
+      @session.ssl_cert_type = 'P12'
+      @session.ssl_key_password = 'patron'
+      expect { @session.get("/peercert") }.to raise_error(Patron::ClientCertificateError)
+    end
+
+    it "fails when the server does not trust the client certificate" do
+      @session.ssl_cert = File.join(certs, 'rogue_client.p12')
+      @session.ssl_cert_type = 'P12'
+      @session.ssl_key_password = 'patron'
+      expect { @session.get("/peercert") }.to refused_by_server
+    end
+
+    it "fails when no client certificate is presented" do
+      # Depending on the TLS version the server rejects us either during or right after the handshake
+      expect { @session.get("/peercert") }.to refused_by_server
+    end
+  end
 end

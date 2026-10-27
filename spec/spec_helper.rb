@@ -24,11 +24,17 @@ sleep 0.1 # Don't interfere the start up output of two processes.
 
 https_server = Fork.new { PatronTestServer.start(true, 9043) }
 
+mtls_server = Fork.new do
+  PatronTestServer.start(true, 9044, client_ca: File.join(__dir__, 'support', 'certs', 'client_ca.pem'))
+end
+
 RSpec.configure do |c|
   c.after(:suite) do
     http_server.kill("TERM")
     https_server.kill("TERM")
+    mtls_server.kill("TERM")
     http_server.wait
     https_server.wait
+    mtls_server.wait
   end
 end

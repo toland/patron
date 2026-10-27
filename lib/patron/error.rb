@@ -36,6 +36,10 @@ module Patron
   # Gets raised if the progress callback, or an interrupt, aborts the Curl perform() call
   class Aborted                < Error; end
 
+  # Gets raised when the client certificate or its private key could not be used,
+  # for example when the key password is wrong or the certificate file is missing.
+  class ClientCertificateError < Error; end
+
   # Gets raised when the server specifies an encoding that could not be found, or has an invalid name,
   # or when the server "lies" about the encoding of the response body (such as can be the case
   # when the server specifies an encoding in `Content-Type`) which the HTML generator then overrides

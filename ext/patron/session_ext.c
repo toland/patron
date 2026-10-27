@@ -24,6 +24,7 @@ static VALUE ePartialFileError = Qnil;
 static VALUE eTimeoutError = Qnil;
 static VALUE eTooManyRedirects = Qnil;
 static VALUE eAborted = Qnil;
+static VALUE eClientCertificateError = Qnil;
 
 struct patron_curl_state {
   CURL* handle;
@@ -494,14 +495,24 @@ static void set_options_from_request(VALUE self, VALUE request) {
   VALUE insecure              = Qnil;
   VALUE cacert                = Qnil;
   VALUE ssl_version           = Qnil;
+  VALUE ssl_cert              = Qnil;
+  VALUE ssl_cert_type         = Qnil;
+  VALUE ssl_key               = Qnil;
+  VALUE ssl_key_password      = Qnil;
   VALUE http_version          = Qnil;
   VALUE buffer_size           = Qnil;
-  VALUE action_name           = rb_funcall(request, rb_intern("action"), 0);
-  VALUE a_c_encoding          = rb_funcall(request, rb_intern("automatic_content_encoding"), 0);
-  VALUE download_byte_limit   = rb_funcall(request, rb_intern("download_byte_limit"), 0);
-  VALUE maybe_progress_proc   = rb_funcall(request, rb_intern("progress_callback"), 0);
+  VALUE action_name           = Qnil;
+  VALUE a_c_encoding          = Qnil;
+  VALUE download_byte_limit   = Qnil;
+  VALUE maybe_progress_proc   = Qnil;
 
+  /* Assign before anything can raise, so that cleanup() frees this handle and not a stale one */
   state->handle = curl;
+  action_name         = rb_funcall(request, rb_intern("action"), 0);
+  a_c_encoding        = rb_funcall(request, rb_intern("automatic_content_encoding"), 0);
+  download_byte_limit = rb_funcall(request, rb_intern("download_byte_limit"), 0);
+  maybe_progress_proc = rb_funcall(request, rb_intern("progress_callback"), 0);
+
   curl_easy_setopt(curl, CURLOPT_SHARE, state->share);
 
   if (RTEST(download_byte_limit)) {
@@ -756,9 +767,33 @@ static void set_options_from_request(VALUE self, VALUE request) {
     }
   }
 
+  ssl_cert = rb_funcall(request, rb_intern("ssl_cert"), 0);
+  if(RTEST(ssl_cert)) {
+    ssl_cert = FilePathValue(ssl_cert);
+    curl_easy_setopt(curl, CURLOPT_SSLCERT, StringValueCStr(ssl_cert));
+  }
+
+  ssl_cert_type = rb_funcall(request, rb_intern("ssl_cert_type"), 0);
+  if(RTEST(ssl_cert_type)) {
+    ssl_cert_type = rb_obj_as_string(ssl_cert_type);
+    curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE, StringValueCStr(ssl_cert_type));
+  }
+
+  ssl_key = rb_funcall(request, rb_intern("ssl_key"), 0);
+  if(RTEST(ssl_key)) {
+    ssl_key = FilePathValue(ssl_key);
+    curl_easy_setopt(curl, CURLOPT_SSLKEY, StringValueCStr(ssl_key));
+  }
+
+  ssl_key_password = rb_funcall(request, rb_intern("ssl_key_password"), 0);
+  if(RTEST(ssl_key_password)) {
+    curl_easy_setopt(curl, CURLOPT_KEYPASSWD, StringValueCStr(ssl_key_password));
+  }
+
   cacert = rb_funcall(request, rb_intern("cacert"), 0);
   if(RTEST(cacert)) {
-    curl_easy_setopt(curl, CURLOPT_CAINFO, StringValuePtr(cacert));
+    cacert = FilePathValue(cacert);
+    curl_easy_setopt(curl, CURLOPT_CAINFO, StringValueCStr(cacert));
   }
 
   buffer_size = rb_funcall(request, rb_intern("buffer_size"), 0);
@@ -830,6 +865,7 @@ static VALUE select_error(CURLcode code) {
     case CURLE_OPERATION_TIMEDOUT:    error = eTimeoutError;        break;
     case CURLE_TOO_MANY_REDIRECTS:    error = eTooManyRedirects;    break;
     case CURLE_ABORTED_BY_CALLBACK:   error = eAborted;             break;
+    case CURLE_SSL_CERTPROBLEM:       error = eClientCertificateError; break;
     default: error = ePatronError;
   }
 
@@ -882,12 +918,23 @@ static VALUE perform_request(VALUE self) {
   }
 }
 
+/* Setting the options can raise too (a Request attribute of the wrong type, say),
+ * and this needs to run under rb_ensure so that the half-configured handle, headers and
+ * open files get cleaned up instead of leaking into the next request on this Session.
+ */
+static VALUE prepare_and_perform_request(VALUE args) {
+  VALUE self = rb_ary_entry(args, 0);
+  set_options_from_request(self, rb_ary_entry(args, 1));
+  return perform_request(self);
+}
+
 /* Cleanup after each request by resetting the Curl handle and deallocating
  * all request related objects such as the header slist.
  */
 static VALUE cleanup(VALUE self) {
   struct patron_curl_state *state = get_patron_curl_state(self);
   curl_easy_cleanup(state->handle);
+  state->handle = NULL;
 
   if (state->headers) {
     curl_slist_free_all(state->headers);
@@ -932,8 +979,8 @@ static VALUE cleanup(VALUE self) {
  * @return [Patron::Response] the result of calling `response_class` on the Session
  */
 static VALUE session_handle_request(VALUE self, VALUE request) {
-  set_options_from_request(self, request);
-  return rb_ensure(&perform_request, self, &cleanup, self);
+  VALUE args = rb_ary_new3(2, self, request);
+  return rb_ensure(&prepare_and_perform_request, args, &cleanup, self);
 }
 
 /* Interrupt any currently executing request. This will cause the current
@@ -1020,6 +1067,7 @@ void Init_session_ext() {
   eTimeoutError = rb_const_get(mPatron, rb_intern("TimeoutError"));
   eTooManyRedirects = rb_const_get(mPatron, rb_intern("TooManyRedirects"));
   eAborted = rb_const_get(mPatron, rb_intern("Aborted"));
+  eClientCertificateError = rb_const_get(mPatron, rb_intern("ClientCertificateError"));
 
   rb_define_module_function(mPatron, "libcurl_version",       libcurl_version, 0);
   rb_define_module_function(mPatron, "libcurl_version_exact", libcurl_version_exact, 0);
