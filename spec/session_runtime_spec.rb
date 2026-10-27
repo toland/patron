@@ -1,14 +1,15 @@
-require File.expand_path("./spec") + '/spec_helper.rb'
+# frozen_string_literal: true
+
 require 'stringio'
 require 'tempfile'
 require 'timeout'
 
 # Behaviour of the libcurl multi-based transfer loop: interruption, concurrency,
 # callbacks, GC and process lifecycle.
-describe Patron::Session do
+describe Patron::Session, :session do
   before(:each) do
     @session = Patron::Session.new
-    @session.base_url = "http://localhost:9001"
+    @session.base_url = "http://localhost:#{HTTP_PORT}"
   end
 
   describe "#interrupt" do
@@ -222,7 +223,7 @@ describe Patron::Session do
       skip "Ractors are not available" unless defined?(Ractor)
       ractor = Ractor.new do
         session = Patron::Session.new
-        session.base_url = "http://localhost:9001"
+        session.base_url = "http://localhost:#{HTTP_PORT}"
         [Patron::Session.escape("a b"), session.get("/test").status]
       end
       result = ractor.respond_to?(:value) ? ractor.value : ractor.take
@@ -237,7 +238,7 @@ describe Patron::Session do
         def initialize(**kwargs) = @kwargs = kwargs
       end
       session_class = Class.new(Patron::Session) { define_method(:response_class) { custom } }
-      session = session_class.new(base_url: "http://localhost:9001")
+      session = session_class.new(base_url: "http://localhost:#{HTTP_PORT}")
       response = session.get("/test")
       expect(response.kwargs.keys).to contain_exactly(:url, :status, :redirect_count, :header_data, :body, :default_charset, :timings)
       expect(response.kwargs[:timings]).to include(:total)

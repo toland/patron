@@ -1,18 +1,14 @@
 # frozen_string_literal: true
 
-require 'patron/session'
 require 'patron/version'
+require 'patron/session'
 
 module Patron
-  # Returns the version number of the gem
-  # @return [String]
-  def self.version
-    VERSION
-  end
-  
-  # Returns the default User-Agent string
-  # @return [String]
-  def self.user_agent_string
-    @ua ||= "Patron/Ruby-%s-%s" % [version, libcurl_version]
-  end
+  # @return [String] the version of the gem
+  def self.version = VERSION
+
+  # @return [String] the default User-Agent header value
+  def self.user_agent_string = USER_AGENT_STRING
+
+  USER_AGENT_STRING = "Patron/Ruby-#{VERSION}-#{libcurl_version}".freeze
 end

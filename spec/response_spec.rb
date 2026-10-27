@@ -46,21 +46,21 @@ describe Patron::Response, :session do
   
   it 'saves the definitive URL in the url attribute' do
     headers = "HTTP/1.1 200 OK \r\nContent-Type: text/plain\r\n"
-    response = Patron::Response.new(+"http://example.com/url", 200, 0, headers, +"", "UTF-8")
+    response = Patron::Response.new(url: "http://example.com/url", status: 200, redirect_count: 0, header_data: headers, body: "", default_charset: "UTF-8")
     expect(response.url).to eq("http://example.com/url")
   end
   
   it 'parses the status code and supports ok? and error?' do
     headers = "HTTP/1.1 200 OK \r\nContent-Type: text/plain\r\n"
-    body = +"abc"
-    response = Patron::Response.new(+"url", 200, 0, headers, body, "UTF-8")
+    body = "abc"
+    response = Patron::Response.new(url: "url", status: 200, redirect_count: 0, header_data: headers, body: body, default_charset: "UTF-8")
     expect(response.status).to eq(200)
     expect(response).to be_ok
     expect(response).not_to be_error
     
     headers = "HTTP/1.1 400 Bad Request \r\nContent-Type: text/plain\r\n"
-    body = +"abc"
-    response = Patron::Response.new(+"url", 400, 0, headers, body, "UTF-8")
+    body = "abc"
+    response = Patron::Response.new(url: "url", status: 400, redirect_count: 0, header_data: headers, body: body, default_charset: "UTF-8")
     expect(response.status).to eq(400)
     expect(response).not_to be_ok
     expect(response).to be_error
@@ -102,7 +102,7 @@ describe Patron::Response, :session do
       headers = "HTTP/1.1 200 OK \r\nContent-Type: text/css;charset=ISO-8859-7\r\n"
       body = "Ππ".encode(greek_encoding) # Greek alphabet
 
-      response = Patron::Response.new(+"url", "status", 0, headers, body, nil)
+      response = Patron::Response.new(url: "url", status: "status", redirect_count: 0, header_data: headers, body: body, default_charset: nil)
 
       expect(response).to be_body_decodable
       expect(response.decoded_body.encoding).to eql(utf_encoding)
@@ -115,7 +115,7 @@ describe Patron::Response, :session do
       headers = "HTTP/1.1 200 OK \r\nContent-Type: text/css; charset=invalid\r\n"
       body = +"who knows which encoding this CSS is in?"
 
-      response = Patron::Response.new(+"url", "status", 0, headers, body, "UTF-8")
+      response = Patron::Response.new(url: "url", status: "status", redirect_count: 0, header_data: headers, body: body, default_charset: "UTF-8")
       expect(response.charset).to eq('invalid')
       
       expect(response).not_to be_body_decodable
@@ -131,7 +131,7 @@ describe Patron::Response, :session do
     headers = "HTTP/1.1 200 OK \r\nContent-Disposition: attachment,filename=\"žфайлец.txt\"\r\n"
     body = +"this is a file with a Russian filename set in content-disposition"
 
-    response = Patron::Response.new(+"url", "status", 0, headers, body, "UTF-8")
+    response = Patron::Response.new(url: "url", status: "status", redirect_count: 0, header_data: headers, body: body, default_charset: "UTF-8")
     dispo = response.headers['Content-Disposition']
     expect(dispo.encoding).to eq(Encoding::UTF_8)
   end

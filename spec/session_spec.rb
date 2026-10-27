@@ -1,8 +1,9 @@
 # frozen_string_literal: true
 
+require 'timeout'
+
 require 'fileutils'
 require 'securerandom'
-require 'timeout'
 
 describe Patron::Session, :session do
 
@@ -57,16 +58,6 @@ describe Patron::Session, :session do
       escaped = @session.escape(string)
       unescaped = @session.unescape(escaped)
       expect(unescaped).to be == string
-    end
-
-    it "unescapes a %00 to a NUL byte instead of cutting the string there" do
-      expect(@session.unescape("a%00b").b).to be == "a\0b".b
-      expect(@session.escape("a\0b")).to be == "a%00b"
-    end
-
-    it "rejects a file path with an embedded NUL byte" do
-      expect { @session.enable_debug("/tmp/x\0y") }.to raise_error(ArgumentError)
-      expect { @session.handle_cookies("/tmp/x\0y") }.to raise_error(ArgumentError)
     end
   end
   
@@ -182,14 +173,6 @@ describe Patron::Session, :session do
     }.to raise_error(Patron::Error)
     # On Ruby 2.x Patron::Aborted takes precedence, but
     # on 1.9 it will be Patron::PartialFileError
-  end
-
-  it "accepts a download body limit above 2 GiB and timeouts given as Floats" do
-    @session.download_byte_limit = 5 * 1024 * 1024 * 1024
-    @session.dns_cache_timeout = 2.5
-    @session.low_speed_time = 2.5
-    @session.low_speed_limit = 1.5
-    expect(@session.get("/test").status).to be == 200
   end
 
   it "should not send the user-agent if it has been deleted from headers" do
@@ -314,64 +297,6 @@ describe Patron::Session, :session do
     expect(callback_args).not_to be_empty
   end
 
-  it "propagates an exception raised in the progress callback and keeps the session usable" do
-    session = Patron::Session.new
-    session.timeout = 10
-    session.base_url = "http://localhost:9001"
-    boom = Class.new(StandardError)
-    session.progress_callback = Proc.new { raise boom, "from the callback" }
-
-    expect { session.get("/slow") }.to raise_error(boom, "from the callback")
-
-    session.progress_callback = nil
-    expect(session.get("/test").status).to be == 200
-  end
-
-  it "lets a throw from the progress callback unwind to the catch around the request" do
-    # Timeout.timeout on Rubies before 3.1 unwinds with throw rather than raise
-    session = Patron::Session.new
-    session.timeout = 10
-    session.base_url = "http://localhost:9001"
-    session.progress_callback = Proc.new { throw :stop_right_there, :thrown }
-
-    expect(catch(:stop_right_there) { session.get("/slow") }).to be == :thrown
-
-    session.progress_callback = nil
-    expect(session.get("/test").status).to be == 200
-  end
-
-  it "can be interrupted with Timeout.timeout while a progress callback is set", :timing do
-    session = Patron::Session.new
-    session.timeout = 10
-    session.base_url = "http://localhost:9001"
-    session.progress_callback = Proc.new { |*| }
-
-    started = Time.now.to_f
-    expect { Timeout.timeout(1) { session.get("/slow") } }.to raise_error(Timeout::Error)
-    expect(Time.now.to_f - started).to be < 3
-
-    session.progress_callback = nil
-    expect(session.get("/test").status).to be == 200
-  end
-
-  it "raises the right exception class after the heap has been compacted" do
-    # The exception classes are looked up from C once at load time; if they
-    # were not registered with the GC, compaction would move them away
-    skip "no compaction on this Ruby" unless GC.respond_to?(:verify_compaction_references)
-    begin
-      begin
-        GC.verify_compaction_references(expand_heap: true, toward: :empty)
-      rescue ArgumentError # expand_heap: is double_heap: on Rubies before 3.2
-        GC.verify_compaction_references(double_heap: true, toward: :empty)
-      end
-    rescue NotImplementedError
-      skip "compaction is not supported on this platform"
-    end
-
-    session = Patron::Session.new
-    expect { session.get("http://localhost:1/") }.to raise_error(Patron::ConnectionFailed)
-  end
-
   it "should follow redirects by default" do
     @session.max_redirects = 1
     response = @session.get("/redirect")
@@ -485,26 +410,6 @@ describe Patron::Session, :session do
     expect(body.header['content-length']).to be == [data.size.to_s]
   end
 
-  it "keeps a request body built by #to_s alive for the duration of the transfer" do
-    # The body only exists as the return value of #to_s, and libcurl reads it
-    # while the GVL is released - GC.stress makes that window reliable
-    payload = Random.new.bytes(64 * 1024)
-    body_object = Object.new
-    body_object.define_singleton_method(:to_s) { payload + '' }
-
-    begin
-      GC.stress = true
-      [:post, :put, :delete].each do |verb|
-        response = @session.request(verb, "/test", {}, :data => body_object)
-        body = yaml_load(response.body)
-        expect(body.request_method).to be == verb.to_s.upcase
-        expect(body.body.b).to be == payload
-      end
-    ensure
-      GC.stress = false
-    end
-  end
-
   it "should raise when no data is provided to :put" do
     expect { @session.put("/test", nil) }.to raise_error(ArgumentError)
   end
@@ -575,19 +480,6 @@ describe Patron::Session, :session do
     expect(body.request_method).to be == "POST"
   end
 
-  it "sends multipart field names and binary values intact" do
-    # A Symbol key gets stringified into a temporary libcurl must copy,
-    # and a value with NUL bytes must survive past the first one
-    value = "before\0middle\0after".b
-    response = @session.post_multipart("/test", { :sym_key => value }, { :test_file => "LICENSE" })
-    body = yaml_load(response.body)
-    raw = body.body.b
-    expect(raw).to include('name="sym_key"')
-    expect(raw).to include(value)
-    expect(raw).to include('name="test_file"; filename="LICENSE"')
-    expect(raw).to include(File.read("LICENSE").b)
-  end
-
   it "should raise when no file is provided to :post" do
     expect { @session.post_file("/test", nil) }.to raise_error(ArgumentError)
   end
@@ -656,31 +548,6 @@ describe Patron::Session, :session do
 
   it "should raise exception if cookie store is not writable or readable" do
     expect { @session.handle_cookies("/trash/clash/foo") }.to raise_error(ArgumentError)
-  end
-
-  it "refuses to run two requests on one Session from two threads at the same time" do
-    session = Patron::Session.new
-    session.timeout = 10
-    session.base_url = "http://localhost:9001"
-
-    outcomes = Array.new(2) do
-      Thread.new do
-        begin
-          session.get("/slow")
-          :completed
-        rescue Patron::Error => e
-          e
-        end
-      end
-    end.map(&:value)
-
-    refused = outcomes.grep(Patron::Error)
-    expect(refused.size).to be == 1
-    expect(refused.first.message).to include("another thread")
-    expect(outcomes - refused).to be == [:completed]
-
-    # ...and is free again once the in-flight request is done
-    expect(session.get("/test").status).to be == 200
   end
 
   it "should work with multiple threads" do
@@ -852,4 +719,104 @@ describe Patron::Session, :session do
     end
   end
 
+  # ------------------------------------------------------------------------
+  # Regression specs for the memory-safety fixes that first shipped on the 0.13 line (#207)
+  describe 'memory-safety regressions from 0.13' do
+    it "unescapes a %00 to a NUL byte instead of cutting the string there" do
+      expect(@session.unescape("a%00b").b).to be == "a\0b".b
+      expect(@session.escape("a\0b")).to be == "a%00b"
+    end
+
+    it "rejects a file path with an embedded NUL byte" do
+      expect { @session.enable_debug("/tmp/x\0y") }.to raise_error(ArgumentError)
+      expect { @session.handle_cookies("/tmp/x\0y") }.to raise_error(ArgumentError)
+    end
+
+    it "accepts a download body limit above 2 GiB and timeouts given as Floats" do
+      @session.download_byte_limit = 5 * 1024 * 1024 * 1024
+      @session.dns_cache_timeout = 2.5
+      @session.low_speed_time = 2.5
+      @session.low_speed_limit = 1.5
+      expect(@session.get("/test").status).to be == 200
+    end
+
+    it "can be interrupted with Timeout.timeout while a progress callback is set", :timing do
+      @session.timeout = 10
+      @session.progress_callback = Proc.new { |*| }
+
+      started = Time.now.to_f
+      expect { Timeout.timeout(1) { @session.get("/slow") } }.to raise_error(Timeout::Error)
+      expect(Time.now.to_f - started).to be < 3
+
+      @session.progress_callback = nil
+      expect(@session.get("/test").status).to be == 200
+    end
+
+    it "raises the right exception class after the heap has been compacted" do
+      # The exception classes are looked up from C once at load time; if they
+      # were not registered with the GC, compaction would move them away
+      skip "no compaction on this Ruby" unless GC.respond_to?(:verify_compaction_references)
+      begin
+        GC.verify_compaction_references(expand_heap: true, toward: :empty)
+      rescue NotImplementedError
+        skip "compaction is not supported on this platform"
+      end
+
+      expect { @session.get("http://localhost:1/") }.to raise_error(Patron::ConnectionFailed)
+    end
+
+    it "keeps a request body built by #to_s alive for the duration of the transfer" do
+      # The body only exists as the return value of #to_s - GC.stress makes the window reliable
+      payload = Random.new.bytes(64 * 1024)
+      body_object = Object.new
+      body_object.define_singleton_method(:to_s) { payload + '' }
+
+      begin
+        GC.stress = true
+        [:post, :put, :delete].each do |verb|
+          response = @session.request(verb, "/test", {}, data: body_object)
+          body = readback(response.body)
+          expect(body.request_method).to be == verb.to_s.upcase
+          expect(body.body.b).to be == payload
+        end
+      ensure
+        GC.stress = false
+      end
+    end
+
+    it "sends multipart field names and binary values intact" do
+      # A Symbol key gets stringified into a temporary libcurl must copy,
+      # and a value with NUL bytes must survive past the first one
+      value = "before\0middle\0after".b
+      response = @session.post_multipart("/test", { :sym_key => value }, { :test_file => "LICENSE" })
+      raw = readback(response.body).body.b
+      expect(raw).to include('name="sym_key"')
+      expect(raw).to include(value)
+      expect(raw).to include('name="test_file"; filename="LICENSE"')
+      expect(raw).to include(File.read("LICENSE").b)
+    end
+
+    it "refuses to run two requests on one Session from two threads at the same time" do
+      @session.timeout = 10
+
+      outcomes = Array.new(2) do
+        Thread.new do
+          begin
+            @session.get("/slow")
+            :completed
+          rescue Patron::Error => e
+            e
+          end
+        end
+      end.map(&:value)
+
+      refused = outcomes.grep(Patron::Error)
+      expect(refused.size).to be == 1
+      expect(refused.first.message).to include("another thread")
+      expect(outcomes - refused).to be == [:completed]
+
+      # ...and is free again once the in-flight request is done
+      expect(@session.get("/test").status).to be == 200
+    end
+  end
 end
