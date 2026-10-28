@@ -2,8 +2,9 @@
 
 # The positional-argument forms of the 0.x API, kept for the 1.0 line so that webmock's
 # adapter and sniffer's wrapper keep working while they move to keywords. Each form warns
-# once. Everything about this lives here on purpose: to drop it in 1.1, delete this file,
-# its require in session.rb and spec/compat_spec.rb. See https://github.com/toland/patron/issues/209
+# once. Everything about this lives here on purpose, bar the one line in Session#request: to drop
+# it in 1.1, delete this file, its require in session.rb, that line and spec/compat_spec.rb.
+# See https://github.com/toland/patron/issues/209
 module Patron
   module Compat
     # Kept per Ractor since a non-main Ractor may not touch module state, so each Ractor warns once
@@ -16,16 +17,12 @@ module Patron
       warn "Patron: #{form} is deprecated and will be removed in Patron 1.1, use #{replacement} instead (https://github.com/toland/patron/issues/209)", uplevel: uplevel
     end
 
-    # Session.new(hash) and request(action, url, headers, options_hash)
+    # Session.new(hash). The request(action, url, headers, options_hash) form is handled in
+    # Session#request itself, see the comment there
     module SessionArguments
       def initialize(*positional, **options, &block)
         options = Compat.hash_to_keywords("Patron::Session.new with a Hash", positional, options)
         super(**options, &block)
-      end
-
-      def request(action, url, headers = {}, *positional, **options)
-        options = Compat.hash_to_keywords("Patron::Session#request with an options Hash", positional, options)
-        super(action, url, headers, **options)
       end
     end
 

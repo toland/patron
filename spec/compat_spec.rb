@@ -83,6 +83,31 @@ describe Patron::Compat, :session do
     expect(session.wrapped_calls).to eq(1)
   end
 
+  it "works with an alias_method chain installed on Session itself, the way sniffer does it" do
+    # Reopening Session would leak into the other specs, so the chain is installed in a child
+    rd, wr = IO.pipe
+    pid = fork do
+      rd.close
+      Patron::Session.class_eval do
+        def request_with_sniffer(action, url, headers, options = {})
+          $sniffed = ($sniffed || 0) + 1
+          request_without_sniffer(action, url, headers, options)
+        end
+        alias_method :request_without_sniffer, :request
+        alias_method :request, :request_with_sniffer
+      end
+      session = Patron::Session.new(base_url: "http://localhost:#{HTTP_PORT}")
+      status = nil
+      capturing_warnings { status = session.post("/testpost", "x").status }
+      wr.write("#{status} #{$sniffed}")
+      wr.close
+      exit!(0)
+    end
+    wr.close
+    Process.wait(pid)
+    expect(rd.read).to eq("200 1")
+  end
+
   it "still rejects genuinely wrong arguments" do
     expect { Patron::Session.new(1) }.to raise_error(ArgumentError)
     expect { Patron::Response.new("a", "b", "c", "d", "e", "f", "g") }.to raise_error(ArgumentError)

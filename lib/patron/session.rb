@@ -341,7 +341,10 @@ module Patron
     # @param options[Hash] any additional Request attributes, plus `:data`, `:file`, `:multipart` and `:query`
     # @see Patron::Request
     # @return [Patron::Response]
-    def request(action, url, headers = {}, **options)
+    def request(action, url, headers = {}, *positional, **options)
+      # The 0.x positional options Hash is tolerated here rather than in a prepended module, since
+      # sniffer and friends alias_method-chain this method and a prepend would recurse into the alias
+      options = Compat.hash_to_keywords("Patron::Session#request with an options Hash", positional, options)
       handle_request(build_request(action, url, headers, **options))
     end
 
