@@ -1,7 +1,12 @@
-### 1.0.0 (unreleased)
+### Unreleased
 
-Patron 1.0 is a rewrite of the C extension for modern Ruby and modern libcurl, following the Ruby core
-team's guidance in `doc/efficient_extensions.md`. It requires **Ruby 3.3+** and **libcurl 7.81+**.
+### 1.0.0
+
+Patron 1.0 is a rewrite of the C extension for modern Ruby and modern libcurl. It follows Ivo Anjo's
+guide ["Tips for updating Ruby C extensions for efficiently using Ruby 4 VM APIs"](https://github.com/ruby/ruby/blob/master/doc/efficient_extensions.md),
+which has since been merged into the Ruby documentation, and his post
+["Updating a C extension for a modern VM"](https://ivoanjo.me/blog/2026/09/23/updating-a-c-extension-for-a-modern-vm/).
+It requires **Ruby 3.3+** and **libcurl 7.81+**.
 
 **Transfers**
 
