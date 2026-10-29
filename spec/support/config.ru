@@ -1,23 +1,14 @@
-require 'yaml'
-require 'ostruct'
+# frozen_string_literal: true
+
+require 'json'
 require 'zlib'
 
 ## HTTP test server for integration tests
 
-Readback = Proc.new {|env|
-  # The Patron test suite is originally written to enable the following
-  # testing pattern:
-  # * Patron does a request
-  # * The request gets captured by Webrick
-  # * Webrick then takes it's Request object and YAMLs it wholesale (body, headers and all)
-  # * ...and sends it back to the client
-  # * The test suite then de-YAMLs the request object from the response body and does assertions on it
-  #
-  # The easiest way to fake it, preserving the entire test suite intact, is to simulate a Webrick
-  # request object using an ostruct. Of note is the following:
-  #
-  # 1) Webrick returns headers in arrays by default, accounting for repeats like with Cookie
-  # 2) Webrick does not convert headers to ENV_VARS_FOR_FCI it only downcases them. We have to match that.
+# Echoes the request back as JSON so that the specs can assert on what actually arrived.
+# Headers come back as name => [values] the way Webrick used to give them, since the
+# specs were written against that shape
+ReadbackServlet = Proc.new {|env|
   req = Rack::Request.new(env)
   req_headers = env.to_a.select do |(k,v)|
     k.is_a?(String) && v.is_a?(String)
@@ -25,22 +16,20 @@ Readback = Proc.new {|env|
    [k.downcase.gsub(/^http_/, '').gsub(/_/o, '-'), [v]]
   end
 
-  fake_webrick_request_object = OpenStruct.new({
-    :fullpath => req.fullpath,
-    :path => req.path,
-    :query_string => req.query_string,
-    :request_method => req.request_method.to_s,
-    :header => Hash[req_headers],
-    :body => env['rack.input'].read,
+  body_str = JSON.generate({
+    'fullpath' => req.fullpath,
+    'path' => req.path,
+    'query_string' => req.query_string,
+    'request_method' => req.request_method.to_s,
+    'header' => req_headers.to_h,
+    'body_base64' => [env['rack.input'].read].pack('m0'),
   })
-
-  body_str = fake_webrick_request_object.to_yaml
-  [200, {'Content-Type' => 'text/plain', 'Content-Length' => body_str.bytesize.to_s}, [body_str]]
+  [200, {'Content-Type' => 'application/json', 'Content-Length' => body_str.bytesize.to_s}, [body_str]]
 }
 
-GzipServlet = Proc.new {|env|
+DeflateServlet = Proc.new {|env|
   raise "Need to have the right Accept-Encoding: header" unless env['HTTP_ACCEPT_ENCODING']
-  
+
   body = []
   content_length = 0
   z = Zlib::Deflate.new(Zlib::DEFAULT_COMPRESSION)
@@ -84,27 +73,28 @@ EvilRedirectServlet = Proc.new {|env|
 }
 
 BodyReadback = Proc.new {|env|
-  readback = {'method' => env['REQUEST_METHOD'], 'body' => env['rack.input'].read, 'content_type' => env.fetch('CONTENT_TYPE')}
-  [200, {'Content-Type' => 'text/plain'}, [OpenStruct.new(readback).to_yaml]]
+  body_str = JSON.generate({
+    'request_method' => env['REQUEST_METHOD'],
+    'body_base64' => [env['rack.input'].read].pack('m0'),
+    'content_type' => env.fetch('CONTENT_TYPE'),
+  })
+  [200, {'Content-Type' => 'application/json'}, [body_str]]
 }
 
-TestPatchBodyServlet = BodyReadback
-
 SetCookieServlet = Proc.new {|env|
-  [301, {'Set-Cookie' => 'session_id=foo123', 'Location' => 'http://localhost:9001/test'}, []]
+  [301, {'Set-Cookie' => 'session_id=foo123', 'Location' => "#{env.fetch('rack.url_scheme')}://localhost:#{env.fetch('SERVER_PORT')}/test"}, []]
 }
 
 RepetitiveHeaderServlet = Proc.new {|env|
-  # The values of the header must be Strings,
-  # consisting of lines (for multiple header values, e.g. multiple
-  # <tt>Set-Cookie</tt> values) separated by "\\n".
-  [200, {'Set-Cookie' => "a=1\nb=2", 'Content-Type' => 'text/plain'}, ['Hi.']]
+  [200, {'Set-Cookie' => ['a=1', 'b=2'], 'Content-Type' => 'text/plain'}, ['Hi.']]
 }
 
 PictureServlet = Proc.new {|env|
-  # Rack::File allows us to test Range support as well
-  env_with_adjusted_path = env.merge('PATH_INFO' => Rack::Utils.escape('/pic.png'))
-  Rack::File.new('./').call(env_with_adjusted_path)
+  # Rack::Files gives us Range support for free
+  env_with_adjusted_path = env.merge('PATH_INFO' => '/pic.png')
+  status, headers, body = Rack::Files.new(__dir__).call(env_with_adjusted_path)
+  # Rack 3 lowercases header names, but the specs look them up the way real servers send them
+  [status, headers.transform_keys { |k| k.split('-').map(&:capitalize).join('-') }, body]
 }
 
 RedirectToPictureServlet = Proc.new {|env|
@@ -134,8 +124,8 @@ PeerCertServlet = Proc.new {|env|
 }
 
 run Rack::URLMap.new({
-  "/" => Proc.new {|env| [200, {'Content-Length' => '2'}, ['Welcome']]},
-  "/test" => Readback,
+  "/" => Proc.new {|env| [200, {'Content-Length' => '7'}, ['Welcome']]},
+  "/test" => ReadbackServlet,
   "/testpost" => BodyReadback,
   "/testpatch" => BodyReadback,
   "/timeout" => TimeoutServlet,
@@ -148,6 +138,6 @@ run Rack::URLMap.new({
   "/setcookie" => SetCookieServlet,
   "/repetitiveheader" => RepetitiveHeaderServlet,
   "/wrongcontentlength" => WrongContentLengthServlet,
-  "/gzip-compressed" => GzipServlet,  
+  "/deflate-compressed" => DeflateServlet,
   "/peercert" => PeerCertServlet,
 })

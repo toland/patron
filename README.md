@@ -22,9 +22,9 @@ sess.headers['User-Agent'] = 'myapp/1.0'
 You can set options with a hash in the constructor:
 
 ```ruby
-sess = Patron::Session.new({ :timeout => 10,
-                             :base_url => 'http://myserver.com:9900',
-                             :headers => {'User-Agent' => 'myapp/1.0'} } )
+sess = Patron::Session.new(timeout: 10,
+                           base_url: 'http://myserver.com:9900',
+                           headers: {'User-Agent' => 'myapp/1.0'})
 ```
 
 Or the set options in a block:
@@ -37,10 +37,11 @@ sess = Patron::Session.new do |patron|
 end
 ```
 
-Output debug log:
+Output libcurl's verbose log to a file, to any IO, or to `$stderr` when called without arguments:
 
 ```ruby
 sess.enable_debug "/tmp/patron.debug"
+sess.enable_debug $stdout
 ```
 
 The Session is used to make HTTP requests.
@@ -57,12 +58,17 @@ if resp.status < 400
 end
 ```
 
-The GET, HEAD, PUT, POST and DELETE operations are all supported.
+The GET, HEAD, PUT, PATCH, POST and DELETE operations have their own methods, and any other
+HTTP verb can be sent through `request`:
 
 ```ruby
 sess.put("/foo/baz", "some data")
 sess.delete("/foo/baz")
+sess.request(:propfind, "/foo", {"Depth" => "1"})
 ```
+
+A failed transfer raises a subclass of `Patron::Error` (`Patron::TimeoutError`, `Patron::ConnectionFailed`,
+`Patron::HostResolutionError` and so on). Every such error carries the libcurl error code as `curl_code`.
 
 You can ship custom headers with a single request:
 
@@ -101,11 +107,11 @@ can't load a PEM certificate from a file at all.
 
 ## Threading
 
-By itself, the `Patron::Session` objects are not thread safe (each `Session` holds a single `curl_state` pointer
-from initialization to garbage collection). At this time, Patron has no support for `curl_multi_*` family of functions 
-for doing concurrent requests. However, the actual code that interacts with libCURL does unlock the RVM GIL,
-so using multiple `Session` objects in different threads actually enables a high degree of parallelism.
-For sharing a resource of sessions between threads we recommend using the excellent [connection_pool](https://rubygems.org/gems/connection_pool) gem by Mike Perham.
+A `Patron::Session` performs one request at a time and must not be shared between threads: each `Session`
+owns its own libcurl handles and buffers, and using it from two threads at once raises `Patron::Error`.
+Patron releases the GVL (the global VM lock) whenever it waits for the network, so using one `Session`
+per thread gives you real parallelism.
+For sharing a pool of sessions between threads we recommend the excellent [connection_pool](https://rubygems.org/gems/connection_pool) gem by Mike Perham.
 
 ```ruby
 patron_pool = ConnectionPool.new(size: 5, timeout: 5) { Patron::Session.new }
@@ -118,62 +124,90 @@ Sharing Session objects between requests will also allow you to benefit from per
 
 ## Persistent connections
 
-Patron follows the libCURL guidelines on [connection reuse.](https://everything.curl.dev/libcurl/connectionreuse.html) If you create the Session
-object once and use it for multiple requests, the same libCURL handle is going to be used across these requests and if requests go to
-the same hostname/port/protocol the connection should get reused.
+Every `Session` owns a libcurl multi handle with its own connection cache, plus a share handle for
+cookies, DNS entries and TLS sessions. If you create the Session once and use it for multiple requests
+to the same hostname/port/protocol, the connection gets reused, following libcurl's rules on
+[connection reuse.](https://everything.curl.dev/libcurl/connectionreuse.html)
 
-## Performance with parallel requests
+## Interrupting requests
 
-When performing the libCURL request, Patron goes out of it's way to unlock the GVL (global VM lock) to allow other threads to be scheduled
-in parallel. The GVL is going to be released when the libCURL request starts, and will then be shortly re-acquired to provide the progress
-callback - if the callback has been configured, and then released again until the libCURL request has been performed and the response has
-been read in full. This allows one to execute multiple libCURL requests in parallel, as well as perform other activities on other MRI threads
-that are currently active in the process.
+A request in flight can be aborted from another thread with `Session#interrupt`, after which the
+request raises `Patron::Aborted`. `Thread#kill`, `Thread#raise`, `Timeout.timeout` and signals interrupt
+a request the same way, immediately and in any phase of the transfer, including DNS resolution and
+connecting. A `progress_callback` that returns `false` aborts the request as well, and an exception
+raised inside the callback propagates out of the request once libcurl is done with it.
+
+## Fibers and the async gem
+
+When a Fiber scheduler is installed for the current thread (as inside `Async { }`), Patron hands the
+wait for the network to the scheduler instead of blocking the thread, so requests from several fibers
+overlap and other fibers keep running while one waits:
+
+```ruby
+Async do |task|
+  pages = urls.map { |url| task.async { Patron::Session.new(timeout: 10).get(url) } }.map(&:wait)
+end
+```
+
+Each fiber needs its own `Session`, just like each thread does. `Async::Task#stop` and
+`Task#with_timeout` interrupt a request in flight the same way `Thread#kill` and `Timeout` do.
+
+## Ractors
+
+Patron works from non-main Ractors, so Ractors give you parallelism for the Ruby side of your
+requests as well, not just for the waits. A `Session` belongs to the Ractor that created it: Ruby refuses
+to copy, move or share one (`Ractor::Error`), so create the `Session` inside the Ractor and ship
+`Response` objects out. A worker pool looks like this on Ruby 4.0:
+
+```ruby
+results = Ractor::Port.new
+workers = 4.times.map do
+  Ractor.new(results) do |results|
+    session = Patron::Session.new(timeout: 10)
+    while (url = Ractor.receive)
+      results << Ractor.make_shareable(session.get(url))
+    end
+  end
+end
+urls.each_with_index { |url, i| workers[i % workers.size].send(url) }
+responses = urls.size.times.map { results.receive }
+```
+
+`Ractor.make_shareable` on the `Response` is optional: it saves copying the body when the Response crosses
+over, and a shareable (frozen) `Response` still decodes its body. A `Patron::Error` raised inside the
+Ractor comes out of `Ractor#value` as the `cause` of a `Ractor::RemoteError`, `curl_code` and all.
+`Patron::Request` objects can be made shareable and used from any Ractor too.
+
+## How the GVL is handled
+
+Patron drives libcurl through its multi interface. The part of libcurl that moves bytes
+(`curl_multi_perform`) runs with the GVL held, which is what makes it safe to run your progress callback
+and to write straight into Ruby Strings from inside libcurl. Whenever libcurl has nothing to do but wait
+for the network, Patron releases the GVL (`curl_multi_poll`), so other Ruby threads run in parallel with
+the transfer, and that wait is what Ruby interrupts when it needs the thread back.
 
 ## Requirements
 
-Patron 1.0 and up requires MRI Ruby 2.3 or newer. The 0.x versions support
-Ruby 1.9.3 and these versions get tagged and developed on the `v0.x` branch.
+Patron 1.0 and up requires Ruby 3.3 or newer and libcurl 7.81.0 or newer (Ubuntu 22.04 and up,
+Debian 12 and up, any current macOS). The 0.x versions support older Rubies and stay on the `v0.x` branch.
 
-A recent version of libCURL is required. We recommend at least 7.19.4 because
-it [supports limiting the protocols](https://curl.haxx.se/libcurl/c/CURLOPT_PROTOCOLS.html),
-and that is very important for security - especially if you follow redirects. 
+You will have to install the libcurl development package on Debian or Ubuntu (`libcurl4-openssl-dev`),
+Alpine (`curl-dev`) and the like. The build looks libcurl up through `pkg-config`, then `curl-config`,
+then the default include and library paths. To build against a specific libcurl, for example
+Homebrew's OpenSSL-backed one instead of the SecureTransport-backed one macOS ships:
 
-On OSX the provided libcurl is sufficient if you are not using fork+SSL combination (see below).
-You will have to install the libcurl development packages on Debian or Ubuntu. Other Linux systems are probably
-similar. For Windows we do not have an established build instruction at the moment, unfortunately.
+    $ gem install patron -- --with-curl-dir=$(brew --prefix curl)
 
-## Forking webservers on macOS and SSL
+or, for every Bundler-driven install:
 
-Currently, [an issue is at play](https://github.com/curl/curl/issues/788) with OSX builds of `curl` which use
-Apple's SecureTransport. Such builds (which Patron is linking to), are causing segfaults when performing HTTPS
-requests in forked subprocesses. If you need to check whether your system is affected,
-run the Patron test suite by performing
+    $ bundle config build.patron --with-curl-dir=$(brew --prefix curl)
 
-    $ bundle install && bundle exec rspec
-
-in the Patron install directory. Most default curl configurations on OSX (both
-the Apple-shipped version and the version available via Homebrew) are linked to
-SecureTransport and are likely to be affected. This issue may also manifest in
-forking webserver implementations (such as Unicorn or Passenger) and in forking
-job execution engines (such as resque), so even though you may not be using
-`fork()` directly your server engine might be doing it for you.
-
-To circumvent the issue, you need to build `curl` with OpenSSL via homebrew.
-When doing so, `curl` will use openssl as it's SSL driver. You also need to
-change the Patron compile flag:
-
-
-    $ brew install curl-openssl && \
-        gem install patron -- --with-curl-config=/usr/local/opt/curl-openssl/bin/curl-config
-
-You can also save this parameter for all future Bundler-driven gem installs by
-setting this flag in Bundler proper:
-
-    $ bundle config build.patron --with-curl-config=/usr/local/opt/curl-openssl/bin/curl-config
+The SecureTransport backend of the macOS system libcurl cannot load PEM client certificates,
+and [older versions of it crash](https://github.com/curl/curl/issues/788) when doing HTTPS in a forked
+subprocess, so the Homebrew libcurl is the better choice on macOS.
 
 ## Installation
 
-    sudo gem install patron
+    gem install patron
 
 Copyright (c) 2008 The Hive

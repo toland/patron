@@ -4,30 +4,108 @@ on: [push, pull_request]
 
 jobs:
   test:
-    runs-on: ubuntu-24.04
-    continue-on-error: ${{ matrix.allow-failure || false }}
+    name: Specs - Ruby ${{ matrix.ruby }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.ruby == 'head' }}
     strategy:
       fail-fast: false
       matrix:
-        ruby-version: ["2.4", "3.0", "3.4.1", "4.0.5"]
-        include:
-          - ruby-version: "head"
-            allow-failure: true
+        os: [ubuntu-latest, macos-15]
+        ruby: ["3.3", "3.4", "4.0", "head"]
+    steps:
+    - uses: actions/checkout@v7
+    - name: Install libcurl (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install libcurl4-openssl-dev
+    - name: Install libcurl (macOS)
+      if: runner.os == 'macOS'
+      # The SDK libcurl uses SecureTransport, which cannot load PEM client certificates;
+      # Homebrew's is built against OpenSSL like the Linux ones
+      run: |
+        brew install curl
+        echo "BUNDLE_BUILD__PATRON=--with-curl-dir=$(brew --prefix curl)" >> "$GITHUB_ENV"
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ matrix.ruby }}
+        bundler-cache: true
+    - name: Run tests
+      run: bundle exec rake
 
-    name: Specs - Ruby ${{ matrix.ruby-version }}
+  werror:
+    name: Compile with -Werror on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    # Becomes a required check once the C extension rewrite lands; the current C still
+    # uses libcurl APIs that GCC flags as deprecated
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    steps:
+    - uses: actions/checkout@v7
+    - name: Install libcurl (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install libcurl4-openssl-dev
+    - name: Install libcurl (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install curl
+        echo "BUNDLE_BUILD__PATRON=--with-curl-dir=$(brew --prefix curl)" >> "$GITHUB_ENV"
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: "3.4"
+        bundler-cache: true
+    - name: Compile
+      run: bundle exec rake compile -- --enable-werror
+
+  old-libcurl:
+    name: Specs - Debian bookworm (libcurl 7.88)
+    runs-on: ubuntu-latest
+    container: ruby:3.3-bookworm
+    steps:
+    - uses: actions/checkout@v7
+    - name: Install libcurl
+      run: |
+        apt-get update
+        apt-get -y install libcurl4-openssl-dev
+    - run: bundle install
+    - run: bundle exec rake
+
+  alpine:
+    name: Specs - Alpine (musl)
+    runs-on: ubuntu-latest
+    container: ruby:3.3-alpine
+    steps:
+    - uses: actions/checkout@v7
+    - name: Install build tools and libcurl
+      run: apk add --no-cache build-base curl-dev git
+    - run: bundle install
+    - run: bundle exec rake
+
+  gc-stress:
+    name: Specs under GC stress and compaction
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
     - name: Install libcurl
       run: |
         sudo apt-get update
-        sudo apt-get -y install libcurl4 libcurl4-openssl-dev 
-    - name: Set up Ruby ${{ matrix.ruby-version }}
-      uses: ruby/setup-ruby@v1
+        sudo apt-get -y install libcurl4-openssl-dev
+    - uses: ruby/setup-ruby@v1
       with:
-        ruby-version: ${{ matrix.ruby-version }}
-        bundler-cache: true # 'bundle install' and cache
+        ruby-version: "3.4"
+        bundler-cache: true
     - name: Run tests
       run: bundle exec rake
+      env:
+        PATRON_GC_STRESS: "1"
+
+  # No AddressSanitizer job: an LD_PRELOADed libasan under an uninstrumented Ruby dies in
+  # ASan's own allocator when Ruby's GC unmaps heap pages, before a single spec runs
 
   valgrind:
     runs-on: ubuntu-latest
@@ -46,15 +124,18 @@ jobs:
     - name: Compile the extension with debug info
       run: bundle exec rake clobber compile
       env:
-        PATRON_EXTRA_CFLAGS: "-g -O1"
+        PATRON_CFLAGS: "-g -O1"
     - name: Run the specs under memcheck
       # The ruby process itself is under valgrind (bundle exec only sets up the environment).
       # Specs tagged :timing assert on wall-clock windows that valgrind's slowdown breaks.
+      # Specs tagged :fibers switch fiber stacks, which memcheck reports as invalid reads inside
+      # Ruby's coroutine code and io-event's selector, none of it ours. Specs tagged :ractors
+      # skip on the 3.4 used here anyway, and would spawn Ractor threads under memcheck otherwise.
       run: |
         bundle exec valgrind --error-exitcode=99 --leak-check=no --undef-value-errors=no \
           --child-silent-after-fork=yes --num-callers=30 \
           --suppressions=spec/support/valgrind.supp \
-          ruby -S rspec --tag ~timing
+          ruby -S rspec --tag ~timing --tag ~fibers --tag ~ractors
 
   malloc-check:
     runs-on: ubuntu-latest
@@ -77,3 +158,25 @@ jobs:
       env:
         MALLOC_CHECK_: "3"
         MALLOC_PERTURB_: "165"
+
+  gem:
+    name: Build and install the gem, check docs
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - name: Install libcurl
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install libcurl4-openssl-dev
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: "3.4"
+        bundler-cache: true
+    - name: Build and install
+      run: |
+        gem build patron.gemspec
+        gem install ./patron-*.gem
+        ruby -rpatron -e 'puts Patron.libcurl_version'
+    - name: YARD
+      run: bundle exec yard --fail-on-warning
+      continue-on-error: true

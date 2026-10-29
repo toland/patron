@@ -1,4 +1,76 @@
-### Unreleased
+### 1.0.0 (unreleased)
+
+Patron 1.0 is a rewrite of the C extension for modern Ruby and modern libcurl, following the Ruby core
+team's guidance in `doc/efficient_extensions.md`. It requires **Ruby 3.3+** and **libcurl 7.81+**.
+
+**Transfers**
+
+* A `Session` used inside a Fiber scheduler (`Async { }`, Falcon) yields to the scheduler while libcurl
+  waits for the network instead of blocking the thread, so requests from several fibers overlap and
+  `Async::Task#stop` / `with_timeout` interrupt a request cleanly. No API change, nothing to configure
+
+* Requests are driven through libcurl's multi interface: every `Session` owns a multi handle with its own
+  connection cache (connection pooling, #138), `curl_multi_perform` runs with the GVL held and only
+  `curl_multi_poll` releases it, and `curl_multi_wakeup` is the unblocking function. `Thread#kill`,
+  `Thread#raise`, `Timeout.timeout`, signals and interpreter exit now interrupt a request immediately
+  in any phase of the transfer, including DNS resolution and connect, instead of at the next progress tick
+* `Session#interrupt` aborts the request in flight from another thread immediately and raises `Patron::Aborted`
+* Using one `Session` from two threads at once raises `Patron::Error` instead of corrupting memory
+* Response headers and bodies are accumulated directly into Ruby Strings, no more intermediate C buffer and copy
+* Multipart requests use libcurl's `curl_mime` API: field values are binary-safe, names and values are copied,
+  and multipart `PUT`/`PATCH` work too
+* `download_byte_limit` raises `Patron::DownloadLimitExceeded` (a subclass of `Patron::Aborted`)
+* Exceptions raised inside a `progress_callback` propagate out of the request after the transfer is cleaned up;
+  previously they unwound through libcurl's frames. Returning `false` from the callback aborts the request
+* Every `Patron::Error` raised for a transfer carries the libcurl code as `#curl_code`
+* A forked child no longer reuses the parent's libcurl handles and connections
+* Cookies collected with `handle_cookies` (and TLS sessions) are kept across requests on the same
+  `Session`, not only across the redirects of one request
+* `enable_debug` accepts an `IO` as well as a path, writes libcurl's verbose output through Ruby, and
+  never clobbers the process' stderr
+
+**Memory and VM**
+
+* The `Session` TypedData is write-barrier protected and compaction-aware; the request body is pinned
+  only while libcurl reads it; memory size is reported to `ObjectSpace`
+* The extension declares itself Ractor-safe: Patron can be used from non-main Ractors. A `Session`
+  belongs to the Ractor that created it (Ruby refuses to copy, move or share one); `Response` and
+  `Request` objects can be made shareable, and a frozen `Response` still decodes its body. The 0.x
+  compatibility warnings are tracked per Ractor. Covered by specs on Ruby 4.0+
+* Statically held exception classes are registered with the GC (they could dangle under compaction before)
+* The global list of live sessions, the `at_exit` hook and the bundled `sglib.h` are gone
+
+**Ruby API**
+
+* `Patron::Request` keeps its setters (build one, change the URL, send it again) and also takes keyword
+  arguments; any HTTP token is accepted as a verb (#180), verbs libcurl does not know natively are sent as
+  custom requests, and `Marshal` now covers every attribute instead of 22 of 31
+* `Session.new` takes keyword arguments
+* `Response.new` takes keyword arguments (`url:`, `status:`, `redirect_count:`, `header_data:`, `body:`,
+  `default_charset:`, `timings:`); a custom `response_class` must accept the same
+* `default_response_charset` is now honoured as the fallback for `Response#charset`
+* `Response#body` is no longer mutated by `decoded_body`/`inspectable_body`
+* `Patron.libcurl_features` reports the runtime libcurl version, TLS backend and feature flags
+* `Patron::Request::SSL_VERSIONS` and `HTTP_VERSIONS` list the accepted version names; `"HTTPv3"` is accepted
+* `Patron::ProxyType::HTTPS` added
+* `base_url` and the request path are joined as URLs, not with `File.join`
+* The 0.x positional forms of `Response.new`, `Session.new` and `Session#request` still work in 1.0 with a
+  deprecation warning (see `lib/patron/compat.rb` and #209); they go away in 1.1
+
+**Removed**
+
+* `Session#reset` (it was an alias of `interrupt`)
+* `ssl_version` values `"SSLv2"` and `"SSLv3"` (refused by every supported libcurl anyway)
+* Positional arguments to `Response.new`; `Request::READER_VARS`, `WRITER_VARS` and `VALID_ACTIONS` (see `Request::ATTRIBUTES`)
+* Ruby < 3.3, libcurl < 7.81, and the `#if LIBCURL_VERSION_NUM` compatibility branches for libcurl 7.19 through 7.6x
+
+**Build, packaging and tests**
+
+* Require Ruby 3.3 or newer and libcurl 7.81.0 or newer
+* Build with pkg-config when available; `--with-curl-dir` now takes precedence over a `curl-config` found on `PATH`
+* Remove the dead `patron/proxy_type.rb` file; the `Patron::ProxyType` constants were always defined by the extension
+* Stop shipping test fixtures and CI configuration inside the gem
+* Test suite: Puma 6 and Rack 3, JSON request readback, configurable ports (`PATRON_TEST_HTTP_PORT` and friends), `PATRON_GC_STRESS=1` for GC and compaction stress runs
 
 ### 0.14.0
 

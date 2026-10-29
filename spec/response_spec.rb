@@ -1,5 +1,5 @@
-# -*- coding: UTF-8 -*-
-# Encoding pragma is needed for loading this test properly on Ruby < 2.0
+# frozen_string_literal: true
+
 
 ## -------------------------------------------------------------------
 ##
@@ -24,12 +24,9 @@
 ## THE SOFTWARE.
 ##
 ## -------------------------------------------------------------------
-require File.expand_path("./spec") + '/spec_helper.rb'
-require 'webrick'
-require 'base64'
 require 'fileutils'
 
-describe Patron::Response do
+describe Patron::Response, :session do
   around(:each) do |example|
     previous_internal = Encoding.default_internal
     example.run
@@ -38,7 +35,7 @@ describe Patron::Response do
   
   before(:each) do
     @session = Patron::Session.new
-    @session.base_url = "http://localhost:9001"
+    @session.base_url = "http://localhost:#{HTTP_PORT}"
   end
 
   it 'recovers the status code' do
@@ -49,21 +46,21 @@ describe Patron::Response do
   
   it 'saves the definitive URL in the url attribute' do
     headers = "HTTP/1.1 200 OK \r\nContent-Type: text/plain\r\n"
-    response = Patron::Response.new("http://example.com/url", 200, 0, headers, '', "UTF-8")
+    response = Patron::Response.new(url: "http://example.com/url", status: 200, redirect_count: 0, header_data: headers, body: "", default_charset: "UTF-8")
     expect(response.url).to eq("http://example.com/url")
   end
   
   it 'parses the status code and supports ok? and error?' do
     headers = "HTTP/1.1 200 OK \r\nContent-Type: text/plain\r\n"
     body = "abc"
-    response = Patron::Response.new("url", 200, 0, headers, body, "UTF-8")
+    response = Patron::Response.new(url: "url", status: 200, redirect_count: 0, header_data: headers, body: body, default_charset: "UTF-8")
     expect(response.status).to eq(200)
     expect(response).to be_ok
     expect(response).not_to be_error
     
     headers = "HTTP/1.1 400 Bad Request \r\nContent-Type: text/plain\r\n"
     body = "abc"
-    response = Patron::Response.new("url", 400, 0, headers, body, "UTF-8")
+    response = Patron::Response.new(url: "url", status: 400, redirect_count: 0, header_data: headers, body: body, default_charset: "UTF-8")
     expect(response.status).to eq(400)
     expect(response).not_to be_ok
     expect(response).to be_error
@@ -105,7 +102,7 @@ describe Patron::Response do
       headers = "HTTP/1.1 200 OK \r\nContent-Type: text/css;charset=ISO-8859-7\r\n"
       body = "Ππ".encode(greek_encoding) # Greek alphabet
 
-      response = Patron::Response.new("url", "status", 0, headers, body, nil)
+      response = Patron::Response.new(url: "url", status: "status", redirect_count: 0, header_data: headers, body: body, default_charset: nil)
 
       expect(response).to be_body_decodable
       expect(response.decoded_body.encoding).to eql(utf_encoding)
@@ -116,9 +113,9 @@ describe Patron::Response do
 
       encoding = Encoding.find("UTF-8")
       headers = "HTTP/1.1 200 OK \r\nContent-Type: text/css; charset=invalid\r\n"
-      body = "who knows which encoding this CSS is in?"
+      body = +"who knows which encoding this CSS is in?"
 
-      response = Patron::Response.new("url", "status", 0, headers, body, "UTF-8")
+      response = Patron::Response.new(url: "url", status: "status", redirect_count: 0, header_data: headers, body: body, default_charset: "UTF-8")
       expect(response.charset).to eq('invalid')
       
       expect(response).not_to be_body_decodable
@@ -132,9 +129,9 @@ describe Patron::Response do
     Encoding.default_internal = Encoding::ASCII
     encoding = Encoding.find("UTF-8")
     headers = "HTTP/1.1 200 OK \r\nContent-Disposition: attachment,filename=\"žфайлец.txt\"\r\n"
-    body = "this is a file with a Russian filename set in content-disposition"
+    body = +"this is a file with a Russian filename set in content-disposition"
 
-    response = Patron::Response.new("url", "status", 0, headers, body, "UTF-8")
+    response = Patron::Response.new(url: "url", status: "status", redirect_count: 0, header_data: headers, body: body, default_charset: "UTF-8")
     dispo = response.headers['Content-Disposition']
     expect(dispo.encoding).to eq(Encoding::UTF_8)
   end

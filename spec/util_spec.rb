@@ -1,6 +1,7 @@
-require File.expand_path("./spec") + '/spec_helper.rb'
+# frozen_string_literal: true
 
-describe Patron::Util do
+
+describe Patron::Util, :unit do
 
   describe :build_query_pairs_from_hash do
     

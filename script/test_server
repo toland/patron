@@ -1,4 +1,5 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 # HTTP test server for integration tests
 
 root = File.expand_path('../..', __FILE__)
