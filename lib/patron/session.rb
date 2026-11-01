@@ -247,9 +247,10 @@ module Patron
     # unline ++post++, a Hash is not accepted as the ++data++ argument.
     #
     # @param url[String] the URL to fetch
-    # @param data[#to_s, #to_path] an object that can be converted to a String
-    #   to create the request body, or that responds to #to_path to upload the
-    #   entire request body from that file
+    # @param data[#to_s, #to_path, #read] an object that can be converted to a String
+    #   to create the request body, that responds to #to_path to upload the
+    #   entire request body from that file, or that responds to #read to stream
+    #   the request body from it (see Request#upload_data=)
     # @param headers[Hash] the hash of header keys to values
     # @return [Patron::Response]
     def put(url, data, headers = {})
@@ -260,9 +261,10 @@ module Patron
     # unline ++post++, a Hash is not accepted as the ++data++ argument.
     #
     # @param url[String] the URL to fetch
-    # @param data[#to_s, #to_path] an object that can be converted to a String
-    #   to create the request body, or that responds to #to_path to upload the
-    #   entire request body from that file
+    # @param data[#to_s, #to_path, #read] an object that can be converted to a String
+    #   to create the request body, that responds to #to_path to upload the
+    #   entire request body from that file, or that responds to #read to stream
+    #   the request body from it (see Request#upload_data=)
     # @param headers[Hash] the hash of header keys to values
     # @return [Patron::Response]
     def patch(url, data, headers = {})
@@ -283,10 +285,11 @@ module Patron
     # Uploads the passed `data` to the specified `url` using an HTTP POST.
     #
     # @param url[String] the URL to fetch
-    # @param data[Hash, #to_s, #to_path] a Hash of form fields/values,
+    # @param data[Hash, #to_s, #to_path, #read] a Hash of form fields/values,
     #   or an object that can be converted to a String
-    #   to create the request body, or an object that responds to #to_path to upload the
-    #   entire request body from that file
+    #   to create the request body, an object that responds to #to_path to upload the
+    #   entire request body from that file, or one that responds to #read to stream
+    #   the request body from it (see Request#upload_data=)
     # @param headers[Hash] the hash of header keys to values
     # @return [Patron::Response]
     def post(url, data, headers = {})
@@ -338,7 +341,8 @@ module Patron
     # @param action[#to_s] the HTTP verb
     # @param url[String] the URL for the request
     # @param headers[Hash] headers to send along with the request
-    # @param options[Hash] any additional Request attributes, plus `:data`, `:file`, `:multipart` and `:query`
+    # @param options[Hash] any additional Request attributes, plus `:data`, `:file`, `:multipart` and `:query`.
+    #   `:data` may be a Hash, a String, or an object responding to #to_path or #read (see Request#upload_data=)
     # @see Patron::Request
     # @return [Patron::Response]
     def request(action, url, headers = {}, *positional, **options)
@@ -368,7 +372,8 @@ module Patron
     # @param action[String] the HTTP verb
     # @param url[#to_s] the addition to the base url component, or a complete URL
     # @param headers[Hash] a hash of headers, "Expect" will be automatically set to an empty string if not provided
-    # @param options[Hash] any overriding options (will shadow the options from the Session object)
+    # @param options[Hash] any overriding options (will shadow the options from the Session object).
+    #   `:data` may be a Hash, a String, or an object responding to #to_path or #read (see Request#upload_data=)
     # @return [Patron::Request] the request that will be passed to ++handle_request++
     def build_request(action, url, headers = {}, **options)
       # Without an empty Expect header uploads wait for a "100 Continue" that may never come

@@ -63,10 +63,18 @@ module Patron
     end
 
     # Sets the request body. A Hash is form-encoded, unless the request is multipart, in which
-    # case libcurl composes the body from it. Anything else is sent as its `to_s`, or uploaded
-    # from the file it names when it responds to `to_path`.
+    # case libcurl composes the body from it. An object that responds to `to_path` (a File, a
+    # Tempfile) is uploaded from the file it names. An object that responds to `readpartial` or
+    # `read` (a StringIO, an `IO.pipe` reader, a `Zlib::GzipReader`) is streamed: libcurl calls
+    # `readpartial(length, buffer)` until it raises EOFError, or, when the object has no
+    # `readpartial`, `read(length, buffer)` until it returns nil. `readpartial` sends whatever a
+    # pipe or a socket has so far, where `read` waits for the full length. The body length comes
+    # from `size` when it has one, then from a `Content-Length` header, and otherwise the body is
+    # sent with chunked transfer-encoding. When the body has to be sent again (a 307/308 redirect,
+    # say) the object is rewound with `seek` or `rewind`; one that cannot be rewound fails the
+    # request with a Patron::Error. Anything else is sent as its `to_s`.
     #
-    # @param data [Hash, #to_s, #to_path, nil]
+    # @param data [Hash, #to_path, #read, #to_s, nil]
     def upload_data=(data)
       @upload_data = if data.is_a?(Hash) && !multipart
         Util.build_query_string_from_hash(data, action == :post)

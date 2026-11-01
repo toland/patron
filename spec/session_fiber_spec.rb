@@ -73,6 +73,18 @@ describe "Patron::Session under a Fiber scheduler", :session, :fibers do
     expect(readback(File.read(tf.path)).path).to eq("/test")
   end
 
+  it "streams a request body from a pipe another fiber writes to" do
+    reader, writer = IO.pipe
+    body = Async do |task|
+      task.async do
+        %w[one two three].each { |word| writer.write(word); sleep 0.02 }
+        writer.close
+      end
+      session.put("/test", reader).body
+    end.wait
+    expect(readback(body).body).to eq("onetwothree")
+  end
+
   it "talks TLS" do
     Async do
       tls = Patron::Session.new(base_url: "https://localhost:#{HTTPS_PORT}", timeout: 10, insecure: true)

@@ -76,6 +76,21 @@ You can ship custom headers with a single request:
 sess.post("/foo/stuff", "some data", {"Content-Type" => "text/plain"})
 ```
 
+A request body can be a String, a File (uploaded straight from disk by libcurl) or anything that
+responds to `readpartial` or `read`, which is streamed. With `readpartial` a pipe or a socket goes out
+as soon as something is written to it. A body without a `size` goes out with chunked transfer-encoding,
+unless you pass a `Content-Length` header:
+
+```ruby
+reader, writer = IO.pipe
+Thread.new { 3.times { |i| writer.write("line #{i}\n") }; writer.close }
+sess.put("/foo/log", reader)
+sess.post("/foo/stuff", StringIO.new("some data"))
+```
+
+If the body has to be sent again (a 307 redirect, say) Patron rewinds it with `seek`,
+and a body that can't be rewound, like a pipe, fails the request with a `Patron::Error`.
+
 libcurl's transfer timings are available on the response, in seconds since the request started:
 
 ```ruby
