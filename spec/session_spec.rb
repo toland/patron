@@ -4,6 +4,7 @@ require 'timeout'
 
 require 'fileutils'
 require 'securerandom'
+require 'stringio'
 
 describe Patron::Session, :session do
 
@@ -497,6 +498,166 @@ describe Patron::Session, :session do
     expect(captured.headers["transfer-encoding"]).to be == "chunked"
     expect(captured.headers).to_not have_key("content-length")
     expect(captured.body.bytesize).to be == File.size("LICENSE")
+  end
+
+  context "with a request body that responds to #read" do
+    def chunked_pipe(*chunks)
+      reader, writer = IO.pipe
+      Thread.new do
+        chunks.each { |chunk| writer.write(chunk); sleep 0.01 }
+        writer.close
+      end
+      reader
+    end
+
+    def read_once(str)
+      readable = Object.new
+      readable.define_singleton_method(:read) do |_len, _buf = nil|
+        chunk, str = str, nil
+        chunk
+      end
+      readable
+    end
+
+    it "streams a StringIO with :put" do
+      data = Random.new.bytes(1024 * 200)
+      body = readback(@session.put("/test", StringIO.new(data)).body)
+      expect(body.request_method).to eq("PUT")
+      expect(body.header['content-length']).to eq([data.bytesize.to_s])
+      expect(body.body).to eq(data)
+    end
+
+    it "streams a StringIO with :post" do
+      response = @session.post("/test", StringIO.new("streamed post body"))
+      body = readback(response.body)
+      expect(body.request_method).to eq("POST")
+      expect(body.header['content-length']).to eq(["18"])
+      expect(body.body).to eq("streamed post body")
+    end
+
+    it "sends a StringIO as its contents, not its inspect" do
+      body = readback(@session.patch("/test", StringIO.new("patched")).body)
+      expect(body.request_method).to eq("PATCH")
+      expect(body.body).to eq("patched")
+    end
+
+    it "sends what is left of a StringIO that was partially read" do
+      io = StringIO.new("hello world")
+      io.read(6)
+      body = readback(@session.put("/test", io).body)
+      expect(body.header['content-length']).to eq(["5"])
+      expect(body.body).to eq("world")
+    end
+
+    it "streams a body with :delete and with :get" do
+      %i[delete get].each do |verb|
+        body = readback(@session.request(verb, "/test", {}, data: StringIO.new("with #{verb}")).body)
+        expect(body.request_method).to eq(verb.to_s.upcase)
+        expect(body.body).to eq("with #{verb}")
+      end
+    end
+
+    it "streams an IO.pipe written to in several chunks" do
+      body = readback(@session.put("/test", chunked_pipe("one ", "two ", "three")).body)
+      expect(body.request_method).to eq("PUT")
+      expect(body.body).to eq("one two three")
+    end
+
+    it "uses chunked transfer-encoding for a readable without a size" do
+      # Puma decodes the chunked framing, so look at the raw request instead
+      captured = capture_request do |url|
+        Patron::Session.new(base_url: url, timeout: 5).put("/test", chunked_pipe("one ", "two ", "three"))
+      end
+      expect(captured.request_line).to start_with("PUT ")
+      expect(captured.headers["transfer-encoding"]).to eq("chunked")
+      expect(captured.headers).not_to have_key("content-length")
+      expect(captured.body).to eq("one two three")
+    end
+
+    it "takes the size from a Content-Length header when the readable has no #size" do
+      captured = capture_request do |url|
+        Patron::Session.new(base_url: url, timeout: 5).put("/test", read_once("sized"), {'Content-Length' => '5'})
+      end
+      expect(captured.headers["content-length"]).to eq("5")
+      expect(captured.headers).not_to have_key("transfer-encoding")
+      expect(captured.body).to eq("sized")
+    end
+
+    it "sends what the writer has written so far, rather than waiting for a full buffer" do
+      # Each write waits until the previous one has left the pipe, which a #read(64KB) never lets
+      # happen - it would only return at EOF and send everything as one chunk
+      require 'io/wait'
+      reader, writer = IO.pipe
+      Thread.new do
+        %w[one two three].each do |word|
+          writer.write(word)
+          deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 2
+          sleep 0.005 while reader.nread > 0 && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+        end
+        writer.close
+      end
+      captured = capture_request do |url|
+        Patron::Session.new(base_url: url, timeout: 10).put("/test", reader)
+      end
+      expect(captured.body).to eq("onetwothree")
+      expect(captured.chunk_sizes).to eq([3, 3, 5])
+    end
+
+    it "prefers #readpartial over #read and takes its EOFError for the end of the body" do
+      source = StringIO.new("abcdefghij")
+      readable = Object.new
+      readable.define_singleton_method(:read) { |*| raise "#read should not be called" }
+      readable.define_singleton_method(:readpartial) { |_len, buf = nil| source.readpartial(3, buf) }
+      body = readback(@session.put("/test", readable).body)
+      expect(body.body).to eq("abcdefghij")
+    end
+
+    it "lets an exception from #read propagate and keeps the Session usable" do
+      failing = Object.new
+      def failing.read(*) = raise(EOFError, "the source went away")
+      expect { @session.put("/test", failing) }.to raise_error(EOFError, "the source went away")
+      expect(@session.get("/test").status).to eq(200)
+    end
+
+    it "raises a Patron::Error when #read returns more than was asked for" do
+      greedy = Object.new
+      def greedy.read(len, _buf = nil) = "x" * (len + 1)
+      expect { @session.put("/test", greedy) }.to raise_error(Patron::Error) { |e|
+        expect(e.curl_code).to eq(26) # CURLE_READ_ERROR
+      }
+      expect(@session.get("/test").status).to eq(200)
+    end
+
+    it "rewinds a seekable readable to send the body again after a 307" do
+      response = @session.put("/redirect-307", StringIO.new("sent twice"))
+      expect(response.url).to end_with("/test")
+      body = readback(response.body)
+      expect(body.request_method).to eq("PUT")
+      expect(body.body).to eq("sent twice")
+    end
+
+    it "fails cleanly on a 307 when the readable cannot be rewound" do
+      @session.timeout = 5
+      reader, writer = IO.pipe
+      writer.write("only once")
+      writer.close
+      [reader, read_once("only once")].each do |readable|
+        expect { @session.put("/redirect-307", readable) }.to raise_error(Patron::Error) { |e|
+          expect(e.curl_code).to eq(65) # CURLE_SEND_FAIL_REWIND
+        }
+      end
+      expect(@session.get("/test").status).to eq(200)
+    end
+  end
+
+  it "sends the file again after a 307 with :put_file and :post_file" do
+    %i[put_file post_file].each do |method|
+      response = @session.public_send(method, "/redirect-307", "LICENSE")
+      expect(response.url).to end_with("/test")
+      body = readback(response.body)
+      expect(body.request_method).to eq(method.to_s.split("_").first.upcase)
+      expect(body.body).to eq(File.read("LICENSE"))
+    end
   end
 
   it "should pass credentials as http basic auth" do

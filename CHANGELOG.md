@@ -2,6 +2,15 @@
 
 * `Response#charset` and `#decoded_body` find the charset in a lowercase `content-type` header too, as sent by HTTP/2 servers and Puma 8
 * Test suite: Puma 8, Rack 3 lowercase header names in the test app
+* A request body that responds to `read` (a StringIO, an `IO.pipe` reader, a `Zlib::GzipReader`) is streamed
+  to the server through libcurl's read callback, sized from its `size`, from a `Content-Length` header, or sent
+  chunked. It is rewound with `seek` when libcurl has to send it again on a 307/308 redirect, and a body that
+  cannot be rewound raises `Patron::Error` with `curl_code` 65 instead of being silently sent empty.
+  It is read with `readpartial` when it has one, so a pipe or a socket goes out as the writer writes to it
+  rather than in 64KB pieces
+* `put_file`, `post_file` and File bodies are sent again when a 307/308 redirect or an auth round-trip needs
+  the body once more; such a request used to fail with "necessary data rewind wasn't possible"
+* A StringIO request body is sent as its contents; it used to be sent as its `inspect` string
 
 ### 1.0.0
 

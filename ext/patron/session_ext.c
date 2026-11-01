@@ -38,6 +38,7 @@
 
 #define INTERRUPT_ABORT 1
 #define INTERRUPT_DOWNLOAD_OVERFLOW 2
+#define INTERRUPT_REWIND_FAILED 3
 
 /* How long one curl_multi_poll() may sleep. libcurl wakes us earlier on socket activity,
  * on its own timers, and on curl_multi_wakeup(); this is only the upper bound. */
@@ -83,6 +84,7 @@ REQUEST_ATTRIBUTES(DECLARE_ID)
 #undef DECLARE_ID
 
 static ID id_to_path, id_to_s, id_response_class, id_default_response_charset;
+static ID id_read, id_readpartial, id_size, id_pos, id_seek, id_rewind;
 static ID id_get, id_post, id_put, id_patch, id_delete, id_head;
 static ID id_ivar_curl_code;
 static ID id_url_kw, id_status_kw, id_redirect_count_kw, id_header_data_kw, id_body_kw,
@@ -105,12 +107,18 @@ struct patron_session {
   struct curl_slist *headers;
   FILE *download_file;
   FILE *request_body_file;
+  curl_off_t request_content_length;  /* from a Content-Length request header, or -1 */
+  int request_transfer_encoding;      /* whether the request headers carry a Transfer-Encoding */
+  curl_off_t upload_io_origin;        /* position of upload_io when the request started */
+  int upload_io_partial;              /* whether upload_io gets #readpartial rather than #read */
   char error_buf[CURL_ERROR_SIZE];
   curl_off_t download_byte_limit;
   VALUE progress_proc;
   VALUE upload_data;                  /* pinned while libcurl reads it through CURLOPT_POSTFIELDS */
   VALUE header_buf;                   /* binary String receiving the raw headers */
   VALUE body_buf;                     /* binary String receiving the body, or nil when downloading to a file */
+  VALUE upload_io;                    /* object responding to #read the body is streamed from, or nil */
+  VALUE upload_buf;                   /* String upload_io reads into, copied into libcurl's buffer */
 
   /* A callback may not let a Ruby exception unwind through libcurl's frames. The tag and
    * errinfo are parked here, the transfer is aborted, and perform() re-raises afterwards. */
@@ -144,6 +152,8 @@ static void session_mark(void *ptr) {
   rb_gc_mark_movable(s->progress_proc);
   rb_gc_mark_movable(s->header_buf);
   rb_gc_mark_movable(s->body_buf);
+  rb_gc_mark_movable(s->upload_io);
+  rb_gc_mark_movable(s->upload_buf);
   rb_gc_mark_movable(s->pending_errinfo);
   /* libcurl holds RSTRING_PTR() of this one for the whole transfer, and an embedded
    * String keeps its bytes inside the object slot, so it must not be moved. */
@@ -158,6 +168,8 @@ static void session_compact(void *ptr) {
   s->progress_proc = rb_gc_location(s->progress_proc);
   s->header_buf = rb_gc_location(s->header_buf);
   s->body_buf = rb_gc_location(s->body_buf);
+  s->upload_io = rb_gc_location(s->upload_io);
+  s->upload_buf = rb_gc_location(s->upload_buf);
   s->pending_errinfo = rb_gc_location(s->pending_errinfo);
 }
 
@@ -300,8 +312,128 @@ static size_t header_write_cb(char *ptr, size_t size, size_t nmemb, void *userda
 }
 
 static size_t file_read_cb(char *buffer, size_t size, size_t nitems, void *userdata) {
-  FILE *fp = userdata;
-  return fread(buffer, 1, size * nitems, fp);
+  struct patron_session *s = userdata;
+  if (s->interrupt) return CURL_READFUNC_ABORT;
+  return fread(buffer, 1, size * nitems, s->request_body_file);
+}
+
+/* Same as io_seek_cb(): a failed rewind has to fail the request, not empty the body */
+static int file_seek_cb(void *userdata, curl_off_t offset, int origin) {
+  struct patron_session *s = userdata;
+
+  if (fseeko(s->request_body_file, (off_t)offset, origin) == 0) return CURL_SEEKFUNC_OK;
+  s->interrupt = INTERRUPT_REWIND_FAILED;
+  return CURL_SEEKFUNC_FAIL;
+}
+
+struct io_read_args {
+  struct patron_session *s;
+  size_t len;
+};
+
+static VALUE io_readpartial(VALUE arg) {
+  struct io_read_args *a = (struct io_read_args *)arg;
+  VALUE argv[2] = { SIZET2NUM(a->len), a->s->upload_buf };
+  return rb_funcallv(a->s->upload_io, id_readpartial, 2, argv);
+}
+
+static VALUE io_readpartial_eof(VALUE arg, VALUE err) {
+  return Qnil;
+}
+
+static VALUE io_read_protected(VALUE arg) {
+  struct io_read_args *a = (struct io_read_args *)arg;
+  struct patron_session *s = a->s;
+  VALUE argv[2] = { SIZET2NUM(a->len), s->upload_buf };
+  VALUE chunk;
+
+  if (s->upload_io_partial) {
+    chunk = rb_rescue2(io_readpartial, arg, io_readpartial_eof, Qnil, rb_eEOFError, (VALUE)0);
+  } else {
+    chunk = rb_funcallv(s->upload_io, id_read, 2, argv);
+  }
+
+  if (NIL_P(chunk)) return Qnil;
+  StringValue(chunk);
+  /* A readable that ignores the length would overflow libcurl's buffer */
+  if ((size_t)RSTRING_LEN(chunk) > a->len) {
+    raise_curl_error(ePatronError, CURLE_READ_ERROR, "The request body #read returned more bytes than asked for");
+  }
+  return chunk;
+}
+
+/* Streams the body from upload_io. #readpartial(len, buf), or #read(len, buf) when there is
+ * no #readpartial, reads into upload_buf, which is then copied into libcurl's buffer: Ruby
+ * cannot be handed memory it does not own. #read on a pipe or a socket waits for all of `len`
+ * (libcurl asks for 64KB), #readpartial returns what the writer has written so far, and ends
+ * with an EOFError rather than nil. Under a Fiber scheduler a blocking read yields to it like
+ * any other IO in the fiber. */
+static size_t io_read_cb(char *buffer, size_t size, size_t nitems, void *userdata) {
+  struct patron_session *s = userdata;
+  struct io_read_args args = { s, size * nitems };
+  int tag = 0;
+  VALUE chunk;
+
+  if (s->interrupt) return CURL_READFUNC_ABORT;
+  chunk = rb_protect(io_read_protected, (VALUE)&args, &tag);
+  if (tag) {
+    park_exception(s, tag);
+    return CURL_READFUNC_ABORT;
+  }
+  if (NIL_P(chunk)) return 0;
+  memcpy(buffer, RSTRING_PTR(chunk), (size_t)RSTRING_LEN(chunk));
+  return (size_t)RSTRING_LEN(chunk);
+}
+
+struct io_seek_args {
+  struct patron_session *s;
+  curl_off_t offset;
+  int origin;
+};
+
+/* IO::SEEK_SET and friends are the C SEEK_* values, so origin passes through as-is */
+static VALUE io_seek_protected(VALUE arg) {
+  struct io_seek_args *a = (struct io_seek_args *)arg;
+  VALUE io = a->s->upload_io;
+
+  if (rb_respond_to(io, id_seek)) {
+    VALUE argv[2] = { OFFT2NUM(a->offset), INT2FIX(a->origin) };
+    rb_funcallv(io, id_seek, 2, argv);
+    return Qtrue;
+  }
+  /* Zlib::GzipReader and friends can only start over */
+  if (a->origin == SEEK_SET && a->offset == 0 && rb_respond_to(io, id_rewind)) {
+    rb_funcallv(io, id_rewind, 0, NULL);
+    return Qtrue;
+  }
+  return Qfalse;
+}
+
+/* libcurl rewinds the body when it has to send it again: a 307/308 redirect, an auth
+ * round-trip. A pipe has #seek but raises ESPIPE, which only means "cannot seek".
+ * libcurl 8.7 logs a failed rewind and then follows the redirect with an empty body
+ * anyway, so we abort the transfer ourselves rather than trust it to. */
+static int io_seek_cb(void *userdata, curl_off_t offset, int origin) {
+  struct patron_session *s = userdata;
+  struct io_seek_args args = { s, offset, origin };
+  int tag = 0;
+  VALUE seeked;
+
+  if (origin == SEEK_SET) args.offset += s->upload_io_origin;
+  seeked = rb_protect(io_seek_protected, (VALUE)&args, &tag);
+  if (tag) {
+    VALUE err = rb_errinfo();
+    if (rb_obj_is_kind_of(err, rb_eSystemCallError) || rb_obj_is_kind_of(err, rb_eIOError)) {
+      rb_set_errinfo(Qnil);
+      seeked = Qfalse;
+    } else {
+      park_exception(s, tag);
+      return CURL_SEEKFUNC_FAIL;
+    }
+  }
+  if (RTEST(seeked)) return CURL_SEEKFUNC_OK;
+  s->interrupt = INTERRUPT_REWIND_FAILED;
+  return CURL_SEEKFUNC_CANTSEEK;
 }
 
 struct progress_args {
@@ -475,6 +607,9 @@ static VALUE session_alloc(VALUE klass) {
   s->upload_data = Qnil;
   s->header_buf = Qnil;
   s->body_buf = Qnil;
+  s->upload_io = Qnil;
+  s->upload_buf = Qnil;
+  s->request_content_length = -1;
   s->pending_errinfo = Qnil;
   init_handles(s);
   return obj;
@@ -614,6 +749,15 @@ static int each_http_header(VALUE key, VALUE value, VALUE self) {
     setopt_or_raise(s->easy, CURLOPT_ACCEPT_ENCODING, "gzip");
   }
 
+  /* A streamed body of unknown size goes by these, see set_request_body_from_io() */
+  if (header_name_is(name, "Content-Length")) {
+    VALUE length = rb_obj_as_string(value);
+    char *end = NULL;
+    long long parsed = strtoll(StringValueCStr(length), &end, 10);
+    if (end && *end == '\0' && parsed >= 0 && RSTRING_LEN(length) > 0) s->request_content_length = (curl_off_t)parsed;
+  }
+  if (header_name_is(name, "Transfer-Encoding")) s->request_transfer_encoding = 1;
+
   line = rb_sprintf("%"PRIsVALUE": %"PRIsVALUE, name, value);
   s->headers = curl_slist_append(s->headers, StringValueCStr(line));
   return ST_CONTINUE;
@@ -669,14 +813,57 @@ static void set_request_body_from_file(struct patron_session *s, VALUE path) {
 
   setopt_or_raise(s->easy, CURLOPT_UPLOAD, 1L);
   setopt_or_raise(s->easy, CURLOPT_READFUNCTION, file_read_cb);
-  setopt_or_raise(s->easy, CURLOPT_READDATA, s->request_body_file);
+  setopt_or_raise(s->easy, CURLOPT_READDATA, s);
+  setopt_or_raise(s->easy, CURLOPT_SEEKFUNCTION, file_seek_cb);
+  setopt_or_raise(s->easy, CURLOPT_SEEKDATA, s);
   setopt_or_raise(s->easy, CURLOPT_INFILESIZE_LARGE, (curl_off_t)st.st_size);
 }
 
+/* Size comes from #size when there is one (minus #pos, for a half-read StringIO), then from
+ * a Content-Length header, and failing both the body goes out chunked. libcurl would pick
+ * chunked by itself too, but it would then send it alongside an app-supplied Content-Length. */
+static void set_request_body_from_io(struct patron_session *s, VALUE io) {
+  curl_off_t size = -1;
+
+  SESSION_WRITE(s, upload_io, io);
+  SESSION_WRITE(s, upload_buf, rb_str_buf_new(0));
+  s->upload_io_origin = 0;
+  s->upload_io_partial = rb_respond_to(io, id_readpartial);
+
+  if (rb_respond_to(io, id_size)) {
+    VALUE value = rb_funcallv(io, id_size, 0, NULL);
+    if (!NIL_P(value)) {
+      size = NUM2OFFT(value);
+      if (rb_respond_to(io, id_pos)) {
+        s->upload_io_origin = NUM2OFFT(rb_funcallv(io, id_pos, 0, NULL));
+        size = size > s->upload_io_origin ? size - s->upload_io_origin : 0;
+      }
+    }
+  }
+  if (size < 0) size = s->request_content_length;
+  if (size < 0 && !s->request_transfer_encoding) {
+    s->headers = curl_slist_append(s->headers, "Transfer-Encoding: chunked");
+  }
+
+  setopt_or_raise(s->easy, CURLOPT_UPLOAD, 1L);
+  setopt_or_raise(s->easy, CURLOPT_READFUNCTION, io_read_cb);
+  setopt_or_raise(s->easy, CURLOPT_READDATA, s);
+  setopt_or_raise(s->easy, CURLOPT_SEEKFUNCTION, io_seek_cb);
+  setopt_or_raise(s->easy, CURLOPT_SEEKDATA, s);
+  if (size >= 0) setopt_or_raise(s->easy, CURLOPT_INFILESIZE_LARGE, size);
+}
+
+/* #to_path wins over #read so that a File keeps going through fread(). Every IO has a
+ * #to_path since Ruby 3.2, which is nil for a pipe or a socket. */
 static void set_request_body(struct patron_session *s, VALUE stringable_or_file) {
-  if (rb_respond_to(stringable_or_file, id_to_path)) {
-    VALUE path = rb_funcallv(stringable_or_file, id_to_path, 0, NULL);
+  VALUE path = Qnil;
+
+  if (rb_respond_to(stringable_or_file, id_to_path)) path = rb_funcallv(stringable_or_file, id_to_path, 0, NULL);
+
+  if (!NIL_P(path)) {
     set_request_body_from_file(s, rb_obj_as_string(path));
+  } else if (rb_respond_to(stringable_or_file, id_read)) {
+    set_request_body_from_io(s, stringable_or_file);
   } else {
     VALUE data = rb_obj_as_string(stringable_or_file);
     SESSION_WRITE(s, upload_data, data);
@@ -1094,6 +1281,9 @@ static VALUE perform(VALUE ptr) {
   if (s->interrupt == INTERRUPT_DOWNLOAD_OVERFLOW) {
     raise_curl_error(eDownloadLimitExceeded, CURLE_ABORTED_BY_CALLBACK, "Download byte limit exceeded");
   }
+  if (s->interrupt == INTERRUPT_REWIND_FAILED) {
+    raise_curl_error(ePatronError, CURLE_SEND_FAIL_REWIND, "The request body has to be sent again, but it cannot be rewound");
+  }
   if (s->interrupt) {
     raise_curl_error(eAborted, CURLE_ABORTED_BY_CALLBACK, "Request interrupted");
   }
@@ -1137,6 +1327,12 @@ static VALUE cleanup(VALUE self) {
   SESSION_WRITE(s, upload_data, Qnil);
   SESSION_WRITE(s, header_buf, Qnil);
   SESSION_WRITE(s, body_buf, Qnil);
+  SESSION_WRITE(s, upload_io, Qnil);
+  SESSION_WRITE(s, upload_buf, Qnil);
+  s->upload_io_origin = 0;
+  s->upload_io_partial = 0;
+  s->request_content_length = -1;
+  s->request_transfer_encoding = 0;
   s->download_byte_limit = 0;
   s->busy = 0;
   return Qnil;
@@ -1224,6 +1420,12 @@ void Init_session_ext(void) {
 #undef DEFINE_ID
   id_to_path = rb_intern_const("to_path");
   id_to_s = rb_intern_const("to_s");
+  id_read = rb_intern_const("read");
+  id_readpartial = rb_intern_const("readpartial");
+  id_size = rb_intern_const("size");
+  id_pos = rb_intern_const("pos");
+  id_seek = rb_intern_const("seek");
+  id_rewind = rb_intern_const("rewind");
   id_response_class = rb_intern_const("response_class");
   id_default_response_charset = rb_intern_const("default_response_charset");
   id_get = rb_intern_const("get");

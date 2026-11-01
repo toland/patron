@@ -99,6 +99,12 @@ RedirectToPictureServlet = Proc.new {|env|
   [307, {'location' => '/picture'}, []]
 }
 
+# Keeps the method and the body, so the client has to send the body again
+RedirectWithBodyServlet = Proc.new {|env|
+  env['rack.input'].read
+  [307, {'Location' => '/test'}, []]
+}
+
 WrongContentLengthServlet = Proc.new {|env|
   [200, {'content-length' => '1024', 'content-type' => 'text/plain'}, ['Hello.']]
 }
@@ -132,6 +138,7 @@ run Rack::URLMap.new({
   "/evil-redirect" => EvilRedirectServlet,
   "/picture" => PictureServlet,
   "/redirect-to-picture" => RedirectToPictureServlet,
+  "/redirect-307" => RedirectWithBodyServlet,
   "/very-large" => LargeServlet,
   "/setcookie" => SetCookieServlet,
   "/repetitiveheader" => RepetitiveHeaderServlet,

@@ -9,7 +9,7 @@ require 'stringio'
 # Transfer-Encoding which a conformant server (webrick, puma, ...) decodes and
 # never exposes to the application.
 module RawRequestCapture
-  CapturedRequest = Struct.new(:request_line, :headers, :body)
+  CapturedRequest = Struct.new(:request_line, :headers, :body, :chunk_sizes)
 
   CERT_DIR = File.join(__dir__, 'certs')
 
@@ -54,12 +54,14 @@ module RawRequestCapture
     end
     # Honour Expect: 100-continue so the client proceeds to send the body.
     conn.write("HTTP/1.1 100 Continue\r\n\r\n") if headers['expect'].to_s =~ /100-continue/i
-    CapturedRequest.new(request_line, headers, read_body(conn, headers, rest))
+    captured = CapturedRequest.new(request_line, headers, nil, [])
+    captured.body = read_body(conn, headers, rest, captured.chunk_sizes)
+    captured
   end
 
-  def read_body(conn, headers, rest)
+  def read_body(conn, headers, rest, chunk_sizes)
     if headers['transfer-encoding'] == 'chunked'
-      dechunk(drain_chunked(conn, rest))
+      dechunk(drain_chunked(conn, rest), chunk_sizes)
     elsif (len = headers['content-length'])
       read_exactly(conn, len.to_i, rest)
     else
@@ -79,12 +81,13 @@ module RawRequestCapture
     buf.byteslice(0, n)
   end
 
-  def dechunk(buf)
+  def dechunk(buf, chunk_sizes)
     io = StringIO.new(buf)
     out = +''
     while (size_line = io.gets("\r\n"))
       size = size_line.strip.split(';', 2).first.to_i(16)
       break if size.zero?
+      chunk_sizes << size
       out << io.read(size).to_s
       io.read(2) # trailing CRLF
     end
