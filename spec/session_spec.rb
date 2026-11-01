@@ -308,7 +308,7 @@ describe Patron::Session, :session do
   it "should not keep the Location header from the redirecting response" do
     @session.max_redirects = 1
     response = @session.get("/redirect")
-    expect(response.headers['Location']).to be_nil
+    expect(response.headers.keys.map(&:downcase)).not_to include('location')
   end
 
   it "should include redirect count in response" do
@@ -591,7 +591,7 @@ describe Patron::Session, :session do
     @session.automatic_content_encoding = true
     response = @session.get('/deflate-compressed')
     
-    expect(response.headers['Content-Length']).to eq('125')
+    expect(response.headers['content-length']).to eq('125')
     
     body = response.body
     expect(body).to match(/Some highly compressible data/)

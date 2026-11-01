@@ -24,7 +24,7 @@ ReadbackServlet = Proc.new {|env|
     'header' => req_headers.to_h,
     'body_base64' => [env['rack.input'].read].pack('m0'),
   })
-  [200, {'Content-Type' => 'application/json', 'Content-Length' => body_str.bytesize.to_s}, [body_str]]
+  [200, {'content-type' => 'application/json', 'content-length' => body_str.bytesize.to_s}, [body_str]]
 }
 
 DeflateServlet = Proc.new {|env|
@@ -43,14 +43,14 @@ DeflateServlet = Proc.new {|env|
   content_length += fin.bytesize
   z.close
 
-  [200, {'Content-Encoding' => 'deflate', 'Content-Length' => content_length.to_s, 'Vary' => 'Accept-Encoding'}, body]
+  [200, {'content-encoding' => 'deflate', 'content-length' => content_length.to_s, 'vary' => 'Accept-Encoding'}, body]
 }
 
 TimeoutServlet = Proc.new {|env|
   query_vars = Rack::Utils.parse_nested_query(env.fetch('QUERY_STRING'))
   query_millis = query_vars.fetch('millis').to_i
   sleep(query_millis / 1000.0)
-  [200, {'Content-Type' => 'text/plain'}, ['That took a while']]
+  [200, {'content-type' => 'text/plain'}, ['That took a while']]
 }
 
 SlowServlet = Proc.new {|env|
@@ -59,17 +59,17 @@ SlowServlet = Proc.new {|env|
     sleep 5
     y.yield 'rest of body'
   end
-  [200, {'Content-Type' => 'text/plain'}, body]
+  [200, {'content-type' => 'text/plain'}, body]
 }
 
 RedirectServlet = Proc.new {|env|
   url_scheme = env.fetch('rack.url_scheme')
   port = env.fetch('SERVER_PORT')
-  [301, {'Location' => "#{url_scheme}://localhost:#{port}/test"}, []]
+  [301, {'location' => "#{url_scheme}://localhost:#{port}/test"}, []]
 }
 
 EvilRedirectServlet = Proc.new {|env|
-  [301, {'Location' => "smtp://mailbox:secret@localhost"}, []]
+  [301, {'location' => "smtp://mailbox:secret@localhost"}, []]
 }
 
 BodyReadback = Proc.new {|env|
@@ -78,31 +78,29 @@ BodyReadback = Proc.new {|env|
     'body_base64' => [env['rack.input'].read].pack('m0'),
     'content_type' => env.fetch('CONTENT_TYPE'),
   })
-  [200, {'Content-Type' => 'application/json'}, [body_str]]
+  [200, {'content-type' => 'application/json'}, [body_str]]
 }
 
 SetCookieServlet = Proc.new {|env|
-  [301, {'Set-Cookie' => 'session_id=foo123', 'Location' => "#{env.fetch('rack.url_scheme')}://localhost:#{env.fetch('SERVER_PORT')}/test"}, []]
+  [301, {'set-cookie' => 'session_id=foo123', 'location' => "#{env.fetch('rack.url_scheme')}://localhost:#{env.fetch('SERVER_PORT')}/test"}, []]
 }
 
 RepetitiveHeaderServlet = Proc.new {|env|
-  [200, {'Set-Cookie' => ['a=1', 'b=2'], 'Content-Type' => 'text/plain'}, ['Hi.']]
+  [200, {'set-cookie' => ['a=1', 'b=2'], 'content-type' => 'text/plain'}, ['Hi.']]
 }
 
 PictureServlet = Proc.new {|env|
   # Rack::Files gives us Range support for free
   env_with_adjusted_path = env.merge('PATH_INFO' => '/pic.png')
-  status, headers, body = Rack::Files.new(__dir__).call(env_with_adjusted_path)
-  # Rack 3 lowercases header names, but the specs look them up the way real servers send them
-  [status, headers.transform_keys { |k| k.split('-').map(&:capitalize).join('-') }, body]
+  Rack::Files.new(__dir__).call(env_with_adjusted_path)
 }
 
 RedirectToPictureServlet = Proc.new {|env|
-  [307, {'Location' => '/picture'}, []]
+  [307, {'location' => '/picture'}, []]
 }
 
 WrongContentLengthServlet = Proc.new {|env|
-  [200, {'Content-Length' => '1024', 'Content-Type' => 'text/plain'}, ['Hello.']]
+  [200, {'content-length' => '1024', 'content-type' => 'text/plain'}, ['Hello.']]
 }
 
 # Serves a substantial amount of data
@@ -114,17 +112,17 @@ LargeServlet = Proc.new {|env|
       y.yield(rng.bytes(1024 * 1024))
     end
   end
-  [200, {'Content-Type' => 'binary/octet-stream', 'Content-Length' => len.to_s}, body]
+  [200, {'content-type' => 'binary/octet-stream', 'content-length' => len.to_s}, body]
 }
 
 # Echoes the subject of the client certificate Puma verified, if any
 PeerCertServlet = Proc.new {|env|
   subject = env['puma.peercert'] ? env['puma.peercert'].subject.to_s : 'none'
-  [200, {'Content-Type' => 'text/plain', 'Content-Length' => subject.bytesize.to_s}, [subject]]
+  [200, {'content-type' => 'text/plain', 'content-length' => subject.bytesize.to_s}, [subject]]
 }
 
 run Rack::URLMap.new({
-  "/" => Proc.new {|env| [200, {'Content-Length' => '7'}, ['Welcome']]},
+  "/" => Proc.new {|env| [200, {'content-length' => '7'}, ['Welcome']]},
   "/test" => ReadbackServlet,
   "/testpost" => BodyReadback,
   "/testpatch" => BodyReadback,

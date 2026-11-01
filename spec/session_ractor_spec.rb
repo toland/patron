@@ -26,7 +26,7 @@ describe "Patron inside Ractors", :session, :ractors do
     expect(echoed.request_method).to eq("POST")
     expect(echoed.body).to eq("a=1&b=x%20y")
     expect(echoed.header["x-ractor"]).to eq(["yes"])
-    expect(response.headers["Content-Type"]).to eq("application/json")
+    expect(response.headers["content-type"]).to eq("application/json")
     expect(response.timings).to include(:total)
     expect(response.decoded_body).to eq(response.body)
   end
