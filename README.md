@@ -120,6 +120,41 @@ This depends on the TLS library libcurl is built against: with GnuTLS these surf
 Client certificates are tested with the OpenSSL and LibreSSL backends - libcurl's Secure Transport backend
 can't load a PEM certificate from a file at all.
 
+## Streaming responses
+
+`Session#stream` (and `get_stream`, `post_stream`, `put_stream`, `patch_stream`) yields the response as
+soon as its head has arrived, and the block receives the body by reading from it. Nothing is buffered
+meanwhile: every read drives libcurl until some bytes have arrived. `timeout` still bounds the whole
+transfer, so set it to 0 and use `read_timeout` to bound the wait for each next piece:
+
+```ruby
+stats = sess.get_stream("/events", { "Accept" => "text/event-stream" }, timeout: 0, read_timeout: 30) do |stream|
+  raise "Unexpected #{stream.status}" unless stream.ok? && stream.content_type == "text/event-stream"
+  stream.each_line do |line|
+    puts line.force_encoding(Encoding::UTF_8)
+  end
+end
+stats.complete?  # => true when the body was received to its end
+stats.timings    # the same Hash as Response#timings
+stats.trailers   # chunked or HTTP/2 trailers, {} when none
+```
+
+`read(length, buffer)` and `readpartial(length, buffer)` fill a String you own, so copying a body
+somewhere allocates nothing per chunk. `IO.copy_stream` uses exactly that, into a File or anything
+with `write`:
+
+```ruby
+sess.get_stream("/large.bin") do |stream|
+  raise "Too big" if stream.content_length.to_i > 1024 * 1024 * 1024
+  File.open("large.bin", "wb") { |file| IO.copy_stream(stream, file) }
+end
+```
+
+Leaving the block early (`break`, `return`, an exception) aborts the transfer and closes its connection;
+call `stream.drain!` first to receive and discard the rest and keep the connection. Using the stream after
+its block raises `IOError`. The block is mandatory, and the `Session` is busy while it runs. Under a Fiber
+scheduler use `each` and `each_line` with a block rather than an external `Enumerator`.
+
 ## Threading
 
 A `Patron::Session` performs one request at a time and must not be shared between threads: each `Session`
