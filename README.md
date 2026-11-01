@@ -155,6 +155,35 @@ call `stream.drain!` first to receive and discard the rest and keep the connecti
 its block raises `IOError`. The block is mandatory, and the `Session` is busy while it runs. Under a Fiber
 scheduler use `each` and `each_line` with a block rather than an external `Enumerator`.
 
+### Server-sent events
+
+`Patron::SSEClient` reads a `text/event-stream` on top of `stream`, and reconnects the way a browser's
+EventSource does: after the retry interval (the server's `retry:` field wins), sending `Last-Event-ID`.
+
+```ruby
+client = Patron::SSEClient.new(
+  "https://example.com/stream",
+  headers: { "Authorization" => "Bearer ..." },
+  idle_timeout: 45,     # seconds of silence before reconnecting
+  retry: 3,             # seconds between reconnects until the server sends a retry field
+  max_reconnects: nil,  # nil: forever
+  last_event_id: nil,   # resume from a stored id
+  session: nil          # or a configured Patron::Session: TLS, proxy, auth, cookies, base_url
+)
+
+client.each_event do |event|
+  event.type  # "message" unless the server sent an event: field
+  event.data  # data: lines joined with "\n", UTF-8
+  event.id
+  break if event.type == "done"
+end
+client.last_event_id  # to persist between process runs
+```
+
+A 204 ends `each_event`. Any other status than 200, or another Content-Type, raises
+`Patron::SSEClient::UnexpectedResponse` with the `status`, `headers` and first 4 KB of `body`, since retrying
+a 503 is the application's call. `client.close` from another thread or fiber makes `each_event` return.
+
 ## Threading
 
 A `Patron::Session` performs one request at a time and must not be shared between threads: each `Session`

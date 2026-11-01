@@ -2,6 +2,7 @@
 
 require 'patron/version'
 require 'patron/session'
+require 'patron/sse_client'
 
 module Patron
   # @return [String] the version of the gem

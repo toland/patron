@@ -177,6 +177,73 @@ ErrorWithBodyServlet = Proc.new {|env|
   [503, {'content-type' => 'text/plain', 'content-length' => body.bytesize.to_s}, [body]]
 }
 
+# Who connected to the SSE routes, by `key`, for the specs to look at through /sse-log
+SSE_CONNECTIONS = Hash.new { |h, k| h[k] = [] }
+SSE_CONNECTIONS_LOCK = Mutex.new
+
+def record_sse_connection(env)
+  key = Rack::Utils.parse_nested_query(env['QUERY_STRING']).fetch('key', 'default')
+  SSE_CONNECTIONS_LOCK.synchronize { SSE_CONNECTIONS[key] << { 'last_event_id' => env['HTTP_LAST_EVENT_ID'] } }
+  SSE_CONNECTIONS_LOCK.synchronize { SSE_CONNECTIONS[key].length }
+end
+
+SSE_HEADERS = { 'content-type' => 'text/event-stream; charset=utf-8', 'cache-control' => 'no-cache' }.freeze
+
+# The first connection gets every corner of the event stream format, in pieces that split
+# a "\r\n" between two writes, and then the stream ends. Later ones get one more event
+SSEEventsServlet = Proc.new {|env|
+  connection = record_sse_connection(env)
+  pieces = if connection == 1
+    [
+      "\xEF\xBB\xBF: a comment\n".b,
+      "retry: 200\n\n",
+      "event: greeting\ndata: hello\ndata:  world\nid: 1\n\n",
+      "data: second\r",
+      "\nid: 2\r\n\r\n",
+      "data\nid: 3\rdata: lone cr\r\r",
+      "id: nul\u0000\ndata: nul id ignored\n\n",
+      "event: ignored\nunknown: field\n\n",
+      "data: unterminated",
+    ]
+  else
+    ["data: after reconnect\nid: 4\n\n"]
+  end
+  body = proc do |stream|
+    pieces.each { |piece| stream.write(piece); sleep 0.02 }
+    sleep 0.5 if connection > 1
+  rescue Puma::ConnectionError, IOError, SystemCallError
+    nil # the client has had enough
+  ensure
+    stream.close
+  end
+  [200, SSE_HEADERS, body]
+}
+
+# One event, then silence for longer than any idle timeout in the specs
+SSESilentServlet = Proc.new {|env|
+  connection = record_sse_connection(env)
+  body = proc do |stream|
+    stream.write("id: silent-#{connection}\ndata: hi #{connection}\n\n")
+    sleep 5
+  rescue Puma::ConnectionError, IOError, SystemCallError
+    nil
+  ensure
+    stream.close
+  end
+  [200, SSE_HEADERS, body]
+}
+
+SSELogServlet = Proc.new {|env|
+  key = Rack::Utils.parse_nested_query(env['QUERY_STRING']).fetch('key', 'default')
+  log = SSE_CONNECTIONS_LOCK.synchronize { SSE_CONNECTIONS[key].dup }
+  [200, {'content-type' => 'application/json'}, [JSON.generate(log)]]
+}
+
+SSEErrorServlet = Proc.new {|env|
+  body = "e" * 5000
+  [503, {'content-type' => 'text/plain', 'content-length' => body.bytesize.to_s}, [body]]
+}
+
 run Rack::URLMap.new({
   "/" => Proc.new {|env| [200, {'content-length' => '7'}, ['Welcome']]},
   "/test" => ReadbackServlet,
@@ -199,4 +266,9 @@ run Rack::URLMap.new({
   "/long-poll" => LongPollServlet,
   "/counter" => CounterServlet,
   "/error-with-body" => ErrorWithBodyServlet,
+  "/sse-events" => SSEEventsServlet,
+  "/sse-silent" => SSESilentServlet,
+  "/sse-log" => SSELogServlet,
+  "/sse-no-content" => Proc.new {|env| [204, {}, []]},
+  "/sse-error" => SSEErrorServlet,
 })
