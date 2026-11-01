@@ -7,8 +7,6 @@ module Patron
 
     private
 
-    CHARSET_CONTENT_TYPE_RE = /(?:charset|encoding)="?([a-z0-9-]+)"?/i
-
     MISREPORTED_ENCODING_ERROR = <<~EOF
       The server stated that the response has the charset matching %{declared}, but the actual
       response body failed to decode as such (not flagged as `valid_encoding?')
@@ -61,15 +59,6 @@ module Patron
         INTERNAL_CHARSET_MISMATCH_ERROR % { source_encoding: enc, target_encoding: internal }
     end
 
-    def charset_from_content_type
-      content_type_header.to_s[CHARSET_CONTENT_TYPE_RE, 1]
-    end
-
-    # HTTP/2 servers and Puma 8+ send header names lowercase, and `@headers` keeps them as received
-    def content_type_header
-      @headers.find { |name, _| name.casecmp?("Content-Type") }&.last
-    end
-
     def encoding_from_headers_or_binary
       return Encoding::BINARY unless (charset_name = charset_from_content_type)
       Encoding.find(charset_name)
@@ -82,17 +71,6 @@ module Patron
       # `Encoding.default_internal` is nil on a stock Ruby while a new empty String is UTF-8,
       # so the String is the better oracle for "what does this process speak"
       Encoding.default_internal || ''.encoding
-    end
-
-    def decode_header_data(str)
-      # Headers are ISO-8859-1 by the book, but Content-Disposition routinely arrives as raw UTF-8
-      # and every browser but localized IE treats it as such, so 8859-1 -> UTF-8 -> binary it is
-      [Encoding::ISO8859_1, Encoding::UTF_8, Encoding::BINARY].each do |possible_enc|
-        return str.encode(possible_enc)
-      rescue ::Encoding::UndefinedConversionError
-        next
-      end
-      str
     end
   end
 
