@@ -69,19 +69,19 @@ describe Patron::Response, :session do
   it "should strip extra spaces from header values" do
     response = @session.get("/test")
     # All digits, no spaces
-    expect(response.headers['Content-Length']).to match(/^\d+$/)
+    expect(response.headers['content-length']).to match(/^\d+$/)
   end
 
   it "should return an array of values when multiple header fields have same name" do
     response = @session.get("/repetitiveheader")
-    expect(response.headers['Set-Cookie']).to be == ["a=1","b=2"]
+    expect(response.headers['set-cookie']).to be == ["a=1","b=2"]
   end
   
   describe '#decoded_body and #inspectable_body' do
     it "should raise with explicitly binary response bodies but allow an inspectable body" do
       Encoding.default_internal = Encoding::UTF_8
       response = @session.get("/picture")
-      expect(response.headers['Content-Type']).to be == 'image/png'
+      expect(response.headers['content-type']).to be == 'image/png'
       expect(response.body.encoding).to be == Encoding::BINARY
       expect(response).not_to be_body_decodable
       expect {
@@ -106,6 +106,18 @@ describe Patron::Response, :session do
 
       expect(response).to be_body_decodable
       expect(response.decoded_body.encoding).to eql(utf_encoding)
+    end
+
+    it "should pick up the charset from a lowercase content-type header" do
+      allow(Encoding).to receive(:default_internal).and_return("UTF-8")
+
+      headers = "HTTP/2 200\r\ncontent-type: text/css;charset=ISO-8859-7\r\n"
+      body = "Ππ".encode(Encoding::ISO_8859_7)
+
+      response = Patron::Response.new(url: "url", status: 200, redirect_count: 0, header_data: headers, body: body, default_charset: nil)
+
+      expect(response.charset).to eq("ISO-8859-7")
+      expect(response.decoded_body).to eq("Ππ")
     end
     
     it "should fallback to default charset when header or body charset is not valid" do

@@ -1,5 +1,8 @@
 ### Unreleased
 
+* `Response#charset` and `#decoded_body` find the charset in a lowercase `content-type` header too, as sent by HTTP/2 servers and Puma 8
+* Test suite: Puma 8, Rack 3 lowercase header names in the test app
+
 ### 1.0.0
 
 Patron 1.0 is a rewrite of the C extension for modern Ruby and modern libcurl. It follows Ivo Anjo's

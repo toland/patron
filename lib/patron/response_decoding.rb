@@ -62,7 +62,12 @@ module Patron
     end
 
     def charset_from_content_type
-      @headers["Content-Type"].to_s[CHARSET_CONTENT_TYPE_RE, 1]
+      content_type_header.to_s[CHARSET_CONTENT_TYPE_RE, 1]
+    end
+
+    # HTTP/2 servers and Puma 8+ send header names lowercase, and `@headers` keeps them as received
+    def content_type_header
+      @headers.find { |name, _| name.casecmp?("Content-Type") }&.last
     end
 
     def encoding_from_headers_or_binary
@@ -70,7 +75,7 @@ module Patron
       Encoding.find(charset_name)
     rescue ArgumentError # invalid charset name
       raise HeaderCharsetInvalid,
-            INVALID_CHARSET_NAME_ERROR % { content_type: @headers['Content-Type'].inspect }
+            INVALID_CHARSET_NAME_ERROR % { content_type: content_type_header.inspect }
     end
 
     def internal_encoding
