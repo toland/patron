@@ -127,6 +127,56 @@ PeerCertServlet = Proc.new {|env|
   [200, {'content-type' => 'text/plain', 'content-length' => subject.bytesize.to_s}, [subject]]
 }
 
+# Writes `count` chunks of `size` bytes, sleeping `delay` seconds between two chunks
+SlowChunksServlet = Proc.new {|env|
+  query = Rack::Utils.parse_nested_query(env['QUERY_STRING'])
+  count = query.fetch('count', '5').to_i
+  size = query.fetch('size', '1024').to_i
+  delay = query.fetch('delay', '0.1').to_f
+  body = Enumerator.new do |y|
+    count.times do |i|
+      sleep delay if i > 0
+      y << ((97 + i % 26).chr * size)
+    end
+  end
+  [200, {'content-type' => 'text/plain'}, body]
+}
+
+# Sends the head right away and the first byte of the body only after `delay` seconds. A Rack 3
+# streaming body, since Puma holds back the head of an Enumerator body until its first chunk
+LongPollServlet = Proc.new {|env|
+  query = Rack::Utils.parse_nested_query(env['QUERY_STRING'])
+  delay = query.fetch('delay', '1').to_f
+  body = proc do |stream|
+    sleep delay
+    stream.write("first\n")
+    stream.write("second\n")
+  ensure
+    stream.close
+  end
+  [200, {'content-type' => 'text/event-stream; charset=utf-8', 'x-long-poll' => 'yes'}, body]
+}
+
+# `lines` numbered lines, `per_chunk` of them in each chunk, so a client can check every byte
+# arrived once and in order
+CounterServlet = Proc.new {|env|
+  query = Rack::Utils.parse_nested_query(env['QUERY_STRING'])
+  lines = query.fetch('lines', '1000').to_i
+  per_chunk = query.fetch('per_chunk', '100').to_i
+  body = Enumerator.new do |y|
+    0.step(lines - 1, per_chunk) do |from|
+      y << (from...[from + per_chunk, lines].min).map { |i| format("%07d\n", i) }.join
+    end
+  end
+  [200, {'content-type' => 'text/plain', 'content-length' => (lines * 8).to_s}, body]
+}
+
+# An error with a body, for draining
+ErrorWithBodyServlet = Proc.new {|env|
+  body = "x" * 4096
+  [503, {'content-type' => 'text/plain', 'content-length' => body.bytesize.to_s}, [body]]
+}
+
 run Rack::URLMap.new({
   "/" => Proc.new {|env| [200, {'content-length' => '7'}, ['Welcome']]},
   "/test" => ReadbackServlet,
@@ -145,4 +195,8 @@ run Rack::URLMap.new({
   "/wrongcontentlength" => WrongContentLengthServlet,
   "/deflate-compressed" => DeflateServlet,
   "/peercert" => PeerCertServlet,
+  "/slow-chunks" => SlowChunksServlet,
+  "/long-poll" => LongPollServlet,
+  "/counter" => CounterServlet,
+  "/error-with-body" => ErrorWithBodyServlet,
 })

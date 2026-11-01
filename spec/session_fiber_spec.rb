@@ -104,4 +104,78 @@ describe "Patron::Session under a Fiber scheduler", :session, :fibers do
       expect(session.get("/test").status).to eq(200)
     end
   end
+  context "with a streamed response" do
+    it "streams under the scheduler and lets other fibers run while waiting for a chunk", :timing do
+      ticks = 0
+      lines = []
+      stats = Async do |task|
+        ticker = task.async { 40.times { ticks += 1; sleep 0.025 } }
+        result = session.get_stream("/long-poll?delay=0.6") { |stream| stream.each_line { |l| lines << l } }
+        ticker.wait
+        result
+      end.wait
+      expect(lines).to eq(["first\n", "second\n"])
+      expect(ticks).to be >= 10
+      expect(stats.complete?).to be(true)
+    end
+
+    it "fills the caller's String through IO.copy_stream under the scheduler" do
+      tf = Tempfile.new("patron-fiber-stream")
+      Async { session.get_stream("/very-large") { |stream| IO.copy_stream(stream, tf) } }
+      expect(File.size(tf.path)).to eq(15 * 1024 * 1024)
+    end
+
+    it "is interrupted mid-stream by Task#with_timeout and the Session stays usable" do
+      received = 0
+      Async do |task|
+        expect {
+          task.with_timeout(0.5) do
+            session.get_stream("/slow-chunks?count=20&delay=0.2") { |stream| stream.each { |c| received += c.bytesize } }
+          end
+        }.to raise_error(Async::TimeoutError)
+        expect(received).to be > 0
+        expect(session.get("/test").status).to eq(200)
+      end
+    end
+
+    it "is interrupted mid-stream by Task#stop" do
+      received = 0
+      Async do |task|
+        streamer = task.async do
+          session.get_stream("/slow-chunks?count=20&delay=0.2") { |stream| stream.each { |c| received += c.bytesize } }
+        end
+        task.async { sleep 0.5; streamer.stop }
+        streamer.wait
+        expect(streamer).to be_stopped
+        expect(received).to be > 0
+        expect(session.get("/test").status).to eq(200)
+      end
+    end
+
+    it "overlaps two streams on two Sessions", :timing do
+      started = monotonic
+      sizes = Async do |task|
+        2.times.map do
+          task.async do
+            stream_session = Patron::Session.new(base_url: base_url, timeout: 10)
+            total = 0
+            stream_session.get_stream("/slow-chunks?count=5&delay=0.3") { |stream| stream.each { |c| total += c.bytesize } }
+            total
+          end
+        end.map(&:wait)
+      end.wait
+      expect(sizes).to eq([5120, 5120])
+      expect(monotonic - started).to be < 2.2 # 1.2 s each; serially that is 2.4
+    end
+
+    it "refuses another fiber on the Session while a stream is open" do
+      Async do |task|
+        first = task.async { session.get_stream("/long-poll?delay=0.3") { |stream| stream.read } }
+        sleep 0.1
+        expect { session.get("/test") }.to raise_error(Patron::Error, /another thread or fiber/)
+        expect { session.get_stream("/test") { } }.to raise_error(Patron::Error, /another thread or fiber/)
+        expect(first.wait).to be_complete
+      end
+    end
+  end
 end
