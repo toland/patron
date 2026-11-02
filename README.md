@@ -182,7 +182,9 @@ client.last_event_id  # to persist between process runs
 
 A 204 ends `each_event`. Any other status than 200, or another Content-Type, raises
 `Patron::SSEClient::UnexpectedResponse` with the `status`, `headers` and first 4 KB of `body`, since retrying
-a 503 is the application's call. `client.close` from another thread or fiber makes `each_event` return.
+a 503 is the application's call. An event that is not valid UTF-8 raises `Patron::SSEClient::InvalidEncoding`
+and ends the stream, where a browser would substitute U+FFFD. `client.close` from another thread or fiber makes
+`each_event` return.
 
 ## Threading
 

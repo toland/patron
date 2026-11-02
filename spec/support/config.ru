@@ -244,6 +244,11 @@ SSEErrorServlet = Proc.new {|env|
   [503, {'content-type' => 'text/plain', 'content-length' => body.bytesize.to_s}, [body]]
 }
 
+# A good event followed by one whose data is not UTF-8
+SSEInvalidUTF8Servlet = Proc.new {|env|
+  [200, SSE_HEADERS, ["data: fine\n\n", "data: caf\xE9\n\n".b]]
+}
+
 run Rack::URLMap.new({
   "/" => Proc.new {|env| [200, {'content-length' => '7'}, ['Welcome']]},
   "/test" => ReadbackServlet,
@@ -271,4 +276,5 @@ run Rack::URLMap.new({
   "/sse-log" => SSELogServlet,
   "/sse-no-content" => Proc.new {|env| [204, {}, []]},
   "/sse-error" => SSEErrorServlet,
+  "/sse-invalid-utf8" => SSEInvalidUTF8Servlet,
 })

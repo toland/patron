@@ -47,6 +47,10 @@ module Patron
     # Raised when the stream could not be reopened within `max_reconnects` attempts
     class ReconnectsExhausted < Patron::Error; end
 
+    # Raised when an event is not valid UTF-8, which an event stream must be. The stream ends there
+    # instead of reconnecting: a server that sends garbage would send it again.
+    class InvalidEncoding < Patron::Error; end
+
     BOM = "\xEF\xBB\xBF".b.freeze
     BODY_EXCERPT_SIZE = 4096
     CHUNK_SIZE = 16 * 1024
@@ -87,6 +91,7 @@ module Patron
     # @return [nil]
     # @raise [UnexpectedResponse] for a response that is not an event stream
     # @raise [ReconnectsExhausted] when `max_reconnects` is exceeded
+    # @raise [InvalidEncoding] when an event is not valid UTF-8
     def each_event(&block)
       raise ArgumentError, "Patron::SSEClient#each_event needs a block" unless block
       @reconnects = 0
@@ -221,6 +226,12 @@ module Patron
       @event_type = nil
     end
 
-    def utf8(str) = str.dup.force_encoding(Encoding::UTF_8).scrub.freeze
+    # A browser would put U+FFFD where the bad bytes are; here they end the stream, so that no
+    # garbled event gets acted on
+    def utf8(str)
+      str = str.dup.force_encoding(Encoding::UTF_8)
+      raise InvalidEncoding, "The event stream from #{@url} is not valid UTF-8" unless str.valid_encoding?
+      str.freeze
+    end
   end
 end

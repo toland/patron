@@ -127,4 +127,12 @@ describe Patron::SSEClient, :session do
     expect(events.map(&:data)).to eq(["hi 1"])
     expect(ticks).to eq(20)
   end
+
+  it "ends the stream with InvalidEncoding when an event is not valid UTF-8" do
+    sse = client("/sse-invalid-utf8", idle_timeout: 5)
+    events = []
+    expect { sse.each_event { |event| events << event } }.to raise_error(Patron::SSEClient::InvalidEncoding, /not valid UTF-8/)
+    expect(events.map(&:data)).to eq(["fine"])
+    expect(events.first.data.encoding).to eq(Encoding::UTF_8)
+  end
 end

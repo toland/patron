@@ -6,6 +6,7 @@ jobs:
   test:
     name: Specs - Ruby ${{ matrix.ruby }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     continue-on-error: ${{ matrix.ruby == 'head' }}
     strategy:
       fail-fast: false
@@ -40,6 +41,7 @@ jobs:
   werror:
     name: Compile with -Werror on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     # Becomes a required check once the C extension rewrite lands; the current C still
     # uses libcurl APIs that GCC flags as deprecated
     continue-on-error: true
@@ -63,6 +65,7 @@ jobs:
   old-libcurl:
     name: Specs - Debian bookworm (libcurl 7.88)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     container: ruby:3.3-bookworm
     steps:
     - uses: actions/checkout@v7
@@ -76,6 +79,7 @@ jobs:
   alpine:
     name: Specs - Alpine (musl)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     container: ruby:3.3-alpine
     steps:
     - uses: actions/checkout@v7
@@ -87,6 +91,7 @@ jobs:
   gc-stress:
     name: Specs under GC stress and compaction
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
     - name: Install libcurl
@@ -107,6 +112,7 @@ jobs:
 
   valgrind:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     name: Specs under valgrind memcheck
     steps:
     - uses: actions/checkout@v7
@@ -137,6 +143,7 @@ jobs:
 
   malloc-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     name: Specs with glibc malloc checking
     steps:
     - uses: actions/checkout@v7
@@ -160,6 +167,7 @@ jobs:
   gem:
     name: Build and install the gem, check docs
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
     - name: Install libcurl
