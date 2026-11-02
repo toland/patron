@@ -10,8 +10,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-15]
+        os: [ubuntu-latest]
         ruby: ["3.3", "3.4", "4.0", "head"]
+        # macOS runners queue for hours on this plan; one run on the current Ruby covers the platform
+        include:
+          - os: macos-15
+            ruby: "3.4"
     steps:
     - uses: actions/checkout@v7
     - name: Install libcurl (Linux)
@@ -42,19 +46,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-15]
+        os: [ubuntu-latest]
     steps:
     - uses: actions/checkout@v7
-    - name: Install libcurl (Linux)
-      if: runner.os == 'Linux'
+    - name: Install libcurl
       run: |
         sudo apt-get update
         sudo apt-get -y install libcurl4-openssl-dev
-    - name: Install libcurl (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        brew install curl
-        echo "BUNDLE_BUILD__PATRON=--with-curl-dir=$(brew --prefix curl)" >> "$GITHUB_ENV"
     - uses: ruby/setup-ruby@v1
       with:
         ruby-version: "3.4"

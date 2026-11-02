@@ -121,8 +121,10 @@ describe "Patron::Session under a Fiber scheduler", :session, :fibers do
 
     it "fills the caller's String through IO.copy_stream under the scheduler" do
       tf = Tempfile.new("patron-fiber-stream")
-      Async { session.get_stream("/very-large") { |stream| IO.copy_stream(stream, tf) } }
+      stats = Async { session.get_stream("/very-large") { |stream| IO.copy_stream(stream, tf) } }.wait
+      tf.flush
       expect(File.size(tf.path)).to eq(15 * 1024 * 1024)
+      expect(stats.downloaded_bytes).to eq(15 * 1024 * 1024)
     end
 
     it "is interrupted mid-stream by Task#with_timeout and the Session stays usable" do

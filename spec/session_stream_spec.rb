@@ -11,6 +11,9 @@ describe "Patron::Session#stream", :session do
 
   def monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
+  # libcurl 8 says "Reusing existing http: connection with host", libcurl 7 "Re-using existing connection"
+  REUSED_CONNECTION = /Re-?using existing/
+
   def counter_body(lines) = (0...lines).map { |i| format("%07d\n", i) }.join
 
   # A one-shot HTTP server writing `response` verbatim, for what Puma cannot send
@@ -234,8 +237,9 @@ describe "Patron::Session#stream", :session do
     expect(stats.complete?).to be(true)
     expect(stats.downloaded_bytes).to eq(4096)
     log.truncate(0)
+    log.rewind
     expect(session.get("/test").status).to eq(200)
-    expect(log.string).to include("Re-using existing connection")
+    expect(log.string).to match(REUSED_CONNECTION)
   end
 
   it "closes the connection and reports an incomplete transfer after break" do
@@ -252,8 +256,9 @@ describe "Patron::Session#stream", :session do
     expect(stats.complete?).to be(false)
     expect(stats.trailers).to eq({})
     log.truncate(0)
+    log.rewind
     expect(session.get("/test").status).to eq(200)
-    expect(log.string).not_to include("Re-using existing connection")
+    expect(log.string).not_to match(REUSED_CONNECTION)
   end
 
   it "can be left by raising, and the Session stays usable" do
