@@ -2,6 +2,7 @@
 
 require 'json'
 require 'securerandom'
+require 'stringio'
 require 'async'
 
 describe Patron::SSEClient, :session do
@@ -134,5 +135,36 @@ describe Patron::SSEClient, :session do
     expect { sse.each_event { |event| events << event } }.to raise_error(Patron::SSEClient::InvalidEncoding, /not valid UTF-8/)
     expect(events.map(&:data)).to eq(["fine"])
     expect(events.first.data.encoding).to eq(Encoding::UTF_8)
+  end
+
+  describe ".parse" do
+    it "parses the event stream a POST answers with, inside a post_stream block" do
+      deltas = []
+      stats = Patron::Session.new(base_url: base_url, timeout: 5).post_stream("/sse-post", "the quick fox") do |stream|
+        expect(stream.content_type).to eq("text/event-stream")
+        Patron::SSEClient.parse(stream) do |event|
+          break if event.data == "[DONE]"
+          deltas << JSON.parse(event.data)["delta"]
+        end
+      end
+      expect(deltas).to eq(%w[the quick fox])
+      expect(stats.status).to eq(200)
+    end
+
+    it "reads any readable, carries the given last_event_id and returns the last one seen" do
+      io = StringIO.new("\xEF\xBB\xBFdata: a\n\nid: 7\ndata: b\r\n\r\nid: 8\n\ndata: c\r\r".b)
+      events = []
+      last_id = Patron::SSEClient.parse(io, last_event_id: "6") { |event| events << event.to_h }
+      expect(events).to eq([
+        { type: "message", data: "a", id: "6" },
+        { type: "message", data: "b", id: "7" },
+        { type: "message", data: "c", id: "8" },
+      ])
+      expect(last_id).to eq("8")
+    end
+
+    it "needs a block" do
+      expect { Patron::SSEClient.parse(StringIO.new("")) }.to raise_error(ArgumentError, /needs a block/)
+    end
   end
 end

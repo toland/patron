@@ -20,7 +20,8 @@
 * `Patron::SSEClient`, a server-sent events client built on `stream`: WHATWG event stream parsing, reconnects
   after the server's `retry:` interval with `Last-Event-ID`, an idle timeout, `close` from another thread or
   fiber, `UnexpectedResponse` for anything that is not an event stream and `InvalidEncoding` for an event that
-  is not UTF-8. Closes #158
+  is not UTF-8. `Patron::SSEClient.parse(readable) { |event| }` runs the parser over any stream, such as the
+  body of a POST inside a `post_stream` block. Closes #158
 * webmock's adapter overrides `handle_request` and does not intercept streams, nor `get_file` now
 * `Response#charset` and `#decoded_body` find the charset in a lowercase `content-type` header too, as sent by HTTP/2 servers and Puma 8
 * Test suite: Puma 8, Rack 3 lowercase header names in the test app

@@ -186,6 +186,22 @@ a 503 is the application's call. An event that is not valid UTF-8 raises `Patron
 and ends the stream, where a browser would substitute U+FFFD. `client.close` from another thread or fiber makes
 `each_event` return.
 
+The client only issues GETs, like an `EventSource`. For an event stream that answers a POST, which is how the
+LLM completion APIs stream, run the same parser over the body yourself:
+
+```ruby
+session.post_stream("/v1/chat/completions", body.to_json, headers) do |stream|
+  raise "status #{stream.status}" unless stream.status == 200
+  Patron::SSEClient.parse(stream) do |event|
+    break if event.data == "[DONE]"
+    print JSON.parse(event.data).dig("choices", 0, "delta", "content")
+  end
+end
+```
+
+`Patron::SSEClient.parse` takes anything with `readpartial`, so a file or a socket works as well as a
+`ResponseStream`, and returns the last event ID it saw.
+
 ## Threading
 
 A `Patron::Session` performs one request at a time and must not be shared between threads: each `Session`

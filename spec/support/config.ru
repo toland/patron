@@ -244,6 +244,14 @@ SSEErrorServlet = Proc.new {|env|
   [503, {'content-type' => 'text/plain', 'content-length' => body.bytesize.to_s}, [body]]
 }
 
+# Answers a POST the way a completion API does: one event per word of the request body, then [DONE]
+SSEPostServlet = Proc.new {|env|
+  next [405, {"content-length" => "0"}, []] unless env["REQUEST_METHOD"] == "POST"
+  words = env["rack.input"].read.split
+  pieces = words.map { |w| "data: #{JSON.generate(delta: w)}\n\n" } + ["data: [DONE]\n\n"]
+  [200, SSE_HEADERS, pieces]
+}
+
 # A good event followed by one whose data is not UTF-8
 SSEInvalidUTF8Servlet = Proc.new {|env|
   [200, SSE_HEADERS, ["data: fine\n\n", "data: caf\xE9\n\n".b]]
@@ -277,4 +285,5 @@ run Rack::URLMap.new({
   "/sse-no-content" => Proc.new {|env| [204, {}, []]},
   "/sse-error" => SSEErrorServlet,
   "/sse-invalid-utf8" => SSEInvalidUTF8Servlet,
+  "/sse-post" => SSEPostServlet,
 })
