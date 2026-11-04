@@ -4,31 +4,12 @@ module Patron
 
   # Represents the response from the HTTP server.
   class Response
+    include ResponseHead
     include ResponseDecoding
-
-    # @return [String] the original URL used to perform the request (contains the final URL after redirects)
-    attr_reader :url
-
-    # @return [Integer] the HTTP status code of the final response after all the redirects
-    attr_reader :status
-
-    # @return [String] the complete status line (code and message)
-    attr_reader :status_line
-
-    # @return [Integer] how many redirects were followed when fulfilling this request
-    attr_reader :redirect_count
 
     # @return [String, nil] the response body as a String encoded as `Encoding::BINARY` or
     #           or `nil` if the response was written directly to a file
     attr_reader :body
-
-    # @return [Hash] the response headers. If there were multiple headers received for the same value
-    #   (like "Cookie"), the header values will be within an Array under the key for the header, in order.
-    attr_reader :headers
-
-    # @return [String] the recognized name of the charset for the response. The name is not checked
-    #    to be a valid charset name, just stored. To check the charset for validity, use #body_decodable?
-    attr_reader :charset
 
     # @return [Hash{Symbol => Float}, nil] curl's cumulative transfer marks in seconds since the request
     #   started: `:namelookup`, `:connect`, `:appconnect`, `:pretransfer`, `:starttransfer`, `:redirect`
@@ -54,19 +35,8 @@ module Patron
       @body = body && (body.encoding == Encoding::BINARY ? body : body.b)
       @timings = timings
 
-      parse_headers(decode_header_data(header_data))
-      @charset = charset_from_content_type || default_charset
+      parse_head(header_data, default_charset)
     end
-
-    # Tells whether the HTTP response code is less than 400
-    #
-    # @return [Boolean]
-    def ok? = !error?
-
-    # Tells whether the HTTP response code is larger than 399
-    #
-    # @return [Boolean]
-    def error? = status >= 400
 
     # Tells whether the response body can be decoded losslessly into the curren internal encoding
     #
@@ -119,28 +89,6 @@ module Patron
       return unless @body
       return decode_body(false) if frozen?
       @inspectable_body ||= decode_body(false)
-    end
-
-    private
-
-    def parse_headers(header_data_for_multiple_responses)
-      @headers = {}
-
-      responses = Patron::HeaderParser.parse(header_data_for_multiple_responses)
-      last_response = responses[-1] # proxies and redirects put their own responses in front of the real one
-
-      @status_line = last_response.status_line
-      last_response.headers.each do |line|
-        hdr, val = line.split(":", 2)
-        val = val&.strip
-
-        if @headers.key?(hdr)
-          @headers[hdr] = [@headers[hdr]] unless @headers[hdr].kind_of?(Array)
-          @headers[hdr] << val
-        else
-          @headers[hdr] = val
-        end
-      end
     end
   end
 end

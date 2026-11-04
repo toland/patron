@@ -1,5 +1,30 @@
 ### Unreleased
 
+* `Session#stream(action, url, headers, **options) { |stream| }` and the `get_stream`, `put_stream`,
+  `post_stream` (a Hash is form-encoded like `post`) and `patch_stream` helpers yield the response as soon
+  as its head has arrived, and return a `Patron::TransferStats` once the block is done. The body is received
+  by reading from the stream, which drives the transfer in the calling thread or fiber, so a Fiber
+  scheduler, `Session#interrupt`, `Timeout` and `Thread#raise` all work mid-body
+* `Patron::ResponseStream` has the head (`status`, `headers`, `content_length`, `content_type`, ...) and the
+  IO-like readers `read`, `readpartial`, `each`, `each_line`, `drain!`, `eof?` and `close`. `read` and
+  `readpartial` fill a String you pass in place, so `IO.copy_stream(stream, destination)` does not allocate
+  per chunk. Leaving the block early closes the connection; `drain!` keeps it
+* `Patron::TransferStats`, the receipt: the same head readers plus `downloaded_bytes`, `uploaded_bytes`,
+  `timings`, `trailers` and `complete?`. Frozen and Ractor-shareable
+* `Session#read_timeout` / `read_timeout:` bounds the wait for the next piece of a response, for streamed and
+  buffered requests alike, raising `Patron::TimeoutError`. Unlike `timeout` it does not bound the whole transfer
+* `Response` gains `content_length` and `content_type` (the media type without parameters)
+* `get_file` (and `request(:get, ..., file: path)`) is built on `stream` and `IO.copy_stream`, and returns the
+  same `Response` with a nil body as before. A `Request` with a `file_name` handed to `handle_request` as a GET
+  raises `ArgumentError` now
+* `Patron::SSEClient`, a server-sent events client built on `stream`: WHATWG event stream parsing, reconnects
+  after the server's `retry:` interval with `Last-Event-ID`, an idle timeout, `close` from another thread or
+  fiber, `UnexpectedResponse` for anything that is not an event stream and `InvalidEncoding` for an event that
+  is not UTF-8. `Patron::SSEClient.parse(readable) { |event| }` runs the parser over any stream, such as the
+  body of a POST inside a `post_stream` block. Closes #158
+* Known limitation: `Session#interrupt` and `SSEClient#close` from another fiber on the same thread land within a
+  second under a Fiber scheduler, not at once; from another thread they are immediate
+* webmock's adapter overrides `handle_request` and does not intercept streams, nor `get_file` now
 * `Response#charset` and `#decoded_body` find the charset in a lowercase `content-type` header too, as sent by HTTP/2 servers and Puma 8
 * Test suite: Puma 8, Rack 3 lowercase header names in the test app
 * A request body that responds to `read` (a StringIO, an `IO.pipe` reader, a `Zlib::GzipReader`) is streamed

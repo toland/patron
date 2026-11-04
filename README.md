@@ -120,6 +120,88 @@ This depends on the TLS library libcurl is built against: with GnuTLS these surf
 Client certificates are tested with the OpenSSL and LibreSSL backends - libcurl's Secure Transport backend
 can't load a PEM certificate from a file at all.
 
+## Streaming responses
+
+`Session#stream` (and `get_stream`, `post_stream`, `put_stream`, `patch_stream`) yields the response as
+soon as its head has arrived, and the block receives the body by reading from it. Nothing is buffered
+meanwhile: every read drives libcurl until some bytes have arrived. `timeout` still bounds the whole
+transfer, so set it to 0 and use `read_timeout` to bound the wait for each next piece:
+
+```ruby
+stats = sess.get_stream("/events", { "Accept" => "text/event-stream" }, timeout: 0, read_timeout: 30) do |stream|
+  raise "Unexpected #{stream.status}" unless stream.ok? && stream.content_type == "text/event-stream"
+  stream.each_line do |line|
+    puts line.force_encoding(Encoding::UTF_8)
+  end
+end
+stats.complete?  # => true when the body was received to its end
+stats.timings    # the same Hash as Response#timings
+stats.trailers   # chunked or HTTP/2 trailers, {} when none
+```
+
+`read(length, buffer)` and `readpartial(length, buffer)` fill a String you own, so copying a body
+somewhere allocates nothing per chunk. `IO.copy_stream` uses exactly that, into a File or anything
+with `write`:
+
+```ruby
+sess.get_stream("/large.bin") do |stream|
+  raise "Too big" if stream.content_length.to_i > 1024 * 1024 * 1024
+  File.open("large.bin", "wb") { |file| IO.copy_stream(stream, file) }
+end
+```
+
+Leaving the block early (`break`, `return`, an exception) aborts the transfer and closes its connection;
+call `stream.drain!` first to receive and discard the rest and keep the connection. Using the stream after
+its block raises `IOError`. The block is mandatory, and the `Session` is busy while it runs. Under a Fiber
+scheduler use `each` and `each_line` with a block rather than an external `Enumerator`.
+
+### Server-sent events
+
+`Patron::SSEClient` reads a `text/event-stream` on top of `stream`, and reconnects the way a browser's
+EventSource does: after the retry interval (the server's `retry:` field wins), sending `Last-Event-ID`.
+
+```ruby
+client = Patron::SSEClient.new(
+  "https://example.com/stream",
+  headers: { "Authorization" => "Bearer ..." },
+  idle_timeout: 45,     # seconds of silence before reconnecting
+  retry: 3,             # seconds between reconnects until the server sends a retry field
+  max_reconnects: nil,  # nil: forever
+  last_event_id: nil,   # resume from a stored id
+  session: nil          # or a configured Patron::Session: TLS, proxy, auth, cookies, base_url
+)
+
+client.each_event do |event|
+  event.type  # "message" unless the server sent an event: field
+  event.data  # data: lines joined with "\n", UTF-8
+  event.id
+  break if event.type == "done"
+end
+client.last_event_id  # to persist between process runs
+```
+
+A 204 ends `each_event`. Any other status than 200, or another Content-Type, raises
+`Patron::SSEClient::UnexpectedResponse` with the `status`, `headers` and first 4 KB of `body`, since retrying
+a 503 is the application's call. An event that is not valid UTF-8 raises `Patron::SSEClient::InvalidEncoding`
+and ends the stream, where a browser would substitute U+FFFD. `client.close` from another thread or fiber makes
+`each_event` return.
+
+The client only issues GETs, like an `EventSource`. For an event stream that answers a POST, which is how the
+LLM completion APIs stream, run the same parser over the body yourself:
+
+```ruby
+session.post_stream("/v1/chat/completions", body.to_json, headers) do |stream|
+  raise "status #{stream.status}" unless stream.status == 200
+  Patron::SSEClient.parse(stream) do |event|
+    break if event.data == "[DONE]"
+    print JSON.parse(event.data).dig("choices", 0, "delta", "content")
+  end
+end
+```
+
+`Patron::SSEClient.parse` takes anything with `readpartial`, so a file or a socket works as well as a
+`ResponseStream`, and returns the last event ID it saw.
+
 ## Threading
 
 A `Patron::Session` performs one request at a time and must not be shared between threads: each `Session`
@@ -166,6 +248,11 @@ end
 
 Each fiber needs its own `Session`, just like each thread does. `Async::Task#stop` and
 `Task#with_timeout` interrupt a request in flight the same way `Thread#kill` and `Timeout` do.
+
+One limitation: `Session#interrupt` or `SSEClient#close` called from another fiber on the same thread lands
+within a second rather than at once. The fiber waits in the scheduler on libcurl's sockets, and the socket
+`curl_multi_wakeup` pokes is libcurl's own, which `curl_multi_fdset` does not hand out. From another thread
+it is immediate.
 
 ## Ractors
 

@@ -33,6 +33,28 @@ describe Patron::Request, :unit do
     end
   end
 
+  describe "read_timeout" do
+    it "defaults to nil and accepts nil" do
+      expect(request.read_timeout).to be_nil
+      request.read_timeout = 2
+      request.read_timeout = nil
+      expect(request.read_timeout).to be_nil
+    end
+
+    it "takes anything with #to_f" do
+      request.read_timeout = "0.25"
+      expect(request.read_timeout).to eq(0.25)
+      request.read_timeout = Rational(1, 2)
+      expect(request.read_timeout).to eq(0.5)
+    end
+
+    it "raises when assigned zero, a negative number or something without #to_f" do
+      expect { request.read_timeout = 0 }.to raise_error(ArgumentError)
+      expect { request.read_timeout = -1 }.to raise_error(ArgumentError)
+      expect { request.read_timeout = :soon }.to raise_error(ArgumentError)
+    end
+  end
+
   describe "max_redirects" do
     it "raises when assigned an integer smaller than -1" do
       expect { request.max_redirects = -2 }.to raise_error(ArgumentError)

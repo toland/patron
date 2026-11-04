@@ -3,11 +3,14 @@
 require 'uri'
 require 'patron/error'
 require 'patron/request'
+require 'patron/header_parser'
+require 'patron/response_head'
 require 'patron/response_decoding'
 require 'patron/response'
+require 'patron/response_stream'
+require 'patron/transfer_stats'
 require 'patron/session_ext'
 require 'patron/util'
-require 'patron/header_parser'
 require 'patron/compat'
 
 module Patron
@@ -126,6 +129,13 @@ module Patron
     # @see low_speed_time
     attr_accessor :low_speed_limit
 
+    # @return [Numeric, nil] how long to wait for the next piece of the response, in seconds,
+    #    counted from the previous one. Unlike #timeout it does not bound the whole transfer,
+    #    which makes it the one to use for streams. Defaults to nil, no limit. Exceeding it
+    #    raises Patron::TimeoutError.
+    # @see Patron::Request#read_timeout=
+    attr_accessor :read_timeout
+
     # @return [#call, nil] callable object that will be called with 4 arguments
     #    during request/response execution - `dltotal`, `dlnow`, `ultotal`, `ulnow`.
     #    All these arguments are in bytes. Returning `false` from the callback aborts the
@@ -208,8 +218,8 @@ module Patron
     end
 
     # Retrieve the contents of the specified +url+ as with #get, but the
-    # content at the URL is downloaded directly into the specified file. The file will be accessed
-    # by libCURL bypassing the Ruby runtime entirely.
+    # content at the URL is downloaded directly into the specified file. The body is streamed
+    # into the file through one reused buffer, see #stream.
     #
     # Note that when using this option, the Response object will have ++nil++ as the body, and you
     # will need to read your target file for access to the body string).
@@ -293,10 +303,7 @@ module Patron
     # @param headers[Hash] the hash of header keys to values
     # @return [Patron::Response]
     def post(url, data, headers = {})
-      if data.is_a?(Hash)
-        data = data.map { |k, v| urlencode(k.to_s) + '=' + urlencode(v.to_s) }.join('&')
-        headers = headers.merge('Content-Type' => 'application/x-www-form-urlencoded')
-      end
+      data, headers = form_encode(data, headers)
       request(:post, url, headers, data: data)
     end
 
@@ -335,6 +342,85 @@ module Patron
     end
     # @!endgroup
 
+    # @!group Streaming
+    # Performs a request and yields its response as a ResponseStream as soon as the head of the
+    # final response has arrived, before the body. The block receives the body by reading from
+    # the stream; nothing is buffered meanwhile, and a consumer that does not read holds the
+    # transfer back. When the block ends before the body does (`break`, `return`, an exception)
+    # the transfer is aborted and its connection closed; call ResponseStream#drain! first to keep it.
+    #
+    # The Session is busy for the duration of the block, so another request on it from inside
+    # the block raises Patron::Error. #timeout still bounds the whole transfer and is usually
+    # wanted at 0 here, with `read_timeout:` bounding the wait for each next piece instead.
+    #
+    # @example
+    #   stats = session.stream(:get, "/events", { "Accept" => "text/event-stream" }, timeout: 0, read_timeout: 30) do |stream|
+    #     raise "Unexpected #{stream.status}" unless stream.ok?
+    #     stream.each_line { |line| handle(line) }
+    #   end
+    #   stats.complete? #=> true
+    #
+    # @param action[#to_s] the HTTP verb
+    # @param url[String] the URL for the request
+    # @param headers[Hash] headers to send along with the request
+    # @param options[Hash] the same options as #request takes
+    # @yieldparam stream [Patron::ResponseStream] closed once the block ends
+    # @return [Patron::TransferStats] the receipt of the transfer
+    # @raise [ArgumentError] without a block
+    def stream(action, url, headers = {}, **options, &block)
+      raise ArgumentError, "Patron::Session#stream needs a block" unless block
+      run_stream(build_request(action, url, headers, **options), &block).__send__(:receipt)
+    end
+
+    # Same as #stream with a GET
+    #
+    # @param url[String] the URL to fetch
+    # @param headers[Hash] the hash of header keys to values
+    # @param options[Hash] the same options as #request takes
+    # @yieldparam stream [Patron::ResponseStream]
+    # @return [Patron::TransferStats]
+    def get_stream(url, headers = {}, **options, &block)
+      stream(:get, url, headers, **options, &block)
+    end
+
+    # Same as #stream with a PUT, sending `data` like #put does
+    #
+    # @param url[String] the URL for the request
+    # @param data[#to_s, #to_path, #read] the request body, see #put
+    # @param headers[Hash] the hash of header keys to values
+    # @param options[Hash] the same options as #request takes
+    # @yieldparam stream [Patron::ResponseStream]
+    # @return [Patron::TransferStats]
+    def put_stream(url, data, headers = {}, **options, &block)
+      stream(:put, url, headers, **options, data: data, &block)
+    end
+
+    # Same as #stream with a POST, sending `data` like #post does: a Hash is form-encoded
+    #
+    # @param url[String] the URL for the request
+    # @param data[Hash, #to_s, #to_path, #read] the request body, see #post
+    # @param headers[Hash] the hash of header keys to values
+    # @param options[Hash] the same options as #request takes
+    # @yieldparam stream [Patron::ResponseStream]
+    # @return [Patron::TransferStats]
+    def post_stream(url, data, headers = {}, **options, &block)
+      data, headers = form_encode(data, headers)
+      stream(:post, url, headers, **options, data: data, &block)
+    end
+
+    # Same as #stream with a PATCH, sending `data` like #patch does
+    #
+    # @param url[String] the URL for the request
+    # @param data[#to_s, #to_path, #read] the request body, see #patch
+    # @param headers[Hash] the hash of header keys to values
+    # @param options[Hash] the same options as #request takes
+    # @yieldparam stream [Patron::ResponseStream]
+    # @return [Patron::TransferStats]
+    def patch_stream(url, data, headers = {}, **options, &block)
+      stream(:patch, url, headers, **options, data: data, &block)
+    end
+    # @!endgroup
+
     # @!group Basic API methods
     # Send an HTTP request to the specified `url`.
     #
@@ -349,6 +435,9 @@ module Patron
       # The 0.x positional options Hash is tolerated here rather than in a prepended module, since
       # sniffer and friends alias_method-chain this method and a prepend would recurse into the alias
       options = Compat.hash_to_keywords("Patron::Session#request with an options Hash", positional, options)
+      if options[:file] && !options[:multipart] && action.to_s.casecmp?("get")
+        return download(build_request(action, url, headers, **options.except(:file)), options[:file])
+      end
       handle_request(build_request(action, url, headers, **options))
     end
 
@@ -398,9 +487,46 @@ module Patron
       automatic_content_encoding timeout connect_timeout dns_cache_timeout low_speed_time low_speed_limit
       force_ipv4 max_redirects username password proxy proxy_type auth_type insecure ssl_version http_version
       cacert ssl_cert ssl_cert_type ssl_key ssl_key_password ignore_content_length buffer_size
-      download_byte_limit progress_callback
+      download_byte_limit progress_callback read_timeout
     ].freeze
     private_constant :REQUEST_ATTRIBUTES_FROM_SESSION
+
+    # The ensure is what aborts the transfer on break, return, raise, Thread#kill or Task#stop.
+    # A transfer_start that raised has cleaned up after itself - and when it raised because
+    # a stream is already open in this very fiber, transfer_finish would end that one
+    def run_stream(request)
+      head = stream = nil
+      begin
+        head = transfer_start(request)
+        status, effective_url, redirect_count, header_data = head
+        stream = ResponseStream.new(self, status: status, url: effective_url, redirect_count: redirect_count,
+                                    header_data: header_data, default_charset: default_response_charset)
+        yield stream
+      ensure
+        if stream
+          stream.__send__(:finish)
+        elsif head
+          transfer_finish
+        end
+      end
+      stream
+    end
+
+    def download(request, path)
+      File.open(path, "wb") do |file|
+        stream = run_stream(request) { |s| IO.copy_stream(s, file) }
+        stats = stream.__send__(:receipt)
+        response_class.new(url: stats.url, status: stats.status, redirect_count: stats.redirect_count,
+                           header_data: stream.__send__(:header_data), body: nil,
+                           default_charset: default_response_charset, timings: stats.timings)
+      end
+    end
+
+    def form_encode(data, headers)
+      return [data, headers] unless data.is_a?(Hash)
+      encoded = data.map { |k, v| urlencode(k.to_s) + '=' + urlencode(v.to_s) }.join('&')
+      [encoded, headers.merge('Content-Type' => 'application/x-www-form-urlencoded')]
+    end
 
     def build_url(url, query)
       base_url = self.base_url.to_s

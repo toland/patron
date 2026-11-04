@@ -66,6 +66,17 @@ describe Patron::Response, :session do
     expect(response).to be_error
   end
   
+  it "pulls out content_length and the media type of content_type" do
+    headers = "HTTP/1.1 200 OK\r\ncontent-type: Text/HTML; charset=utf-8\r\nContent-Length: 42\r\n"
+    response = Patron::Response.new(url: "url", status: 200, header_data: headers, body: "")
+    expect(response.content_length).to eq(42)
+    expect(response.content_type).to eq("text/html")
+
+    response = Patron::Response.new(url: "url", status: 200, header_data: "HTTP/1.1 200 OK\r\nContent-Length: lots\r\n", body: "")
+    expect(response.content_length).to be_nil
+    expect(response.content_type).to be_nil
+  end
+
   it "should strip extra spaces from header values" do
     response = @session.get("/test")
     # All digits, no spaces

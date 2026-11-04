@@ -6,12 +6,17 @@ jobs:
   test:
     name: Specs - Ruby ${{ matrix.ruby }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     continue-on-error: ${{ matrix.ruby == 'head' }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-15]
+        os: [ubuntu-latest]
         ruby: ["3.3", "3.4", "4.0", "head"]
+        # macOS runners queue for hours on this plan; one run on the current Ruby covers the platform
+        include:
+          - os: macos-15
+            ruby: "3.4"
     steps:
     - uses: actions/checkout@v7
     - name: Install libcurl (Linux)
@@ -36,25 +41,20 @@ jobs:
   werror:
     name: Compile with -Werror on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     # Becomes a required check once the C extension rewrite lands; the current C still
     # uses libcurl APIs that GCC flags as deprecated
     continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-15]
+        os: [ubuntu-latest]
     steps:
     - uses: actions/checkout@v7
-    - name: Install libcurl (Linux)
-      if: runner.os == 'Linux'
+    - name: Install libcurl
       run: |
         sudo apt-get update
         sudo apt-get -y install libcurl4-openssl-dev
-    - name: Install libcurl (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        brew install curl
-        echo "BUNDLE_BUILD__PATRON=--with-curl-dir=$(brew --prefix curl)" >> "$GITHUB_ENV"
     - uses: ruby/setup-ruby@v1
       with:
         ruby-version: "3.4"
@@ -65,6 +65,7 @@ jobs:
   old-libcurl:
     name: Specs - Debian bookworm (libcurl 7.88)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     container: ruby:3.3-bookworm
     steps:
     - uses: actions/checkout@v7
@@ -78,6 +79,7 @@ jobs:
   alpine:
     name: Specs - Alpine (musl)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     container: ruby:3.3-alpine
     steps:
     - uses: actions/checkout@v7
@@ -89,6 +91,7 @@ jobs:
   gc-stress:
     name: Specs under GC stress and compaction
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
     - name: Install libcurl
@@ -109,6 +112,7 @@ jobs:
 
   valgrind:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     name: Specs under valgrind memcheck
     steps:
     - uses: actions/checkout@v7
@@ -139,6 +143,7 @@ jobs:
 
   malloc-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     name: Specs with glibc malloc checking
     steps:
     - uses: actions/checkout@v7
@@ -162,6 +167,7 @@ jobs:
   gem:
     name: Build and install the gem, check docs
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
     - name: Install libcurl

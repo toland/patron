@@ -584,16 +584,11 @@ describe Patron::Session, :session do
     end
 
     it "sends what the writer has written so far, rather than waiting for a full buffer" do
-      # Each write waits until the previous one has left the pipe, which a #read(64KB) never lets
-      # happen - it would only return at EOF and send everything as one chunk
-      require 'io/wait'
+      # Each word gets time to leave the pipe before the next one is written. A #read(64KB) would
+      # only return at EOF and send everything as one chunk
       reader, writer = IO.pipe
       Thread.new do
-        %w[one two three].each do |word|
-          writer.write(word)
-          deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 2
-          sleep 0.005 while reader.nread > 0 && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
-        end
+        %w[one two three].each { |word| writer.write(word); sleep 0.1 }
         writer.close
       end
       captured = capture_request do |url|

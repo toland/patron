@@ -127,6 +127,136 @@ PeerCertServlet = Proc.new {|env|
   [200, {'content-type' => 'text/plain', 'content-length' => subject.bytesize.to_s}, [subject]]
 }
 
+# Writes `count` chunks of `size` bytes, sleeping `delay` seconds between two chunks
+SlowChunksServlet = Proc.new {|env|
+  query = Rack::Utils.parse_nested_query(env['QUERY_STRING'])
+  count = query.fetch('count', '5').to_i
+  size = query.fetch('size', '1024').to_i
+  delay = query.fetch('delay', '0.1').to_f
+  body = Enumerator.new do |y|
+    count.times do |i|
+      sleep delay if i > 0
+      y << ((97 + i % 26).chr * size)
+    end
+  end
+  [200, {'content-type' => 'text/plain'}, body]
+}
+
+# Sends the head right away and the first byte of the body only after `delay` seconds. A Rack 3
+# streaming body, since Puma holds back the head of an Enumerator body until its first chunk
+LongPollServlet = Proc.new {|env|
+  query = Rack::Utils.parse_nested_query(env['QUERY_STRING'])
+  delay = query.fetch('delay', '1').to_f
+  body = proc do |stream|
+    sleep delay
+    stream.write("first\n")
+    stream.write("second\n")
+  ensure
+    stream.close
+  end
+  [200, {'content-type' => 'text/event-stream; charset=utf-8', 'x-long-poll' => 'yes'}, body]
+}
+
+# `lines` numbered lines, `per_chunk` of them in each chunk, so a client can check every byte
+# arrived once and in order
+CounterServlet = Proc.new {|env|
+  query = Rack::Utils.parse_nested_query(env['QUERY_STRING'])
+  lines = query.fetch('lines', '1000').to_i
+  per_chunk = query.fetch('per_chunk', '100').to_i
+  body = Enumerator.new do |y|
+    0.step(lines - 1, per_chunk) do |from|
+      y << (from...[from + per_chunk, lines].min).map { |i| format("%07d\n", i) }.join
+    end
+  end
+  [200, {'content-type' => 'text/plain', 'content-length' => (lines * 8).to_s}, body]
+}
+
+# An error with a body, for draining
+ErrorWithBodyServlet = Proc.new {|env|
+  body = "x" * 4096
+  [503, {'content-type' => 'text/plain', 'content-length' => body.bytesize.to_s}, [body]]
+}
+
+# Who connected to the SSE routes, by `key`, for the specs to look at through /sse-log
+SSE_CONNECTIONS = Hash.new { |h, k| h[k] = [] }
+SSE_CONNECTIONS_LOCK = Mutex.new
+
+def record_sse_connection(env)
+  key = Rack::Utils.parse_nested_query(env['QUERY_STRING']).fetch('key', 'default')
+  SSE_CONNECTIONS_LOCK.synchronize { SSE_CONNECTIONS[key] << { 'last_event_id' => env['HTTP_LAST_EVENT_ID'] } }
+  SSE_CONNECTIONS_LOCK.synchronize { SSE_CONNECTIONS[key].length }
+end
+
+SSE_HEADERS = { 'content-type' => 'text/event-stream; charset=utf-8', 'cache-control' => 'no-cache' }.freeze
+
+# The first connection gets every corner of the event stream format, in pieces that split
+# a "\r\n" between two writes, and then the stream ends. Later ones get one more event
+SSEEventsServlet = Proc.new {|env|
+  connection = record_sse_connection(env)
+  pieces = if connection == 1
+    [
+      "\xEF\xBB\xBF: a comment\n".b,
+      "retry: 200\n\n",
+      "event: greeting\ndata: hello\ndata:  world\nid: 1\n\n",
+      "data: second\r",
+      "\nid: 2\r\n\r\n",
+      "data\nid: 3\rdata: lone cr\r\r",
+      "id: nul\u0000\ndata: nul id ignored\n\n",
+      "event: ignored\nunknown: field\n\n",
+      "data: unterminated",
+    ]
+  else
+    ["data: after reconnect\nid: 4\n\n"]
+  end
+  body = proc do |stream|
+    pieces.each { |piece| stream.write(piece); sleep 0.02 }
+    sleep 0.5 if connection > 1
+  rescue Puma::ConnectionError, IOError, SystemCallError
+    nil # the client has had enough
+  ensure
+    stream.close
+  end
+  [200, SSE_HEADERS, body]
+}
+
+# One event, then silence for longer than any idle timeout in the specs
+SSESilentServlet = Proc.new {|env|
+  connection = record_sse_connection(env)
+  body = proc do |stream|
+    stream.write("id: silent-#{connection}\ndata: hi #{connection}\n\n")
+    sleep 5
+  rescue Puma::ConnectionError, IOError, SystemCallError
+    nil
+  ensure
+    stream.close
+  end
+  [200, SSE_HEADERS, body]
+}
+
+SSELogServlet = Proc.new {|env|
+  key = Rack::Utils.parse_nested_query(env['QUERY_STRING']).fetch('key', 'default')
+  log = SSE_CONNECTIONS_LOCK.synchronize { SSE_CONNECTIONS[key].dup }
+  [200, {'content-type' => 'application/json'}, [JSON.generate(log)]]
+}
+
+SSEErrorServlet = Proc.new {|env|
+  body = "e" * 5000
+  [503, {'content-type' => 'text/plain', 'content-length' => body.bytesize.to_s}, [body]]
+}
+
+# Answers a POST the way a completion API does: one event per word of the request body, then [DONE]
+SSEPostServlet = Proc.new {|env|
+  next [405, {"content-length" => "0"}, []] unless env["REQUEST_METHOD"] == "POST"
+  words = env["rack.input"].read.split
+  pieces = words.map { |w| "data: #{JSON.generate(delta: w)}\n\n" } + ["data: [DONE]\n\n"]
+  [200, SSE_HEADERS, pieces]
+}
+
+# A good event followed by one whose data is not UTF-8
+SSEInvalidUTF8Servlet = Proc.new {|env|
+  [200, SSE_HEADERS, ["data: fine\n\n", "data: caf\xE9\n\n".b]]
+}
+
 run Rack::URLMap.new({
   "/" => Proc.new {|env| [200, {'content-length' => '7'}, ['Welcome']]},
   "/test" => ReadbackServlet,
@@ -145,4 +275,15 @@ run Rack::URLMap.new({
   "/wrongcontentlength" => WrongContentLengthServlet,
   "/deflate-compressed" => DeflateServlet,
   "/peercert" => PeerCertServlet,
+  "/slow-chunks" => SlowChunksServlet,
+  "/long-poll" => LongPollServlet,
+  "/counter" => CounterServlet,
+  "/error-with-body" => ErrorWithBodyServlet,
+  "/sse-events" => SSEEventsServlet,
+  "/sse-silent" => SSESilentServlet,
+  "/sse-log" => SSELogServlet,
+  "/sse-no-content" => Proc.new {|env| [204, {}, []]},
+  "/sse-error" => SSEErrorServlet,
+  "/sse-invalid-utf8" => SSEInvalidUTF8Servlet,
+  "/sse-post" => SSEPostServlet,
 })

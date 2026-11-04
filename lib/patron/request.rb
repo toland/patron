@@ -15,7 +15,7 @@ module Patron
       ssl_version http_version ssl_cert ssl_cert_type ssl_key ssl_key_password
       ignore_content_length buffer_size download_byte_limit progress_callback
       automatic_content_encoding force_ipv4 low_speed_time low_speed_limit
-      upload_data file_name multipart
+      upload_data file_name multipart read_timeout
     ].freeze
 
     # Any HTTP token works as a verb; the ones libcurl does not know natively are sent as custom requests
@@ -27,7 +27,8 @@ module Patron
                   :automatic_content_encoding, :force_ipv4, :download_byte_limit, :low_speed_time,
                   :low_speed_limit, :progress_callback, :ssl_cert, :ssl_cert_type, :ssl_key, :ssl_key_password
 
-    attr_reader :action, :headers, :timeout, :connect_timeout, :max_redirects, :auth_type, :buffer_size, :upload_data
+    attr_reader :action, :headers, :timeout, :connect_timeout, :max_redirects, :auth_type, :buffer_size, :upload_data,
+                :read_timeout
 
     # Defaults to a GET with no timeouts and unlimited redirects. Attributes may be given as
     # keywords; `action` and `multipart` are applied first since `upload_data=` depends on them.
@@ -101,6 +102,18 @@ module Patron
     # @param seconds [Numeric, nil] connect timeout, fractional seconds allowed, 0 or nil to disable
     def connect_timeout=(seconds)
       @connect_timeout = validate_timeout(seconds)
+    end
+
+    # Sets how long to wait for the next piece of the response, counted from the previous one
+    # (or from the start of the request), as opposed to #timeout which bounds the whole transfer.
+    # Exceeding it raises Patron::TimeoutError.
+    #
+    # @param seconds [#to_f, nil] fractional seconds allowed, nil for no limit
+    # @raise [ArgumentError] when zero or negative
+    def read_timeout=(seconds)
+      return @read_timeout = nil if seconds.nil?
+      raise ArgumentError, "Read timeout must be nil or a positive number of seconds" unless seconds.respond_to?(:to_f) && seconds.to_f > 0
+      @read_timeout = seconds.to_f
     end
 
     # @param count [Integer] -1 for unlimited, 0 to not follow redirects
