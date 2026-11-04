@@ -115,15 +115,18 @@ describe Patron::SSEClient, :session do
     expect { client("/sse-events").each_event }.to raise_error(ArgumentError)
   end
 
-  it "runs under a Fiber scheduler, alongside other fibers, and closes from another fiber", :fibers do
+  it "runs under a Fiber scheduler, alongside other fibers, and closes from another fiber at once", :fibers, :timing do
     ticks = 0
     events = []
     Async do |task|
       ticker = task.async { 20.times { ticks += 1; sleep 0.02 } }
       sse = client("/sse-silent?key=#{key}", idle_timeout: 10)
-      task.async { sleep 0.3; sse.close }
+      closed_at = nil
+      task.async { sleep 0.3; closed_at = monotonic; sse.close }
       sse.each_event { |event| events << event }
+      returned_at = monotonic
       ticker.wait
+      expect(returned_at - closed_at).to be < 0.3
     end
     expect(events.map(&:data)).to eq(["hi 1"])
     expect(ticks).to eq(20)

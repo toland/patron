@@ -267,8 +267,7 @@ module Patron
       nil
     end
 
-    # Stops #each_event, which then returns. Safe to call from another thread or fiber. Under a
-    # Fiber scheduler a stream waiting for data notices within a second.
+    # Stops #each_event, which then returns. Safe to call from another thread or fiber.
     #
     # @return [nil]
     def close

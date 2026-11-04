@@ -72,6 +72,7 @@ static VALUE eTooManyRedirects;
 static VALUE eAborted;
 static VALUE eDownloadLimitExceeded;
 static VALUE eClientCertificateError;
+static VALUE eFiberError;
 
 /* Frozen, Ractor-shareable lookup tables exposed as Patron::Request::SSL_VERSIONS and
  * Patron::Request::HTTP_VERSIONS: version name => libcurl constant. */
@@ -94,7 +95,7 @@ REQUEST_ATTRIBUTES(DECLARE_ID)
 static ID id_to_path, id_to_s, id_response_class, id_default_response_charset;
 static ID id_read, id_readpartial, id_size, id_pos, id_seek, id_rewind;
 static ID id_get, id_post, id_put, id_patch, id_delete, id_head;
-static ID id_ivar_curl_code;
+static ID id_ivar_curl_code, id_raise;
 static ID id_url_kw, id_status_kw, id_redirect_count_kw, id_header_data_kw, id_body_kw,
           id_default_charset_kw, id_timings_kw;
 
@@ -140,7 +141,9 @@ struct patron_session {
   double read_timeout;                /* seconds allowed between two deliveries, 0 for none */
   double last_activity;               /* monotonic seconds of the last delivery */
   VALUE read_buf;                     /* the caller's String, set only during transfer_read */
-  VALUE owner;                        /* the Fiber that started the streamed transfer */
+  VALUE owner;                        /* the Fiber that started the transfer */
+  VALUE owner_thread;                 /* and its Thread */
+  int in_scheduler_wait;              /* the owner is parked in the Fiber scheduler by wait_with_scheduler() */
 
   /* A callback may not let a Ruby exception unwind through libcurl's frames. The tag and
    * errinfo are parked here, the transfer is aborted, and perform() re-raises afterwards. */
@@ -190,6 +193,7 @@ static void session_mark(void *ptr) {
   rb_gc_mark_movable(s->pending_errinfo);
   rb_gc_mark_movable(s->read_buf);
   rb_gc_mark_movable(s->owner);
+  rb_gc_mark_movable(s->owner_thread);
   /* libcurl holds RSTRING_PTR() of this one for the whole transfer, and an embedded
    * String keeps its bytes inside the object slot, so it must not be moved. */
   rb_gc_mark(s->upload_data);
@@ -208,6 +212,7 @@ static void session_compact(void *ptr) {
   s->pending_errinfo = rb_gc_location(s->pending_errinfo);
   s->read_buf = rb_gc_location(s->read_buf);
   s->owner = rb_gc_location(s->owner);
+  s->owner_thread = rb_gc_location(s->owner_thread);
 }
 
 static size_t session_memsize(const void *ptr) {
@@ -264,14 +269,18 @@ static VALUE error_class_for(CURLcode code) {
   }
 }
 
-NORETURN(static void raise_curl_error(VALUE klass, CURLcode code, const char *message));
-static void raise_curl_error(VALUE klass, CURLcode code, const char *message) {
+static VALUE build_curl_error(VALUE klass, CURLcode code, const char *message) {
   VALUE exc;
 
   if (!message || !*message) message = curl_easy_strerror(code);
   exc = rb_exc_new_cstr(klass, message);
   rb_ivar_set(exc, id_ivar_curl_code, INT2NUM((int)code));
-  rb_exc_raise(exc);
+  return exc;
+}
+
+NORETURN(static void raise_curl_error(VALUE klass, CURLcode code, const char *message));
+static void raise_curl_error(VALUE klass, CURLcode code, const char *message) {
+  rb_exc_raise(build_curl_error(klass, code, message));
 }
 
 /* curl_easy_setopt() only fails for options the installed libcurl cannot honour; that must
@@ -716,6 +725,7 @@ static VALUE session_alloc(VALUE klass) {
   s->pending_errinfo = Qnil;
   s->read_buf = Qnil;
   s->owner = Qnil;
+  s->owner_thread = Qnil;
   s->read_limit = -1;
   init_handles(s);
   return obj;
@@ -1293,7 +1303,9 @@ static void wait_with_scheduler(struct patron_session *s, VALUE scheduler, long 
   if (nfds == 0) {
     /* libcurl asks to be called back within 100 ms when it has no socket to wait on */
     if (timeout_ms > 100) timeout_ms = 100;
+    s->in_scheduler_wait = 1;
     rb_fiber_scheduler_kernel_sleep(scheduler, float_seconds(timeout_ms));
+    s->in_scheduler_wait = 0;
     return;
   }
 
@@ -1308,7 +1320,10 @@ static void wait_with_scheduler(struct patron_session *s, VALUE scheduler, long 
 
   timeout = float_seconds(timeout_ms);
   if (nfds == 1) {
-    rb_fiber_scheduler_io_wait(scheduler, socket_io(s, fds[0]), INT2NUM(events[0]), timeout);
+    VALUE io = socket_io(s, fds[0]);
+    s->in_scheduler_wait = 1;
+    rb_fiber_scheduler_io_wait(scheduler, io, INT2NUM(events[0]), timeout);
+    s->in_scheduler_wait = 0;
     return;
   }
 
@@ -1322,11 +1337,13 @@ static void wait_with_scheduler(struct patron_session *s, VALUE scheduler, long 
       if (events[i] & RUBY_IO_WRITABLE) rb_ary_push(writables, io);
       if (events[i] & RUBY_IO_PRIORITY) rb_ary_push(exceptables, io);
     }
+    s->in_scheduler_wait = 1;
     ready = rb_fiber_scheduler_io_select(scheduler, readables, writables, exceptables, timeout);
     if (ready == Qundef) {
       /* A scheduler without io_select; poll instead. Only ever happens while connecting. */
       rb_fiber_scheduler_kernel_sleep(scheduler, float_seconds(timeout_ms > 50 ? 50 : timeout_ms));
     }
+    s->in_scheduler_wait = 0;
   }
 }
 
@@ -1425,6 +1442,7 @@ static void begin_transfer(struct patron_session *s, VALUE request, int streamin
   CURLMcode mc;
 
   s->interrupt = 0;
+  s->in_scheduler_wait = 0;
   s->pending_tag = 0;
   s->error_buf[0] = '\0';
   s->streaming = streaming;
@@ -1498,6 +1516,8 @@ static VALUE cleanup(VALUE self) {
   SESSION_WRITE(s, upload_buf, Qnil);
   SESSION_WRITE(s, read_buf, Qnil);
   SESSION_WRITE(s, owner, Qnil);
+  SESSION_WRITE(s, owner_thread, Qnil);
+  s->in_scheduler_wait = 0;
   s->upload_io_origin = 0;
   s->upload_io_partial = 0;
   s->request_content_length = -1;
@@ -1516,6 +1536,12 @@ static void raise_if_busy(struct patron_session *s) {
   }
 }
 
+static void claim(struct patron_session *s) {
+  s->busy = 1;
+  SESSION_WRITE(s, owner, rb_fiber_current());
+  SESSION_WRITE(s, owner_thread, rb_thread_current());
+}
+
 /*
  * Performs the HTTP request described by +request+ and returns a Response built with
  * #response_class. Raises a Patron::Error subclass when libcurl reports a failure.
@@ -1529,7 +1555,7 @@ static VALUE session_handle_request(VALUE self, VALUE request) {
 
   raise_if_busy(s);
   ensure_handles_for_this_process(s);
-  s->busy = 1;
+  claim(s);
   return rb_ensure(perform, (VALUE)&args, cleanup, self);
 }
 
@@ -1575,8 +1601,7 @@ static VALUE session_transfer_start(VALUE self, VALUE request) {
 
   raise_if_busy(s);
   ensure_handles_for_this_process(s);
-  s->busy = 1;
-  SESSION_WRITE(s, owner, rb_fiber_current());
+  claim(s);
   head = rb_protect(start_stream, (VALUE)&args, &state);
   if (state) {
     cleanup(self);
@@ -1628,6 +1653,9 @@ static VALUE read_into_buf(VALUE ptr) {
 static VALUE read_done(VALUE ptr) {
   struct read_args *a = (struct read_args *)ptr;
   SESSION_WRITE(a->s, read_buf, Qnil);
+  /* An exception out of the scheduler wait leaves it set, and the stream's own
+   * ensure blocks run before transfer_finish gets to cleanup() */
+  a->s->in_scheduler_wait = 0;
   return Qnil;
 }
 
@@ -1702,9 +1730,49 @@ static VALUE session_transfer_finish(VALUE self) {
   return rb_ensure(finish_stream, (VALUE)s, cleanup, self);
 }
 
+struct scheduler_raise_args {
+  VALUE scheduler;
+  VALUE fiber;
+  VALUE exc;
+};
+
+static VALUE scheduler_raise(VALUE ptr) {
+  struct scheduler_raise_args *a = (struct scheduler_raise_args *)ptr;
+  return rb_funcall(a->scheduler, id_raise, 2, a->fiber, a->exc);
+}
+
+/* curl_multi_wakeup() does not reach an owner parked in the Fiber scheduler: libcurl's wakeup
+ * socket is not among the ones curl_multi_fdset() hands out. So raise into the owner instead,
+ * through the scheduler's #raise, which is what Async::Task#stop uses. That queues the calling
+ * fiber to be resumed; a bare Fiber#raise would transfer away from it for good. Without such a
+ * scheduler the owner notices the flag at its next wait cap. */
+static void raise_into_waiting_owner(struct patron_session *s) {
+  struct scheduler_raise_args args;
+  int state = 0;
+
+  if (!s->in_scheduler_wait) return;
+  if (s->owner_thread != rb_thread_current() || s->owner == rb_fiber_current()) return;
+  if (!RTEST(rb_fiber_alive_p(s->owner))) return;
+  args.scheduler = rb_fiber_scheduler_current();
+  if (NIL_P(args.scheduler) || !rb_respond_to(args.scheduler, id_raise)) return;
+
+  args.fiber = s->owner;
+  args.exc = build_curl_error(eAborted, CURLE_ABORTED_BY_CALLBACK, "Request interrupted");
+  s->in_scheduler_wait = 0;
+  rb_protect(scheduler_raise, (VALUE)&args, &state);
+  if (state) {
+    /* Could not raise into the owner, so the flag stops it at its next wait cap. Anything
+     * else, such as this fiber being stopped while it waited to be resumed, is not ours. */
+    if (!rb_obj_is_kind_of(rb_errinfo(), eFiberError)) rb_jump_tag(state);
+    rb_set_errinfo(Qnil);
+  }
+}
+
 /*
  * Aborts the request currently in flight on this Session, which then raises Patron::Aborted.
- * Safe to call from another thread.
+ * Safe to call from another thread. Called from another fiber on the thread of the request,
+ * under a Fiber scheduler with a #raise of its own (Async), it raises the Aborted into the
+ * waiting fiber at once, the way Async::Task#stop does.
  *
  * @return self
  */
@@ -1713,6 +1781,7 @@ static VALUE session_interrupt(VALUE self) {
 
   s->interrupt = INTERRUPT_ABORT;
   if (s->multi) curl_multi_wakeup(s->multi);
+  raise_into_waiting_owner(s);
   return self;
 }
 
@@ -1780,6 +1849,7 @@ void Init_session_ext(void) {
   id_delete = rb_intern_const("delete");
   id_head = rb_intern_const("head");
   id_ivar_curl_code = rb_intern_const("@curl_code");
+  id_raise = rb_intern_const("raise");
   id_url_kw = rb_intern_const("url");
   id_status_kw = rb_intern_const("status");
   id_redirect_count_kw = rb_intern_const("redirect_count");
@@ -1808,6 +1878,7 @@ void Init_session_ext(void) {
   rb_global_variable(&eAborted);
   rb_global_variable(&eDownloadLimitExceeded);
   rb_global_variable(&eClientCertificateError);
+  rb_global_variable(&eFiberError);
 
   ePatronError = rb_const_get(mPatron, rb_intern("Error"));
   eUnsupportedProtocol = rb_const_get(mPatron, rb_intern("UnsupportedProtocol"));
@@ -1820,6 +1891,7 @@ void Init_session_ext(void) {
   eTimeoutError = rb_const_get(mPatron, rb_intern("TimeoutError"));
   eTooManyRedirects = rb_const_get(mPatron, rb_intern("TooManyRedirects"));
   eAborted = rb_const_get(mPatron, rb_intern("Aborted"));
+  eFiberError = rb_const_get(rb_cObject, rb_intern("FiberError"));
   eDownloadLimitExceeded = rb_const_get(mPatron, rb_intern("DownloadLimitExceeded"));
   eClientCertificateError = rb_const_get(mPatron, rb_intern("ClientCertificateError"));
 
