@@ -1,5 +1,7 @@
 ### Unreleased
 
+### 1.1.0
+
 * `Session#stream(action, url, headers, **options) { |stream| }` and the `get_stream`, `put_stream`,
   `post_stream` (a Hash is form-encoded like `post`) and `patch_stream` helpers yield the response as soon
   as its head has arrived, and return a `Patron::TransferStats` once the block is done. The body is received
