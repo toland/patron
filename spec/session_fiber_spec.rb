@@ -180,4 +180,100 @@ describe "Patron::Session under a Fiber scheduler", :session, :fibers do
       end
     end
   end
+
+  describe "#interrupt" do
+    # Interrupts after `delay` from a sibling fiber, returns the seconds from the interrupt to the
+    # Aborted, the exception and what the request block returned
+    def interrupt_from_sibling(delay:)
+      interrupted_at = nil
+      Async do |task|
+        task.async { sleep delay; interrupted_at = monotonic; session.interrupt }
+        begin
+          result = yield
+          [nil, nil, result]
+        rescue Patron::Aborted => e
+          [monotonic - interrupted_at, e, nil]
+        end
+      end.wait
+    end
+
+    it "aborts a buffered request at once when called from another fiber on the same thread", :timing do
+      latency, error, response = interrupt_from_sibling(delay: 0.5) { session.get("/timeout?millis=2000") }
+      expect(response).to be_nil
+      expect(error).to be_a(Patron::Aborted)
+      expect(error.curl_code).to eq(42)
+      expect(latency).to be < 0.3
+      Async { expect(session.get("/test").status).to eq(200) }.wait
+    end
+
+    it "aborts a streamed request at once when called from another fiber on the same thread", :timing do
+      received = 0
+      latency, error, stats = interrupt_from_sibling(delay: 1.2) do
+        session.get_stream("/slow-chunks?count=20&delay=1") { |stream| stream.each { |c| received += c.bytesize } }
+      end
+      expect(stats).to be_nil
+      expect(error).to be_a(Patron::Aborted)
+      expect(received).to be > 0
+      expect(latency).to be < 0.3
+      Async { expect(session.get("/test").status).to eq(200) }.wait
+    end
+
+    it "keeps the interrupting fiber running after the request fiber has been aborted" do
+      steps = []
+      Async do |task|
+        requester = task.async do
+          session.get("/timeout?millis=2000")
+        rescue Patron::Aborted
+          steps << :aborted
+        end
+        task.async do
+          sleep 0.2
+          session.interrupt
+          steps << :interrupted
+          sleep 0.05
+          steps << :carried_on
+        end.wait
+        requester.wait
+      end.wait
+      expect(steps).to eq([:aborted, :interrupted, :carried_on])
+    end
+
+    it "aborts from another thread while the request fiber waits in the scheduler" do
+      interrupter = nil
+      Async do
+        interrupter = Thread.new { sleep 0.2; session.interrupt }
+        expect { session.get("/timeout?millis=2000") }.to raise_error(Patron::Aborted)
+        expect(session.get("/test").status).to eq(200)
+      end.wait
+      interrupter.join
+    end
+
+    it "aborts at the next read when called from a fiber the request fiber resumed itself" do
+      chunks = 0
+      Async do
+        expect {
+          session.get_stream("/slow-chunks?count=20&delay=0.1") do |stream|
+            stream.each do
+              chunks += 1
+              Fiber.new { session.interrupt }.resume if chunks == 2
+            end
+          end
+        }.to raise_error(Patron::Aborted)
+        expect(session.get("/test").status).to eq(200)
+      end.wait
+      expect(chunks).to eq(2)
+    end
+
+    it "is a no-op when no request is in flight" do
+      Async do |task|
+        task.async { session.interrupt }.wait
+        expect(session.get("/test").status).to eq(200)
+      end.wait
+    end
+
+    it "aborts from inside a progress callback" do
+      session.progress_callback = proc { session.interrupt }
+      Async { expect { session.get("/timeout?millis=2000") }.to raise_error(Patron::Aborted) }.wait
+    end
+  end
 end

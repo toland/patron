@@ -247,12 +247,8 @@ end
 ```
 
 Each fiber needs its own `Session`, just like each thread does. `Async::Task#stop` and
-`Task#with_timeout` interrupt a request in flight the same way `Thread#kill` and `Timeout` do.
-
-One limitation: `Session#interrupt` or `SSEClient#close` called from another fiber on the same thread lands
-within a second rather than at once. The fiber waits in the scheduler on libcurl's sockets, and the socket
-`curl_multi_wakeup` pokes is libcurl's own, which `curl_multi_fdset` does not hand out. From another thread
-it is immediate.
+`Task#with_timeout` interrupt a request in flight the same way `Thread#kill` and `Timeout` do, and
+`Session#interrupt` and `SSEClient#close` from another fiber reach the waiting one at once.
 
 ## Ractors
 

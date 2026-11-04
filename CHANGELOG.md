@@ -22,8 +22,12 @@
   fiber, `UnexpectedResponse` for anything that is not an event stream and `InvalidEncoding` for an event that
   is not UTF-8. `Patron::SSEClient.parse(readable) { |event| }` runs the parser over any stream, such as the
   body of a POST inside a `post_stream` block. Closes #158
-* Known limitation: `Session#interrupt` and `SSEClient#close` from another fiber on the same thread land within a
-  second under a Fiber scheduler, not at once; from another thread they are immediate
+* Under a Fiber scheduler, `Session#interrupt` and `SSEClient#close` called from another fiber on the same
+  thread take effect at once: `Patron::Aborted` is raised into the waiting fiber through the scheduler, the way
+  `Async::Task#stop` does it. They used to land within a second
+* Under a Fiber scheduler on Linux, a request right after an aborted one on the same Session could time out
+  connecting: the new socket got the old descriptor number and the same IO wrapper, which io-event's epoll
+  selector took for still registered. The wrappers are now made afresh for every request
 * webmock's adapter overrides `handle_request` and does not intercept streams, nor `get_file` now
 * `Response#charset` and `#decoded_body` find the charset in a lowercase `content-type` header too, as sent by HTTP/2 servers and Puma 8
 * Test suite: Puma 8, Rack 3 lowercase header names in the test app
