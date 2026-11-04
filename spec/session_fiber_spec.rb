@@ -198,12 +198,12 @@ describe "Patron::Session under a Fiber scheduler", :session, :fibers do
     end
 
     it "aborts a buffered request at once when called from another fiber on the same thread", :timing do
-      latency, error, response = interrupt_from_sibling(delay: 0.5) { session.get("/slow") }
+      latency, error, response = interrupt_from_sibling(delay: 0.5) { session.get("/timeout?millis=2000") }
       expect(response).to be_nil
       expect(error).to be_a(Patron::Aborted)
       expect(error.curl_code).to eq(42)
       expect(latency).to be < 0.3
-      Async { expect(session.get("/test").status).to eq(200) }
+      Async { expect(session.get("/test").status).to eq(200) }.wait
     end
 
     it "aborts a streamed request at once when called from another fiber on the same thread", :timing do
@@ -215,14 +215,14 @@ describe "Patron::Session under a Fiber scheduler", :session, :fibers do
       expect(error).to be_a(Patron::Aborted)
       expect(received).to be > 0
       expect(latency).to be < 0.3
-      Async { expect(session.get("/test").status).to eq(200) }
+      Async { expect(session.get("/test").status).to eq(200) }.wait
     end
 
     it "keeps the interrupting fiber running after the request fiber has been aborted" do
       steps = []
       Async do |task|
         requester = task.async do
-          session.get("/slow")
+          session.get("/timeout?millis=2000")
         rescue Patron::Aborted
           steps << :aborted
         end
@@ -234,7 +234,7 @@ describe "Patron::Session under a Fiber scheduler", :session, :fibers do
           steps << :carried_on
         end.wait
         requester.wait
-      end
+      end.wait
       expect(steps).to eq([:aborted, :interrupted, :carried_on])
     end
 
@@ -242,9 +242,9 @@ describe "Patron::Session under a Fiber scheduler", :session, :fibers do
       interrupter = nil
       Async do
         interrupter = Thread.new { sleep 0.2; session.interrupt }
-        expect { session.get("/slow") }.to raise_error(Patron::Aborted)
+        expect { session.get("/timeout?millis=2000") }.to raise_error(Patron::Aborted)
         expect(session.get("/test").status).to eq(200)
-      end
+      end.wait
       interrupter.join
     end
 
@@ -260,7 +260,7 @@ describe "Patron::Session under a Fiber scheduler", :session, :fibers do
           end
         }.to raise_error(Patron::Aborted)
         expect(session.get("/test").status).to eq(200)
-      end
+      end.wait
       expect(chunks).to eq(2)
     end
 
@@ -268,12 +268,12 @@ describe "Patron::Session under a Fiber scheduler", :session, :fibers do
       Async do |task|
         task.async { session.interrupt }.wait
         expect(session.get("/test").status).to eq(200)
-      end
+      end.wait
     end
 
     it "aborts from inside a progress callback" do
       session.progress_callback = proc { session.interrupt }
-      Async { expect { session.get("/slow") }.to raise_error(Patron::Aborted) }
+      Async { expect { session.get("/timeout?millis=2000") }.to raise_error(Patron::Aborted) }.wait
     end
   end
 end

@@ -1260,7 +1260,8 @@ static VALUE float_seconds(long milliseconds) {
 
 /* An IO wrapping one of libcurl's sockets, for handing to the scheduler. FMODE_EXTERNAL keeps
  * Ruby from ever closing the descriptor; libcurl owns it. The wrappers are dropped whenever the
- * set of sockets changes, so a descriptor number the kernel reused gets a fresh one. */
+ * set of sockets changes and after every request, so a descriptor number the kernel reused gets
+ * a fresh one. */
 static VALUE socket_io(struct patron_session *s, int fd) {
   VALUE key = INT2FIX(fd);
   VALUE io = rb_hash_lookup2(s->socket_ios, key, Qnil);
@@ -1518,6 +1519,9 @@ static VALUE cleanup(VALUE self) {
   SESSION_WRITE(s, owner, Qnil);
   SESSION_WRITE(s, owner_thread, Qnil);
   s->in_scheduler_wait = 0;
+  /* An aborted transfer closes its socket, and the next one tends to get the same number. Handed
+   * the same IO again, io-event's epoll selector takes it for still registered and never wakes. */
+  if (!NIL_P(s->socket_ios)) rb_hash_clear(s->socket_ios);
   s->upload_io_origin = 0;
   s->upload_io_partial = 0;
   s->request_content_length = -1;
