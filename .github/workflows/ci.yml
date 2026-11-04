@@ -7,7 +7,10 @@ jobs:
     name: Specs - Ruby ${{ matrix.ruby }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
-    continue-on-error: ${{ matrix.ruby == 'head' }}
+    # macOS may not block a merge: GitHub's macOS runners on this plan are scarce and a job can sit
+    # in the queue for hours or get cancelled waiting. The specs themselves are not flaky there -
+    # when the job does run it passes - so a red macOS job means "look at the runner", not the code.
+    continue-on-error: ${{ matrix.ruby == 'head' || matrix.os == 'macos-15' }}
     strategy:
       fail-fast: false
       matrix:
