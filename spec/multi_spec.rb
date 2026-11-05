@@ -311,20 +311,21 @@ describe "Patron::Multi", :session do
     it "consumes several streams interleaved, alongside buffered requests", :timing do
       multi = session.multi
       events = []
-      alice = multi.get_stream("/slow-chunks?count=4&size=8&delay=0.15") { |s| s.each { |c| events << [:alice, c[0]] } }
-      bob = multi.get_stream("/slow-chunks?count=4&size=8&delay=0.15") { |s| s.each { |c| events << [:bob, c[0]] } }
+      # TCP may coalesce two chunks into one delivery, so the assertions are on bytes and on time
+      alice = multi.get_stream("/slow-chunks?count=6&size=8&delay=0.2") { |s| s.each { |c| events << [:alice, c] } }
+      bob = multi.get_stream("/slow-chunks?count=6&size=8&delay=0.2") { |s| s.each { |c| events << [:bob, c] } }
       meta = multi.get("/test")
       started = monotonic
       multi.join_all
-      expect(monotonic - started).to be < 1.5 # 0.6 s each, serially 1.2
+      expect(monotonic - started).to be < 1.7 # 1 s each, serially 2
       expect(meta.response.status).to eq(200)
-      expect(alice.stats.downloaded_bytes).to eq(32)
-      expect(bob.stats.downloaded_bytes).to eq(32)
+      expect(alice.stats.downloaded_bytes).to eq(48)
+      expect(bob.stats.downloaded_bytes).to eq(48)
       names = events.map(&:first)
       # neither stream ran to completion before the other got a turn
       expect(names.index(:bob)).to be < names.rindex(:alice)
       expect(names.index(:alice)).to be < names.rindex(:bob)
-      expect(events.select { |n, _| n == :alice }.map(&:last).join).to eq("abcd")
+      expect(events.select { |n, _| n == :alice }.map(&:last).join).to eq(%w[a b c d e f].map { |c| c * 8 }.join)
     end
 
     it "takes the stream verbs with bodies and a POST Hash" do
@@ -370,8 +371,9 @@ describe "Patron::Multi", :session do
     it "fails a stream that times out mid-body with the error raised inside the block" do
       multi = session.multi
       inside = nil
-      stalled = multi.get_stream("/slow-chunks?count=100&size=8&delay=0.5", {}, read_timeout: 0.2) do |s|
+      stalled = multi.get_stream("/slow-chunks?count=100&size=8&delay=2", {}, read_timeout: 0.5) do |s|
         begin
+          s.readpartial(8) # the first chunk comes with the head; the second is two seconds out
           s.read
         rescue Patron::TimeoutError => e
           inside = e
