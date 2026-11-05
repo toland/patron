@@ -233,8 +233,8 @@ to the same hostname/port/protocol, the connection gets reused, following libcur
 Requests that do not depend on each other can go out together. `Session#multi` returns a
 `Patron::Multi`, a pack with the same verb methods, defaults, headers and cookie jar as the Session it came
 from. Every verb call puts its request on the wire right away and returns a `Patron::Transfer`: the request
-in flight, which you hold on to, wait for, and take the response out of. `wait!` on a transfer drives the whole
-pack until that one is done; `wait!` on the pack drives until all of them are.
+in flight, which you hold on to, join, and take the response out of. `join` on a transfer drives the whole pack
+until that one is done, like `Thread#join`; `join` on the pack drives until all of them are.
 
 ```ruby
 multi   = sess.multi
@@ -242,9 +242,9 @@ account = multi.get("/accounts/#{id}")
 orders  = multi.get("/accounts/#{id}/orders")
 audit   = multi.post("/audit", event: "viewed", account: id)
 
-account.wait!.response.body
-orders.wait!.response.status
-multi.wait!              # for audit and anything else still in flight
+account.join.response.body
+orders.join.response.status
+multi.join               # for audit and anything else still in flight
 ```
 
 The three requests take as long as the slowest one, not the sum, and towards an HTTP/2 server they all
@@ -254,7 +254,9 @@ share one connection. A `Transfer` knows where it stands:
 account.done?        # finished, one way or the other
 account.succeeded?   # done, and the Response is there
 account.failed?      # done, and account.error has the Patron::Error
-account.wait!        # blocks until this one is done, driving the whole pack meanwhile; returns self
+account.join         # blocks until this one is done, driving the whole pack meanwhile. Returns self,
+                     # or raises the request's Patron::Error if it failed, like Thread#join does
+account.join(2)      # the same, but gives up after two seconds and returns nil, like Thread#join(limit)
 account.response     # the Response; raises the request's Patron::Error if it failed,
                      # and Patron::InFlight if it is not done yet
 account.error        # the Patron::Error, or nil
@@ -262,23 +264,26 @@ account.request      # the Patron::Request it was built from
 account.interrupt    # aborts just this one; it then fails with Patron::Aborted
 ```
 
-`wait!`, on the pack or on a transfer, does not raise when a request fails, so one unreachable endpoint does
-not hide the others. The error surfaces where you read the response:
+`join` on the pack does not raise when a request fails, since there is no one error to raise and raising one
+would hide the others. The error surfaces where you join or read that transfer:
 
 ```ruby
 limits = multi.get("/accounts/#{id}/limits", timeout: 2)
 begin
-  limits.wait!.response.body
+  limits.join.response.body
 rescue Patron::TimeoutError
   nil
 end
+
+multi.join
+multi.select(&:failed?).each { |transfer| logger.warn("#{transfer.request.url}: #{transfer.error.message}") }
 ```
 
-`Patron::InFlight` is not a `Patron::Error`: asking for a response before waiting is a mistake in the
+`Patron::InFlight` is not a `Patron::Error`: asking for a response before joining is a mistake in the
 program, not a failure of the request, and `rescue Patron::Error` must not swallow it.
 
 A `Multi` is `Enumerable` over its transfers in completion order, and `each` drives the pack itself, so no
-`wait!` is needed before it. The block runs between libcurl's own iterations, never inside one, so it may do
+`join` is needed before it. The block runs between libcurl's own iterations, never inside one, so it may do
 anything:
 
 ```ruby
@@ -290,7 +295,7 @@ multi.each do |transfer|
 end
 ```
 
-The block form of `multi` yields the pack, waits, and returns it. `transfers` is every transfer in the order
+The block form of `multi` yields the pack, joins it, and returns it. `transfers` is every transfer in the order
 it was added, which pairs well with `zip`:
 
 ```ruby
@@ -306,10 +311,10 @@ pack may open, which matters toward HTTP/1.1 servers that do not multiplex:
 ```ruby
 multi = sess.multi(max_connections: 4)
 transfers = ids.map { |id| multi << sess.build_request(:get, "/items/#{id}", timeout: 2) }
-multi.wait!
+multi.join
 ```
 
-The Session is busy from the first verb call until the pack is done (`wait!` on the pack, a completed `each`,
+The Session is busy from the first verb call until the pack is done (`join` on the pack, a completed `each`,
 `close`, or the end of the block form), the same way it is busy during a single request, so another thread
 or fiber using it raises `Patron::Error` as usual. `Session#interrupt` and `Multi#interrupt` abort every
 transfer in the pack, and `Thread#raise`, `Timeout.timeout` and `Async::Task#stop` interrupt a pack the way
