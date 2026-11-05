@@ -4,7 +4,7 @@
   connection cache. It has the Session's verb methods; each call starts the request and returns a
   `Patron::Transfer`, which can be asked `done?`, `succeeded?` and `failed?`, joined with `join` and `join(limit)` like a Thread,
   interrupted alone, and gives up its `response` (raising the request's error if it failed, or
-  `Patron::InFlight` if it is not done yet). `Multi#each` yields transfers in completion order, and
+  `Patron::InFlight` if it is not done yet). `Multi#join_all` joins every transfer and raises for none, `Multi#each` yields transfers in completion order, and
   `Session#multi(max_connections:)` caps the connections a pack may open
 
 ### 1.1.0
