@@ -1,9 +1,10 @@
 ### Unreleased
 
 * `Session#multi` returns a `Patron::Multi`, a pack of requests that go out together on the Session's
-  connection cache. It has the Session's verb methods; each call starts the request and returns the
-  `Patron::Request`, which is the key to its `Response` after `wait`. Reading a failed request's result
-  raises its error there; `responses` and `failures` are Hashes; `each` yields in completion order.
+  connection cache. It has the Session's verb methods; each call starts the request and returns a
+  `Patron::Transfer`, which can be asked `done?`, `succeeded?` and `failed?`, waited for with `wait`,
+  interrupted alone, and gives up its `response` (raising the request's error if it failed, or
+  `Patron::InFlight` if it is not done yet). `Multi#each` yields transfers in completion order, and
   `Session#multi(max_connections:)` caps the connections a pack may open
 
 ### 1.1.0

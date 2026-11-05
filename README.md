@@ -232,8 +232,8 @@ to the same hostname/port/protocol, the connection gets reused, following libcur
 
 Requests that do not depend on each other can go out together. `Session#multi` returns a
 `Patron::Multi`, a pack with the same verb methods, defaults, headers and cookie jar as the Session it came
-from. Every verb call puts its request on the wire right away and returns the `Patron::Request`, which is
-your handle to the result later. Call `wait` once everything is in flight, then read the responses:
+from. Every verb call puts its request on the wire right away and returns a `Patron::Transfer`: the request
+in flight, which you hold on to, wait for, and take the response out of.
 
 ```ruby
 multi   = sess.multi
@@ -242,61 +242,78 @@ orders  = multi.get("/accounts/#{id}/orders")
 audit   = multi.post("/audit", event: "viewed", account: id)
 multi.wait
 
-multi[account].body   # => the Response for that request
-multi[orders].status
+account.response.body
+orders.response.status
 ```
 
 The three requests take as long as the slowest one, not the sum, and towards an HTTP/2 server they all
-share one connection. `wait` does not raise when a request fails, so one unreachable endpoint does not hide
-the others. Reading `multi[request]` for a failed one raises its `Patron::Error`, right where you read it:
+share one connection. A `Transfer` knows where it stands:
 
 ```ruby
-begin
-  limits = multi[limits_request]
-rescue Patron::TimeoutError
-  limits = nil
-end
-
-multi.responses   # => { request => Response } for the requests that succeeded, in the order they were added
-multi.failures    # => { request => Patron::Error } for the rest
+account.done?        # finished, one way or the other
+account.succeeded?   # done, and the Response is there
+account.failed?      # done, and account.error has the Patron::Error
+account.wait         # blocks until this one is done, driving the whole pack meanwhile; returns self
+account.response     # the Response; raises the request's Patron::Error if it failed,
+                     # and Patron::InFlight if it is not done yet
+account.error        # the Patron::Error, or nil
+account.request      # the Patron::Request it was built from
+account.interrupt    # aborts just this one; it then fails with Patron::Aborted
 ```
 
-A `Multi` is `Enumerable`, in completion order, and `each` drives the pack if `wait` has not run yet. The
-block runs between libcurl's own iterations, never inside one, so it may do anything, including raise:
+`wait`, on the pack or on a transfer, does not raise when a request fails, so one unreachable endpoint does
+not hide the others. The error surfaces where you read the response:
+
+```ruby
+limits = multi.get("/accounts/#{id}/limits", timeout: 2)
+multi.wait
+begin
+  limits.response.body
+rescue Patron::TimeoutError
+  nil
+end
+```
+
+`Patron::InFlight` is not a `Patron::Error`: asking for a response before waiting is a mistake in the
+program, not a failure of the request, and `rescue Patron::Error` must not swallow it.
+
+A `Multi` is `Enumerable` over its transfers in completion order, and `each` drives the pack if nothing
+has waited yet. The block runs between libcurl's own iterations, never inside one, so it may do anything:
 
 ```ruby
 multi = sess.multi
 urls.each { |url| multi.get(url) }
-multi.each do |request, response|
-  File.binwrite(File.basename(request.url), response.body)
+multi.each do |transfer|
+  next if transfer.failed?
+  File.binwrite(File.basename(transfer.request.url), transfer.response.body)
 end
 ```
 
-A request that fails raises inside your block's turn; `multi.failures` still has it afterwards. The block
-form of `multi` yields the pack, waits, and returns it, which reads well when the requests are known up front:
+The block form of `multi` yields the pack, waits, and returns it. `transfers` is every transfer in the order
+it was added, which pairs well with `zip`:
 
 ```ruby
-pack = sess.multi { |m| m.get("/a"); m.get("/b") }
-pack.responses.values.map(&:body)
+pack = sess.multi { |m| urls.each { |url| m.get(url) } }
+urls.zip(pack.transfers).each { |url, transfer| puts "#{url}: #{transfer.response.status}" }
 ```
 
-Requests built elsewhere, with `build_request` or taken from a finished pack, are added with `<<`.
-Per-request options such as `timeout:`, `download_byte_limit:` and `progress_callback:` apply to that request
-alone, and a `max_connections:` on `multi` caps the connections the pack may open, which matters toward
-HTTP/1.1 servers that do not multiplex:
+Requests built elsewhere, with `build_request` or taken from a finished transfer, are added with `<<`, which
+also returns the `Transfer`. Per-request options such as `timeout:`, `download_byte_limit:` and
+`progress_callback:` apply to that request alone, and `max_connections:` on `multi` caps the connections the
+pack may open, which matters toward HTTP/1.1 servers that do not multiplex:
 
 ```ruby
 multi = sess.multi(max_connections: 4)
-ids.each { |id| multi << sess.build_request(:get, "/items/#{id}", timeout: 2) }
+transfers = ids.map { |id| multi << sess.build_request(:get, "/items/#{id}", timeout: 2) }
 multi.wait
 ```
 
-The Session is busy from the first verb call until the pack is done (`wait`, a completed `each`, `close`,
-or the end of the block form), the same way it is busy during a single request, so another thread or fiber
-using it raises `Patron::Error` as usual. `Session#interrupt` and `Multi#interrupt` abort every request in
-the pack, and `Thread#raise`, `Timeout.timeout` and `Async::Task#stop` interrupt a pack the way they
-interrupt a single request. Streaming responses and `get_file` are not available on a pack: the bodies of a
-pack are received into memory, each bounded by its `download_byte_limit`.
+The Session is busy from the first verb call until the pack is done (`wait` on the pack, a completed `each`,
+`close`, or the end of the block form), the same way it is busy during a single request, so another thread
+or fiber using it raises `Patron::Error` as usual. `Session#interrupt` and `Multi#interrupt` abort every
+transfer in the pack, and `Thread#raise`, `Timeout.timeout` and `Async::Task#stop` interrupt a pack the way
+they interrupt a single request. Streaming responses and `get_file` are not available on a pack: the bodies
+of a pack are received into memory, each bounded by its `download_byte_limit`.
 
 ## Interrupting requests
 
