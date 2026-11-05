@@ -20,8 +20,9 @@ module Patron
     private_constant :CHUNK_SIZE
 
     # @api private
-    def initialize(session, status:, url:, redirect_count:, header_data:, default_charset: nil)
-      @session = session
+    # @param source [Patron::Session, Patron::Transfer] what transfer_read and transfer_finish are called on
+    def initialize(source, status:, url:, redirect_count:, header_data:, default_charset: nil)
+      @source = source
       @status = status
       @url = url
       @redirect_count = redirect_count
@@ -178,7 +179,7 @@ module Patron
     def receive(maxlen, buf, kept)
       return receive_peeked(maxlen, buf, kept) if @peeked
 
-      placed = @session.__send__(:transfer_read, maxlen, buf, kept)
+      placed = @source.__send__(:transfer_read, maxlen, buf, kept)
       @eof = true if placed.nil?
       placed
     end
@@ -201,7 +202,7 @@ module Patron
     def finish
       return if @closed
       @closed = true
-      @tail = @session.__send__(:transfer_finish)
+      @tail = @source.__send__(:transfer_finish)
     end
 
     def receipt

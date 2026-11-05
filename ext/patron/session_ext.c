@@ -100,6 +100,7 @@ static ID id_to_path, id_to_s, id_response_class, id_default_response_charset;
 static ID id_read, id_readpartial, id_size, id_pos, id_seek, id_rewind;
 static ID id_get, id_post, id_put, id_patch, id_delete, id_head;
 static ID id_ivar_curl_code, id_raise;
+static VALUE sym_pending;
 static ID id_url_kw, id_status_kw, id_redirect_count_kw, id_header_data_kw, id_body_kw,
           id_default_charset_kw, id_timings_kw;
 
@@ -140,9 +141,14 @@ struct patron_transfer {
   long head_length;                   /* header_buf bytes up to head-complete; trailers follow */
   size_t redeliver_skip;              /* bytes at the start of the next delivery already handed out */
   long read_limit;                    /* length read_buf may grow to, -1 for unbounded */
+  long read_keep;                     /* read_buf length that does not count as new data */
   double read_timeout;                /* seconds allowed between two deliveries, 0 for none */
   double last_activity;               /* monotonic seconds of the last delivery */
   VALUE read_buf;                     /* the caller's String, set only during transfer_read */
+
+  /* In a pack, what the Ruby side has been told so far, so that multi_drive reports once */
+  int head_reported;
+  int done_reported;
 
   /* A callback may not let a Ruby exception unwind through libcurl's frames. The tag and
    * errinfo are parked here, the transfer is aborted, and perform() re-raises afterwards. */
@@ -164,6 +170,7 @@ struct patron_session {
 
   struct patron_transfer *transfers;  /* in flight, in slot order; one for a plain request */
   int next_slot;
+  int pack;                           /* a Patron::Multi is open: many transfers, driven from Ruby */
 
   /* Who is driving the transfers */
   VALUE owner;                        /* the Fiber that started them */
@@ -1584,6 +1591,8 @@ static VALUE cleanup(VALUE self) {
   /* An aborted transfer closes its socket, and the next one tends to get the same number. Handed
    * the same IO again, io-event's epoll selector takes it for still registered and never wakes. */
   if (!NIL_P(s->socket_ios)) rb_hash_clear(s->socket_ios);
+  if (s->pack && s->multi) curl_multi_setopt(s->multi, CURLMOPT_MAX_TOTAL_CONNECTIONS, 0L);
+  s->pack = 0;
   s->busy = 0;
   return Qnil;
 }
@@ -1675,7 +1684,7 @@ static struct patron_transfer *open_stream(VALUE self) {
   struct patron_session *s = get_session(self);
   struct patron_transfer *t = s->transfers;
 
-  if (!t || !t->easy || !t->streaming) rb_raise(ePatronError, "No streamed transfer is open on this Session");
+  if (!t || !t->easy || !t->streaming || s->pack) rb_raise(ePatronError, "No streamed transfer is open on this Session");
   if (s->owner != rb_fiber_current()) rb_raise(ePatronError, "The streamed transfer belongs to another thread or fiber");
   return t;
 }
@@ -1794,8 +1803,320 @@ static VALUE session_transfer_finish(VALUE self) {
   struct patron_session *s = get_session(self);
   struct patron_transfer *t = s->transfers;
 
-  if (!t || !t->easy || !t->streaming || s->owner != rb_fiber_current()) return Qnil;
+  if (!t || !t->easy || !t->streaming || s->pack || s->owner != rb_fiber_current()) return Qnil;
   return rb_ensure(finish_stream, (VALUE)t, cleanup, self);
+}
+
+/*----------------------------------------------------------------------------*/
+/* Pack primitives. Patron::Multi keeps the transfers' Ruby side and calls these: multi_open once,
+ * multi_add per request, multi_drive in a loop, multi_head/multi_read for streams, multi_collect
+ * for every transfer that is done, multi_close when it is over. The loop stays in Ruby because
+ * between two drives it resumes the stream blocks' fibers, and those are Ruby. */
+
+static struct patron_session *open_pack(VALUE self) {
+  struct patron_session *s = get_session(self);
+
+  if (!s->pack) rb_raise(ePatronError, "No pack is open on this Session");
+  if (s->owner_thread != rb_thread_current()) rb_raise(ePatronError, "The pack belongs to another thread");
+  return s;
+}
+
+static struct patron_transfer *slot_transfer(struct patron_session *s, VALUE slot) {
+  int wanted = NUM2INT(slot);
+  struct patron_transfer *t;
+
+  for (t = s->transfers; t; t = t->next) {
+    if (t->slot == wanted) return t;
+  }
+  rb_raise(ePatronError, "No transfer %d in this pack", wanted);
+}
+
+/*
+ * Claims the Session for a pack of transfers.
+ *
+ * @api private
+ * @param max_connections [Integer, nil] CURLMOPT_MAX_TOTAL_CONNECTIONS for the pack, nil for libcurl's default
+ * @return nil
+ */
+static VALUE session_multi_open(VALUE self, VALUE max_connections) {
+  struct patron_session *s = get_session(self);
+
+  raise_if_busy(s);
+  ensure_handles_for_this_process(s);
+  claim(s);
+  s->pack = 1;
+  curl_multi_setopt(s->multi, CURLMOPT_MAX_TOTAL_CONNECTIONS, NIL_P(max_connections) ? 0L : NUM2LONG(max_connections));
+  return Qnil;
+}
+
+struct add_args {
+  struct patron_session *s;
+  VALUE request;
+  int streaming;
+  struct patron_transfer *t;
+};
+
+static VALUE add_protected(VALUE ptr) {
+  struct add_args *a = (struct add_args *)ptr;
+  int running = 0;
+  CURLMcode mc;
+
+  a->t = begin_transfer(a->s, a->request, a->streaming);
+  /* Gets the transfer going (DNS, connect) without waiting for anything */
+  mc = curl_multi_perform(a->s->multi, &running);
+  if (mc != CURLM_OK) rb_raise(ePatronError, "%s", curl_multi_strerror(mc));
+  collect_done(a->s);
+  return INT2NUM(a->t->slot);
+}
+
+/*
+ * Starts one more transfer in the pack and returns its slot.
+ *
+ * @api private
+ * @param request [Patron::Request]
+ * @param streaming [Boolean] whether the body is read through multi_read rather than buffered
+ * @return [Integer] the slot the Ruby side refers to the transfer by
+ */
+static VALUE session_multi_add(VALUE self, VALUE request, VALUE streaming) {
+  struct patron_session *s = open_pack(self);
+  struct add_args args = { s, request, RTEST(streaming), NULL };
+  int state = 0;
+  VALUE slot;
+
+  slot = rb_protect(add_protected, (VALUE)&args, &state);
+  if (state) {
+    /* A request that could not be set up leaves nothing behind */
+    struct patron_transfer *t;
+    for (t = s->transfers; t && t->next; t = t->next);
+    if (t && (!args.t || t == args.t)) transfer_free(s, t);
+    rb_jump_tag(state);
+  }
+  return slot;
+}
+
+/* Ends a transfer that the driver, not libcurl, decided is over */
+static void end_transfer_early(struct patron_session *s, struct patron_transfer *t) {
+  if (t->done) return;
+  curl_multi_remove_handle(s->multi, t->easy);
+  t->done = 1;
+  if (!t->interrupt && !t->read_timed_out) t->result = CURLE_ABORTED_BY_CALLBACK;
+}
+
+/* What the Ruby side needs to hear about: a transfer is done, a stream's head is in, or a
+ * stream's pending read has something to return */
+static int transfer_ready(struct patron_transfer *t) {
+  if (t->streaming) {
+    if (t->head_complete && !t->head_reported) return 1;
+    if (!NIL_P(t->read_buf)) {
+      return RSTRING_LEN(t->read_buf) > t->read_keep || t->done || t->interrupt || t->pending_tag || t->read_timed_out;
+    }
+    return 0;
+  }
+  return t->done && !t->done_reported;
+}
+
+/*
+ * One turn of the drive loop: lets libcurl work, ends the transfers that were interrupted or
+ * ran out of read_timeout, and returns the slots with news for the Ruby side. When there is
+ * no news it waits for the network first, for at most +max_wait+ seconds, and returns empty.
+ *
+ * @api private
+ * @param max_wait [Numeric, nil] seconds to wait for the network at most, nil for the usual cap
+ * @return [Array<Integer>] slots that are done, have their head, or have bytes for a pending read
+ */
+static VALUE session_multi_drive(VALUE self, VALUE max_wait) {
+  struct patron_session *s = open_pack(self);
+  struct patron_transfer *t;
+  VALUE ready = rb_ary_new();
+  VALUE scheduler;
+  int running = 0, in_flight = 0;
+  long wait_ms = POLL_TIMEOUT_MS;
+  double now;
+  CURLMcode mc;
+
+  if (!s->transfers) return ready;
+
+  mc = curl_multi_perform(s->multi, &running);
+  if (mc != CURLM_OK) rb_raise(ePatronError, "%s", curl_multi_strerror(mc));
+  collect_done(s);
+
+  now = monotonic_now();
+  for (t = s->transfers; t; t = t->next) {
+    if (!t->done && t->interrupt) end_transfer_early(s, t);
+    if (!t->done && t->read_timeout > 0 && now > t->last_activity + t->read_timeout) {
+      t->read_timed_out = 1;
+      end_transfer_early(s, t);
+    }
+    if (t->done) mark_head_complete(t);
+  }
+
+  for (t = s->transfers; t; t = t->next) {
+    if (!t->done) {
+      in_flight++;
+      if (t->read_timeout > 0) {
+        double left = t->last_activity + t->read_timeout - now;
+        long left_ms = left <= 0 ? 1 : (long)(left * 1000.0) + 1;
+        if (left_ms < wait_ms) wait_ms = left_ms;
+      }
+    }
+    if (transfer_ready(t)) {
+      if (!t->streaming) t->done_reported = 1;
+      rb_ary_push(ready, INT2NUM(t->slot));
+    }
+  }
+  if (RARRAY_LEN(ready) > 0 || !in_flight) return ready;
+
+  if (!NIL_P(max_wait)) {
+    long cap = (long)(NUM2DBL(max_wait) * 1000.0);
+    if (cap < 0) cap = 0;
+    if (cap < wait_ms) wait_ms = cap;
+  }
+  if (wait_ms == 0) return ready;
+
+  scheduler = rb_fiber_scheduler_current();
+  if (NIL_P(scheduler)) {
+    wait_without_scheduler(s, wait_ms);
+  } else {
+    wait_with_scheduler(s, scheduler, wait_ms);
+  }
+  return ready;
+}
+
+/*
+ * The head of a streamed transfer in the pack, once multi_drive has reported it. Raises
+ * the transfer's error when it failed before the head arrived.
+ *
+ * @api private
+ * @return [Array] status, effective URL, redirect count and the raw header data
+ */
+static VALUE session_multi_head(VALUE self, VALUE slot) {
+  struct patron_session *s = open_pack(self);
+  struct patron_transfer *t = slot_transfer(s, slot);
+
+  if (!t->streaming) rb_raise(ePatronError, "Transfer %d is not streamed", t->slot);
+  if (!t->head_complete) rb_raise(ePatronError, "The head of transfer %d has not arrived yet", t->slot);
+  t->head_reported = 1;
+  raise_if_failed(t, 1);
+  return head_of(t);
+}
+
+/*
+ * The pack's counterpart of transfer_read. Called from the stream block's fiber; when nothing
+ * has arrived yet it leaves +buf+ registered for libcurl to write into, returns :pending, and the
+ * fiber yields to the drive loop. The same call with the same +buf+ then picks the bytes up.
+ *
+ * @api private
+ * @return [Integer, nil, :pending] bytes placed, nil at the end of the body, or :pending
+ */
+static VALUE session_multi_read(VALUE self, VALUE slot, VALUE maxlen, VALUE buf, VALUE keep) {
+  struct patron_session *s = open_pack(self);
+  struct patron_transfer *t = slot_transfer(s, slot);
+  struct read_args args;
+  long placed;
+
+  if (!t->streaming) rb_raise(ePatronError, "Transfer %d is not streamed", t->slot);
+
+  if (t->read_buf != buf) {
+    prepare_read_buf(t, &args, maxlen, buf, keep);
+    if (args.maxlen == 0) return INT2FIX(0);
+    t->read_limit = args.maxlen < 0 ? -1 : args.keep + args.maxlen;
+    t->read_keep = args.keep;
+    TRANSFER_WRITE(t, read_buf, buf);
+
+    if (t->paused) {
+      CURLcode rc;
+      t->paused = 0;
+      t->last_activity = monotonic_now();
+      /* This may deliver the paused bytes right here, before any curl_multi_perform() */
+      rc = curl_easy_pause(t->easy, CURLPAUSE_CONT);
+      if (rc != CURLE_OK) {
+        TRANSFER_WRITE(t, read_buf, Qnil);
+        raise_curl_error(error_class_for(rc), rc, t->error_buf);
+      }
+    }
+  }
+
+  placed = RSTRING_LEN(t->read_buf) - t->read_keep;
+  if (placed > 0) {
+    TRANSFER_WRITE(t, read_buf, Qnil);
+    return LONG2NUM(placed);
+  }
+  if (t->pending_tag || t->interrupt || t->read_timed_out || (t->done && t->result != CURLE_OK)) {
+    TRANSFER_WRITE(t, read_buf, Qnil);
+    raise_if_failed(t, 1);
+  }
+  if (t->done) {
+    TRANSFER_WRITE(t, read_buf, Qnil);
+    return Qnil;
+  }
+  return sym_pending;
+}
+
+struct collect_args {
+  struct patron_transfer *t;
+  VALUE result;
+};
+
+static VALUE collect_protected(VALUE ptr) {
+  struct collect_args *a = (struct collect_args *)ptr;
+  struct patron_transfer *t = a->t;
+
+  if (t->streaming) {
+    a->result = finish_stream((VALUE)t);
+  } else {
+    raise_if_failed(t, 1);
+    curl_easy_setopt(t->easy, CURLOPT_COOKIELIST, "FLUSH");
+    a->result = create_response(t);
+  }
+  return Qnil;
+}
+
+/*
+ * Takes a finished transfer out of the pack. A buffered one yields its Response, or raises its
+ * error; a streamed one yields what transfer_finish does, whether or not its body was read to
+ * the end. Either way the transfer is released.
+ *
+ * @api private
+ * @return [Patron::Response, Array]
+ */
+static VALUE session_multi_collect(VALUE self, VALUE slot) {
+  struct patron_session *s = open_pack(self);
+  struct collect_args args = { slot_transfer(s, slot), Qnil };
+  int state = 0;
+
+  rb_protect(collect_protected, (VALUE)&args, &state);
+  transfer_free(s, args.t);
+  if (state) rb_jump_tag(state);
+  return args.result;
+}
+
+/*
+ * Aborts one transfer of the pack; multi_collect then raises Patron::Aborted for it.
+ *
+ * @api private
+ * @return nil
+ */
+static VALUE session_multi_abort(VALUE self, VALUE slot) {
+  struct patron_session *s = open_pack(self);
+  struct patron_transfer *t = slot_transfer(s, slot);
+
+  if (!t->interrupt) t->interrupt = INTERRUPT_ABORT;
+  end_transfer_early(s, t);
+  return Qnil;
+}
+
+/*
+ * Ends the pack: every transfer still in flight is dropped, and the Session is free again.
+ *
+ * @api private
+ * @return nil
+ */
+static VALUE session_multi_close(VALUE self) {
+  struct patron_session *s = get_session(self);
+
+  if (!s->pack) return Qnil;
+  if (s->owner_thread != rb_thread_current()) rb_raise(ePatronError, "The pack belongs to another thread");
+  return cleanup(self);
 }
 
 struct scheduler_raise_args {
@@ -1923,6 +2244,7 @@ void Init_session_ext(void) {
   id_head = rb_intern_const("head");
   id_ivar_curl_code = rb_intern_const("@curl_code");
   id_raise = rb_intern_const("raise");
+  sym_pending = ID2SYM(rb_intern_const("pending"));
   id_url_kw = rb_intern_const("url");
   id_status_kw = rb_intern_const("status");
   id_redirect_count_kw = rb_intern_const("redirect_count");
@@ -1989,6 +2311,14 @@ void Init_session_ext(void) {
   rb_define_private_method(cSession, "transfer_start", session_transfer_start, 1);
   rb_define_private_method(cSession, "transfer_read", session_transfer_read, -1);
   rb_define_private_method(cSession, "transfer_finish", session_transfer_finish, 0);
+  rb_define_private_method(cSession, "multi_open", session_multi_open, 1);
+  rb_define_private_method(cSession, "multi_add", session_multi_add, 2);
+  rb_define_private_method(cSession, "multi_drive", session_multi_drive, 1);
+  rb_define_private_method(cSession, "multi_head", session_multi_head, 1);
+  rb_define_private_method(cSession, "multi_read", session_multi_read, 4);
+  rb_define_private_method(cSession, "multi_collect", session_multi_collect, 1);
+  rb_define_private_method(cSession, "multi_abort", session_multi_abort, 1);
+  rb_define_private_method(cSession, "multi_close", session_multi_close, 0);
   rb_define_private_method(cSession, "set_cookie_file", session_set_cookie_file, 1);
   rb_define_private_method(cSession, "set_debug_io", session_set_debug_io, 1);
   rb_define_method(cSession, "interrupt", session_interrupt, 0);

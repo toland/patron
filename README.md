@@ -232,9 +232,10 @@ to the same hostname/port/protocol, the connection gets reused, following libcur
 
 Requests that do not depend on each other can go out together. `Session#multi` returns a
 `Patron::Multi`, a pack with the same verb methods, defaults, headers and cookie jar as the Session it came
-from. Every verb call puts its request on the wire right away and returns a `Patron::Transfer`: the request
-in flight, which you hold on to, join, and take the response out of. `join` on a transfer drives the whole pack
-until that one is done, like `Thread#join`; `join_all` on the pack drives until all of them are.
+from. Every verb call starts its request right away (on a warm connection it is on the wire before the call
+returns) and hands back a `Patron::Transfer`: the request in flight, which you hold on to, join, and take the
+response out of. `join` on a transfer drives the whole pack until that one is done, like `Thread#join`;
+`join_all` on the pack drives until all of them are.
 
 ```ruby
 multi   = sess.multi
@@ -268,7 +269,7 @@ account.interrupt    # aborts just this one; it then fails with Patron::Aborted
 the others, which is why it is not called `join`. The error surfaces where you join or read that transfer:
 
 ```ruby
-limits = multi.get("/accounts/#{id}/limits", timeout: 2)
+limits = multi.request(:get, "/accounts/#{id}/limits", {}, timeout: 2)
 begin
   limits.join.response.body
 rescue Patron::TimeoutError
@@ -314,12 +315,49 @@ transfers = ids.map { |id| multi << sess.build_request(:get, "/items/#{id}", tim
 multi.join_all
 ```
 
-The Session is busy from the first verb call until the pack is done (`join_all`, a completed `each`,
-`close`, or the end of the block form), the same way it is busy during a single request, so another thread
-or fiber using it raises `Patron::Error` as usual. `Session#interrupt` and `Multi#interrupt` abort every
-transfer in the pack, and `Thread#raise`, `Timeout.timeout` and `Async::Task#stop` interrupt a pack the way
-they interrupt a single request. Streaming responses and `get_file` are not available on a pack: the bodies
-of a pack are received into memory, each bounded by its `download_byte_limit`.
+The Session is busy from the first verb call until every transfer of the pack is done, the same way it is
+busy during a single request, so another thread or fiber using it raises `Patron::Error` as usual. Once all
+are done the Session is free again, for plain requests or for another round on the same pack. `close` ends a
+pack early, aborting what is still in flight. `Session#interrupt` and `Multi#interrupt` abort every transfer
+in the pack, and `Thread#raise`, `Timeout.timeout` and `Async::Task#stop` interrupt a `join` the way they
+interrupt a single request. The bodies of buffered transfers are received into memory, each bounded by its
+`download_byte_limit`.
+
+### Streams in a pack
+
+The streaming verbs are on the pack too, with the same block as on a Session. The block receives the same
+`Patron::ResponseStream` once the head has arrived, and runs while the pack is driven: by `join_all`, by `each`,
+or by a `join` on any transfer of the pack. Each block runs in a fiber of its own, so several streams are
+consumed interleaved, each as fast as its own bytes come, next to the buffered requests of the same pack:
+
+```ruby
+multi = sess.multi
+meta  = multi.get("/accounts/#{id}")
+alice = multi.get_stream("/accounts/1/events") { |s| s.each_line { |line| handle(:alice, line) } }
+bob   = multi.get_stream("/accounts/2/events") { |s| s.each_line { |line| handle(:bob, line) } }
+multi.join_all
+
+meta.response.body
+alice.stats          # => Patron::TransferStats, the receipt, as Session#stream returns it
+alice.stats.complete?
+```
+
+A streamed transfer is done when its block has returned. Its receipt is `stats` rather than `response`, like
+`Session#stream`; reading it before the block has returned raises `Patron::InFlight`. `join` means done for
+streams as well: the whole body, not just the head. A failure mid-body raises inside the block, out of the
+read that hit it, as it does with `Session#stream`; the transfer is then `failed?` with that error.
+
+An exception the block itself raises fails the transfer. A `Patron::Error` stays with the transfer, to be
+re-raised by its `join`; anything else also comes out of the `join`, `join_all` or `each` that was driving the
+pack at the time. This is deliberate: the block runs on the joining thread, and `Timeout.timeout` or
+`Thread#raise` aimed at the join can land while a block runs, which must not be mistaken for a request
+failure. The other transfers are unaffected, and joining again carries on with them.
+
+The fibers the blocks run in are plain, blocking fibers: IO the block does on its own blocks the thread, also
+inside Async, rather than yielding to the scheduler. Joining a transfer from inside a block raises
+`Patron::Error`: the block is already being driven. A stream left running when the pack is closed is unwound
+with `Patron::Aborted`, so its `ensure` clauses run. Bound a stream with `read_timeout` rather than `timeout`,
+as with `Session#stream`: the whole-transfer timeout keeps counting while the stream waits for its block.
 
 ## Interrupting requests
 

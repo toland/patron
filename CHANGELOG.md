@@ -1,11 +1,17 @@
 ### Unreleased
 
 * `Session#multi` returns a `Patron::Multi`, a pack of requests that go out together on the Session's
-  connection cache. It has the Session's verb methods; each call starts the request and returns a
-  `Patron::Transfer`, which can be asked `done?`, `succeeded?` and `failed?`, joined with `join` and `join(limit)` like a Thread,
-  interrupted alone, and gives up its `response` (raising the request's error if it failed, or
-  `Patron::InFlight` if it is not done yet). `Multi#join_all` joins every transfer and raises for none, `Multi#each` yields transfers in completion order, and
-  `Session#multi(max_connections:)` caps the connections a pack may open
+  connection cache, in the time of the slowest one and over one connection to an HTTP/2 server. It has the
+  Session's verb methods; each call starts the request and returns a `Patron::Transfer`, which can be asked
+  `done?`, `succeeded?` and `failed?`, joined with `join` and `join(limit)` like a Thread, interrupted alone,
+  and gives up its `response` (raising the request's error if it failed, or `Patron::InFlight` if nobody has
+  joined yet). `Multi#join_all` joins every transfer and raises for none, `Multi#each` yields transfers in
+  completion order, and `Session#multi(max_connections:)` caps the connections a pack may open
+* The streaming verbs work on a pack as well: the block runs in a fiber of its own as the bytes arrive, so
+  several streams are consumed interleaved alongside the buffered requests of the same pack, and the
+  transfer's `stats` is the `TransferStats` receipt once the block has returned
+* The verb methods moved from `Session` into the `Patron::Verbs` module, which `Session` includes; nothing
+  changes for callers, and `Session#request` stays where instrumentation wraps it
 
 ### 1.1.0
 
