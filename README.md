@@ -219,12 +219,84 @@ end
 
 Sharing Session objects between requests will also allow you to benefit from persistent connections (connection reuse), see below.
 
+A checked-out Session can run several requests at once as a pack, see [Parallel requests](#parallel-requests).
+
 ## Persistent connections
 
 Every `Session` owns a libcurl multi handle with its own connection cache, plus a share handle for
 cookies, DNS entries and TLS sessions. If you create the Session once and use it for multiple requests
 to the same hostname/port/protocol, the connection gets reused, following libcurl's rules on
 [connection reuse.](https://everything.curl.dev/libcurl/connectionreuse.html)
+
+## Parallel requests
+
+Requests that do not depend on each other can go out together. `Session#multi` returns a
+`Patron::Multi`, a pack with the same verb methods, defaults, headers and cookie jar as the Session it came
+from. Every verb call puts its request on the wire right away and returns the `Patron::Request`, which is
+your handle to the result later. Call `wait` once everything is in flight, then read the responses:
+
+```ruby
+multi   = sess.multi
+account = multi.get("/accounts/#{id}")
+orders  = multi.get("/accounts/#{id}/orders")
+audit   = multi.post("/audit", event: "viewed", account: id)
+multi.wait
+
+multi[account].body   # => the Response for that request
+multi[orders].status
+```
+
+The three requests take as long as the slowest one, not the sum, and towards an HTTP/2 server they all
+share one connection. `wait` does not raise when a request fails, so one unreachable endpoint does not hide
+the others. Reading `multi[request]` for a failed one raises its `Patron::Error`, right where you read it:
+
+```ruby
+begin
+  limits = multi[limits_request]
+rescue Patron::TimeoutError
+  limits = nil
+end
+
+multi.responses   # => { request => Response } for the requests that succeeded, in the order they were added
+multi.failures    # => { request => Patron::Error } for the rest
+```
+
+A `Multi` is `Enumerable`, in completion order, and `each` drives the pack if `wait` has not run yet. The
+block runs between libcurl's own iterations, never inside one, so it may do anything, including raise:
+
+```ruby
+multi = sess.multi
+urls.each { |url| multi.get(url) }
+multi.each do |request, response|
+  File.binwrite(File.basename(request.url), response.body)
+end
+```
+
+A request that fails raises inside your block's turn; `multi.failures` still has it afterwards. The block
+form of `multi` yields the pack, waits, and returns it, which reads well when the requests are known up front:
+
+```ruby
+pack = sess.multi { |m| m.get("/a"); m.get("/b") }
+pack.responses.values.map(&:body)
+```
+
+Requests built elsewhere, with `build_request` or taken from a finished pack, are added with `<<`.
+Per-request options such as `timeout:`, `download_byte_limit:` and `progress_callback:` apply to that request
+alone, and a `max_connections:` on `multi` caps the connections the pack may open, which matters toward
+HTTP/1.1 servers that do not multiplex:
+
+```ruby
+multi = sess.multi(max_connections: 4)
+ids.each { |id| multi << sess.build_request(:get, "/items/#{id}", timeout: 2) }
+multi.wait
+```
+
+The Session is busy from the first verb call until the pack is done (`wait`, a completed `each`, `close`,
+or the end of the block form), the same way it is busy during a single request, so another thread or fiber
+using it raises `Patron::Error` as usual. `Session#interrupt` and `Multi#interrupt` abort every request in
+the pack, and `Thread#raise`, `Timeout.timeout` and `Async::Task#stop` interrupt a pack the way they
+interrupt a single request. Streaming responses and `get_file` are not available on a pack: the bodies of a
+pack are received into memory, each bounded by its `download_byte_limit`.
 
 ## Interrupting requests
 

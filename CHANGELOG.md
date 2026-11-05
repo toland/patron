@@ -1,5 +1,11 @@
 ### Unreleased
 
+* `Session#multi` returns a `Patron::Multi`, a pack of requests that go out together on the Session's
+  connection cache. It has the Session's verb methods; each call starts the request and returns the
+  `Patron::Request`, which is the key to its `Response` after `wait`. Reading a failed request's result
+  raises its error there; `responses` and `failures` are Hashes; `each` yields in completion order.
+  `Session#multi(max_connections:)` caps the connections a pack may open
+
 ### 1.1.0
 
 * `Session#stream(action, url, headers, **options) { |stream| }` and the `get_stream`, `put_stream`,
