@@ -423,14 +423,15 @@ describe "Patron::Multi", :session do
 
     it "refuses to join from inside a block" do
       multi = session.multi
-      other = multi.get("/timeout?millis=800")
+      other = multi.get("/timeout?millis=5000") # still in flight when the block runs, even on a slow runner
       transfer = multi.get_stream("/test") { |s| other.join }
-      multi.join_all # a Patron::Error out of the block is the transfer's failure, not the join's
-      expect(transfer.failed?).to be(true)
-      expect(transfer.error).to be_a(Patron::Error)
-      expect(transfer.error.message).to match(/inside one of its stream blocks/)
+      # a Patron::Error out of the block is the transfer's failure, re-raised by its own join
       expect { transfer.join }.to raise_error(Patron::Error, /inside one of its stream blocks/)
-      expect(other.response.status).to eq(200)
+      expect(transfer.failed?).to be(true)
+      expect(transfer.error.message).to match(/inside one of its stream blocks/)
+      other.interrupt
+      multi.join_all
+      expect(other.error).to be_a(Patron::Aborted)
     end
 
     it "lets a block do blocking IO of its own" do
