@@ -205,12 +205,12 @@ module Patron
     end
 
     def receipt
-      downloaded_bytes, uploaded_bytes, timings, complete, trailer_data = @tail
+      downloaded_bytes, uploaded_bytes, timings, complete, trailer_data, connection = @tail
       TransferStats.new(
         url: @url, status: @status, redirect_count: @redirect_count, header_data: @header_data,
         default_charset: @default_charset, downloaded_bytes: downloaded_bytes.to_i,
         uploaded_bytes: uploaded_bytes.to_i, timings: timings || {}, complete: !!complete,
-        trailer_data: trailer_data || ""
+        trailer_data: trailer_data || "", connection: connection
       )
     end
   end

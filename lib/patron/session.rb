@@ -7,6 +7,8 @@ require 'patron/header_parser'
 require 'patron/response_head'
 require 'patron/response_decoding'
 require 'patron/response'
+require 'patron/connection_info'
+require 'patron/pool'
 require 'patron/response_stream'
 require 'patron/transfer_stats'
 require 'patron/session_ext'
@@ -136,6 +138,23 @@ module Patron
     # @see Patron::Request#read_timeout=
     attr_accessor :read_timeout
 
+    # @return [Integer, nil] how long a cached connection may sit idle and still be reused, in seconds.
+    #   libcurl's default is 118; a pool of warm connections wants something much longer.
+    # @see Patron::Request#max_connection_age=
+    attr_accessor :max_connection_age
+
+    # @return [Integer, nil] how long a connection may be reused at all, in seconds since it was made
+    # @see Patron::Request#max_connection_lifetime=
+    attr_accessor :max_connection_lifetime
+
+    # @return [Integer, true, nil] the TCP keepalive probe interval in seconds, true for 60, nil for off
+    # @see Patron::Request#tcp_keepalive=
+    attr_accessor :tcp_keepalive
+
+    # @return [Hash{String => String}, nil] "host:port" => address entries that bypass DNS
+    # @see Patron::Request#resolve=
+    attr_accessor :resolve
+
     # @return [#call, nil] callable object that will be called with 4 arguments
     #    during request/response execution - `dltotal`, `dlnow`, `ultotal`, `ulnow`.
     #    All these arguments are in bytes. Returning `false` from the callback aborts the
@@ -185,6 +204,18 @@ module Patron
       # libcurl reads the cookie file and, when the path is not empty, also writes the jar back to it
       @cookie_file_path = path.to_s
       set_cookie_file(@cookie_file_path)
+      self
+    end
+
+    # Opens the connection ahead of the first real request: resolves the host, connects, and
+    # completes the TLS handshake, with a HEAD request whose response is thrown away. The
+    # connection then sits in this Session's cache for the next request to reuse. Set
+    # `max_connection_age` as well, or libcurl closes it after 118 idle seconds.
+    #
+    # @param path [String] what to HEAD, relative to `base_url`; the status does not matter
+    # @return self
+    def warm_up(path = "/")
+      head(path)
       self
     end
 
@@ -487,7 +518,8 @@ module Patron
       automatic_content_encoding timeout connect_timeout dns_cache_timeout low_speed_time low_speed_limit
       force_ipv4 max_redirects username password proxy proxy_type auth_type insecure ssl_version http_version
       cacert ssl_cert ssl_cert_type ssl_key ssl_key_password ignore_content_length buffer_size
-      download_byte_limit progress_callback read_timeout
+      download_byte_limit progress_callback read_timeout max_connection_age max_connection_lifetime
+      tcp_keepalive resolve
     ].freeze
     private_constant :REQUEST_ATTRIBUTES_FROM_SESSION
 

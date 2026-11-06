@@ -16,6 +16,10 @@ module Patron
     #   and `:total`. `nil` when the response was not built from a curl transfer (e.g. a stub).
     attr_reader :timings
 
+    # @return [Patron::ConnectionInfo, nil] the connection the response came over: HTTP version,
+    #   address, and whether it was a reused one. `nil` when the response was not built from a curl transfer.
+    attr_reader :connection
+
     # Overridden so that the output is shorter and there is no response body printed
     def inspect
       "#<Patron::Response @status_line='#{@status_line}'>"
@@ -28,15 +32,22 @@ module Patron
     # @param body [String, nil] the response body, or nil when it was downloaded to a file
     # @param default_charset [String, nil] the charset to assume when the Content-Type header names none
     # @param timings [Hash, nil] see #timings
-    def initialize(url:, status:, header_data:, redirect_count: 0, body: nil, default_charset: nil, timings: nil)
+    # @param connection [Patron::ConnectionInfo, Hash, nil] see #connection
+    def initialize(url:, status:, header_data:, redirect_count: 0, body: nil, default_charset: nil, timings: nil,
+                   connection: nil)
       @url = url
       @status = status
       @redirect_count = redirect_count
       @body = body && (body.encoding == Encoding::BINARY ? body : body.b)
       @timings = timings
+      @connection = ConnectionInfo.coerce(connection)
 
       parse_head(header_data, default_charset)
     end
+
+    # @return [Boolean, nil] whether the response came over a connection the Session already had open,
+    #   nil when there is no connection info
+    def connection_reused? = @connection&.reused?
 
     # Tells whether the response body can be decoded losslessly into the curren internal encoding
     #
