@@ -24,7 +24,7 @@ describe Patron::Pool, :session do
   end
 
   it "builds members lazily, up to size, and makes threads wait for a free one" do
-    pool = build_pool
+    pool = build_pool(timeout: 10) # a slow runner can hold the first three members past the one-second default
     results = Queue.new
     threads = 6.times.map do
       Thread.new { pool.with { |session| results << session.get("/timeout?millis=300").status } }
