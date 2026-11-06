@@ -204,20 +204,28 @@ end
 
 ## Threading
 
-A `Patron::Session` performs one request at a time and must not be shared between threads: each `Session`
-owns its own libcurl handles and buffers, and using it from two threads at once raises `Patron::Error`.
-Patron releases the GVL (the global VM lock) whenever it waits for the network, so using one `Session`
-per thread gives you real parallelism.
-For sharing a pool of sessions between threads we recommend the excellent [connection_pool](https://rubygems.org/gems/connection_pool) gem by Mike Perham.
+A `Patron::Session` performs one request at a time and must not be used from two threads at once: each `Session`
+owns its own libcurl handles and buffers, and doing so raises `Patron::Error`. It may move between threads,
+though, as long as two never use it at the same time, and Patron releases the GVL (the global VM lock) whenever
+it waits for the network, so a `Session` per thread gives you real parallelism. `Patron::Pool` hands Sessions
+to threads one at a time:
 
 ```ruby
-patron_pool = ConnectionPool.new(size: 5, timeout: 5) { Patron::Session.new }
-patron_pool.with do |session|
-  session.get(...)
+PROVIDER = Patron::Pool.new(size: 8, timeout: 2) do
+  Patron::Session.new(base_url: "https://api.provider.com", timeout: 5)
+end
+
+PROVIDER.with do |session|
+  session.get("/accounts/1")
 end
 ```
 
-Sharing Session objects between requests will also allow you to benefit from persistent connections (connection reuse), see below.
+`with` checks a Session out for the block and back in afterwards, and raises `Patron::Pool::Timeout` when no
+Session comes free within `timeout` seconds. Members are built by the block, lazily, up to `size`. The
+[connection_pool](https://rubygems.org/gems/connection_pool) gem works just as well for this if you already
+use it. Either way, a Session that lives on between requests keeps its connections open, see below.
+
+A checked-out Session can run several requests at once as a pack, see [Parallel requests](#parallel-requests).
 
 ## Persistent connections
 
@@ -225,6 +233,195 @@ Every `Session` owns a libcurl multi handle with its own connection cache, plus 
 cookies, DNS entries and TLS sessions. If you create the Session once and use it for multiple requests
 to the same hostname/port/protocol, the connection gets reused, following libcurl's rules on
 [connection reuse.](https://everything.curl.dev/libcurl/connectionreuse.html)
+
+### Keeping connections warm
+
+A pool of Sessions is a pool of connections, and a connection that is already open saves the DNS lookup, the
+TCP handshake and the TLS handshake on the next request: often most of the request's time. Three things
+stand between you and connections that are actually warm when you need them, and Patron has a knob for each.
+
+libcurl closes a cached connection that has been idle for more than 118 seconds, so a pool that was warm
+before a lull is cold after it. `max_connection_age` raises that limit; `max_connection_lifetime` caps how long
+a connection is reused at all; `tcp_keepalive` has the kernel probe an idle connection every so many seconds,
+so that a NAT or a load balancer does not drop it as dead. `resolve` pins a host name to an address and skips
+DNS entirely. All four are Session defaults and `Request` attributes, like `timeout`:
+
+```ruby
+session = Patron::Session.new(
+  base_url: "https://api.provider.com",
+  max_connection_age: 3600,        # seconds; libcurl's default is 118
+  max_connection_lifetime: 86_400, # seconds since the connection was made
+  tcp_keepalive: 30,               # probe interval in seconds, or true for 60
+  resolve: { "api.provider.com:443" => "203.0.113.7" }
+)
+```
+
+`warm_up` opens the connection before the first real request, with a HEAD whose response is thrown away, and
+`Response#connection` tells you afterwards what happened:
+
+```ruby
+session.warm_up("/health")
+response = session.get("/accounts/1")
+response.connection.http_version    # => "HTTP/2"
+response.connection.ip              # => "203.0.113.7"
+response.connection.new_connections # => 0, the warmed-up connection served it
+response.connection_reused?         # => true
+```
+
+`Response#connection` is a frozen `Patron::ConnectionInfo` with `http_version`, `ip`, `port`, `new_connections`
+and `reused?`; `TransferStats` has the same. It is `nil` on a Response that did not come from libcurl, such as a
+webmock stub. `Response#timings` shows the same thing in seconds: `connect` and `appconnect` are zero on a
+reused connection.
+
+A `Patron::Pool` warms all its members at once, and can keep them warm. A load balancer's idle timeout is
+often shorter than your lulls (60 seconds on an AWS ALB by default), and no libcurl option reaches across it;
+`keep_warm` starts a thread that HEADs the members that have sat idle for `every` seconds:
+
+```ruby
+PROVIDER = Patron::Pool.new(size: 8) do
+  Patron::Session.new(base_url: "https://api.provider.com", max_connection_age: 3600, tcp_keepalive: 30)
+end
+PROVIDER.warm_up("/health")                 # makes all 8 members and connects each of them
+PROVIDER.keep_warm(every: 50, path: "/health")
+
+PROVIDER.stats                              # => { size: 8, created: 8, available: 8, waiting: 0 }
+PROVIDER.shutdown                           # ends the keeper, drops the members as they come back
+```
+
+Members that are checked out while `warm_up` or the keeper runs are left alone. Sessions already survive a
+`fork`, so a pool made before Puma forks its workers needs no hook: each worker opens its own connections on
+first use, or on its own `warm_up`.
+
+## Parallel requests
+
+Requests that do not depend on each other can go out together. `Session#multi` returns a
+`Patron::Multi`, a pack with the same verb methods, defaults, headers and cookie jar as the Session it came
+from. Every verb call starts its request right away (on a warm connection it is on the wire before the call
+returns) and hands back a `Patron::Transfer`: the request in flight, which you hold on to, join, and take the
+response out of. `join` on a transfer drives the whole pack until that one is done, like `Thread#join`;
+`join_all` on the pack drives until all of them are.
+
+```ruby
+multi   = sess.multi
+account = multi.get("/accounts/#{id}")
+orders  = multi.get("/accounts/#{id}/orders")
+audit   = multi.post("/audit", event: "viewed", account: id)
+
+account.join.response.body
+orders.join.response.status
+multi.join_all           # for audit and anything else still in flight
+```
+
+The three requests take as long as the slowest one, not the sum, and towards an HTTP/2 server they all
+share one connection. A `Transfer` knows where it stands:
+
+```ruby
+account.done?        # finished, one way or the other
+account.succeeded?   # done, and the Response is there
+account.failed?      # done, and account.error has the Patron::Error
+account.join         # blocks until this one is done, driving the whole pack meanwhile. Returns self,
+                     # or raises the request's Patron::Error if it failed, like Thread#join does
+account.join(2)      # the same, but gives up after two seconds and returns nil, like Thread#join(limit)
+account.response     # the Response; raises the request's Patron::Error if it failed,
+                     # and Patron::InFlight if it is not done yet
+account.error        # the Patron::Error, or nil
+account.request      # the Patron::Request it was built from
+account.interrupt    # aborts just this one; it then fails with Patron::Aborted
+```
+
+`join_all` does not raise when a request fails, since there is no one error to raise and raising one would hide
+the others, which is why it is not called `join`. The error surfaces where you join or read that transfer:
+
+```ruby
+limits = multi.request(:get, "/accounts/#{id}/limits", {}, timeout: 2)
+begin
+  limits.join.response.body
+rescue Patron::TimeoutError
+  nil
+end
+
+multi.join_all
+multi.select(&:failed?).each { |transfer| logger.warn("#{transfer.request.url}: #{transfer.error.message}") }
+```
+
+`Patron::InFlight` is not a `Patron::Error`: asking for a response before joining is a mistake in the
+program, not a failure of the request, and `rescue Patron::Error` must not swallow it.
+
+A `Multi` is `Enumerable` over its transfers in completion order, and `each` drives the pack itself, so no
+`join_all` is needed before it. The block runs between libcurl's own iterations, never inside one, so it may do
+anything:
+
+```ruby
+multi = sess.multi
+urls.each { |url| multi.get(url) }
+multi.each do |transfer|
+  next if transfer.failed?
+  File.binwrite(File.basename(transfer.request.url), transfer.response.body)
+end
+```
+
+The block form of `multi` yields the pack, calls `join_all`, and returns it. `transfers` is every transfer in the order
+it was added, which pairs well with `zip`:
+
+```ruby
+pack = sess.multi { |m| urls.each { |url| m.get(url) } }
+urls.zip(pack.transfers).each { |url, transfer| puts "#{url}: #{transfer.response.status}" }
+```
+
+Requests built elsewhere, with `build_request` or taken from a finished transfer, are added with `<<`, which
+also returns the `Transfer`. Per-request options such as `timeout:`, `download_byte_limit:` and
+`progress_callback:` apply to that request alone, and `max_connections:` on `multi` caps the connections the
+pack may open, which matters toward HTTP/1.1 servers that do not multiplex:
+
+```ruby
+multi = sess.multi(max_connections: 4)
+transfers = ids.map { |id| multi << sess.build_request(:get, "/items/#{id}", timeout: 2) }
+multi.join_all
+```
+
+The Session is busy from the first verb call until every transfer of the pack is done, the same way it is
+busy during a single request, so another thread or fiber using it raises `Patron::Error` as usual. Once all
+are done the Session is free again, for plain requests or for another round on the same pack. `close` ends a
+pack early, aborting what is still in flight. `Session#interrupt` and `Multi#interrupt` abort every transfer
+in the pack, and `Thread#raise`, `Timeout.timeout` and `Async::Task#stop` interrupt a `join` the way they
+interrupt a single request. The bodies of buffered transfers are received into memory, each bounded by its
+`download_byte_limit`.
+
+### Streams in a pack
+
+The streaming verbs are on the pack too, with the same block as on a Session. The block receives the same
+`Patron::ResponseStream` once the head has arrived, and runs while the pack is driven: by `join_all`, by `each`,
+or by a `join` on any transfer of the pack. Each block runs in a fiber of its own, so several streams are
+consumed interleaved, each as fast as its own bytes come, next to the buffered requests of the same pack:
+
+```ruby
+multi = sess.multi
+meta  = multi.get("/accounts/#{id}")
+alice = multi.get_stream("/accounts/1/events") { |s| s.each_line { |line| handle(:alice, line) } }
+bob   = multi.get_stream("/accounts/2/events") { |s| s.each_line { |line| handle(:bob, line) } }
+multi.join_all
+
+meta.response.body
+alice.stats          # => Patron::TransferStats, the receipt, as Session#stream returns it
+alice.stats.complete?
+```
+
+A streamed transfer is done when its block has returned. Its receipt is `stats` rather than `response`, like
+`Session#stream`; reading it before the block has returned raises `Patron::InFlight`. `join` means done for
+streams as well: the whole body, not just the head. A failure mid-body raises inside the block, out of the
+read that hit it, as it does with `Session#stream`; the transfer is then `failed?` with that error.
+
+An exception the block itself raises fails the transfer. A `Patron::Error` stays with the transfer, to be
+re-raised by its `join`; anything else also comes out of the `join`, `join_all` or `each` that was driving the
+pack at the time. This is deliberate: the block runs on the joining thread, and `Timeout.timeout` or
+`Thread#raise` aimed at the join can land while a block runs, which must not be mistaken for a request
+failure. The other transfers are unaffected, and joining again carries on with them.
+
+The fibers the blocks run in are plain, blocking fibers: IO the block does on its own blocks the thread, also
+inside Async, rather than yielding to the scheduler. Joining a transfer from inside a block raises
+`Patron::Error`: the block is already being driven. A stream left running when the pack is closed is unwound
+with `Patron::Aborted`, so its `ensure` clauses run. Bound a stream with `read_timeout` rather than `timeout`,
+as with `Session#stream`: the whole-transfer timeout keeps counting while the stream waits for its block.
 
 ## Interrupting requests
 

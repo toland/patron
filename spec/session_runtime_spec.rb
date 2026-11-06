@@ -227,7 +227,8 @@ describe Patron::Session, :session do
       session_class = Class.new(Patron::Session) { define_method(:response_class) { custom } }
       session = session_class.new(base_url: "http://localhost:#{HTTP_PORT}")
       response = session.get("/test")
-      expect(response.kwargs.keys).to contain_exactly(:url, :status, :redirect_count, :header_data, :body, :default_charset, :timings)
+      expect(response.kwargs.keys).to contain_exactly(:url, :status, :redirect_count, :header_data, :body, :default_charset, :timings, :connection)
+      expect(response.kwargs[:connection]).to include(:http_version, :ip, :port, :new_connections)
       expect(response.kwargs[:timings]).to include(:total)
     end
   end

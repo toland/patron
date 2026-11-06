@@ -6,7 +6,11 @@ require 'patron/request'
 require 'patron/header_parser'
 require 'patron/response_head'
 require 'patron/response_decoding'
+require 'patron/verbs'
+require 'patron/multi'
 require 'patron/response'
+require 'patron/connection_info'
+require 'patron/pool'
 require 'patron/response_stream'
 require 'patron/transfer_stats'
 require 'patron/session_ext'
@@ -24,6 +28,7 @@ module Patron
   # performing one on the same Session raises Patron::Error. A Session belongs to the Ractor
   # that created it and cannot be sent to or shared with another one; Requests and Responses can.
   class Session
+    include Verbs
 
     # @return [Numeric] HTTP connection timeout in seconds. Defaults to 1 second.
     attr_accessor :connect_timeout
@@ -136,6 +141,23 @@ module Patron
     # @see Patron::Request#read_timeout=
     attr_accessor :read_timeout
 
+    # @return [Integer, nil] how long a cached connection may sit idle and still be reused, in seconds.
+    #   libcurl's default is 118; a pool of warm connections wants something much longer.
+    # @see Patron::Request#max_connection_age=
+    attr_accessor :max_connection_age
+
+    # @return [Integer, nil] how long a connection may be reused at all, in seconds since it was made
+    # @see Patron::Request#max_connection_lifetime=
+    attr_accessor :max_connection_lifetime
+
+    # @return [Integer, true, nil] the TCP keepalive probe interval in seconds, true for 60, nil for off
+    # @see Patron::Request#tcp_keepalive=
+    attr_accessor :tcp_keepalive
+
+    # @return [Hash{String => String}, nil] "host:port" => address entries that bypass DNS
+    # @see Patron::Request#resolve=
+    attr_accessor :resolve
+
     # @return [#call, nil] callable object that will be called with 4 arguments
     #    during request/response execution - `dltotal`, `dlnow`, `ultotal`, `ulnow`.
     #    All these arguments are in bytes. Returning `false` from the callback aborts the
@@ -188,6 +210,18 @@ module Patron
       self
     end
 
+    # Opens the connection ahead of the first real request: resolves the host, connects, and
+    # completes the TLS handshake, with a HEAD request whose response is thrown away. The
+    # connection then sits in this Session's cache for the next request to reuse. Set
+    # `max_connection_age` as well, or libcurl closes it after 118 idle seconds.
+    #
+    # @param path [String] what to HEAD, relative to `base_url`; the status does not matter
+    # @return self
+    def warm_up(path = "/")
+      head(path)
+      self
+    end
+
     # Enable libcurl's verbose output.
     #
     # @param destination [IO, String, nil] an IO to write to, a path to a file to write to, or `nil` for `$stderr`
@@ -200,21 +234,6 @@ module Patron
       end
       set_debug_io(@debug_io)
       self
-    end
-
-    # Retrieve the contents of the specified `url` optionally sending the
-    # specified headers. If the +base_url+ varaible is set then it is prepended
-    # to the +url+ parameter. Any custom headers are merged with the contents
-    # of the +headers+ instance variable. The results are returned in a
-    # Response object.
-    # Notice: this method doesn't accept any `data` argument: if you need to send a request body
-    # with a GET request, when using ElasticSearch for example, please, use the #request method.
-    #
-    # @param url[String] the URL to fetch
-    # @param headers[Hash] the hash of header keys to values
-    # @return [Patron::Response]
-    def get(url, headers = {})
-      request(:get, url, headers)
     end
 
     # Retrieve the contents of the specified +url+ as with #get, but the
@@ -231,116 +250,7 @@ module Patron
       request(:get, url, headers, file: filename)
     end
 
-    # Same as #get but performs a HEAD request.
-    #
-    # @see #get
-    # @param url[String] the URL to fetch
-    # @param headers[Hash] the hash of header keys to values
-    # @return [Patron::Response]
-    def head(url, headers = {})
-      request(:head, url, headers)
-    end
 
-    # Same as #get but performs a DELETE request.
-    #
-    # Notice: this method doesn't accept any `data` argument: if you need to send data with
-    # a delete request (as might be needed for ElasticSearch), please, use the #request method.
-    #
-    # @param url[String] the URL to fetch
-    # @param headers[Hash] the hash of header keys to values
-    # @return [Patron::Response]
-    def delete(url, headers = {})
-      request(:delete, url, headers)
-    end
-
-    # Uploads the passed `data` to the specified `url` using an HTTP PUT. Note that
-    # unline ++post++, a Hash is not accepted as the ++data++ argument.
-    #
-    # @param url[String] the URL to fetch
-    # @param data[#to_s, #to_path, #read] an object that can be converted to a String
-    #   to create the request body, that responds to #to_path to upload the
-    #   entire request body from that file, or that responds to #read to stream
-    #   the request body from it (see Request#upload_data=)
-    # @param headers[Hash] the hash of header keys to values
-    # @return [Patron::Response]
-    def put(url, data, headers = {})
-      request(:put, url, headers, data: data)
-    end
-
-    # Uploads the passed `data` to the specified `url` using an HTTP PATCH. Note that
-    # unline ++post++, a Hash is not accepted as the ++data++ argument.
-    #
-    # @param url[String] the URL to fetch
-    # @param data[#to_s, #to_path, #read] an object that can be converted to a String
-    #   to create the request body, that responds to #to_path to upload the
-    #   entire request body from that file, or that responds to #read to stream
-    #   the request body from it (see Request#upload_data=)
-    # @param headers[Hash] the hash of header keys to values
-    # @return [Patron::Response]
-    def patch(url, data, headers = {})
-      request(:patch, url, headers, data: data)
-    end
-
-    # Uploads the contents of `file` to the specified `url` using an HTTP PUT. The file will be
-    # sent "as-is" without any multipart encoding.
-    #
-    # @param url[String] the URL to fetch
-    # @param filename[String] path to the file to be uploaded
-    # @param headers[Hash] the hash of header keys to values
-    # @return [Patron::Response]
-    def put_file(url, filename, headers = {})
-      request(:put, url, headers, file: filename)
-    end
-
-    # Uploads the passed `data` to the specified `url` using an HTTP POST.
-    #
-    # @param url[String] the URL to fetch
-    # @param data[Hash, #to_s, #to_path, #read] a Hash of form fields/values,
-    #   or an object that can be converted to a String
-    #   to create the request body, an object that responds to #to_path to upload the
-    #   entire request body from that file, or one that responds to #read to stream
-    #   the request body from it (see Request#upload_data=)
-    # @param headers[Hash] the hash of header keys to values
-    # @return [Patron::Response]
-    def post(url, data, headers = {})
-      data, headers = form_encode(data, headers)
-      request(:post, url, headers, data: data)
-    end
-
-    # Uploads the contents of `file` to the specified `url` using an HTTP POST.
-    # The file will be sent "as-is" without any multipart encoding.
-    #
-    # @param url[String] the URL to fetch
-    # @param filename[String] path to the file to be uploaded
-    # @param headers[Hash] the hash of header keys to values
-    # @return [Patron::Response]
-    def post_file(url, filename, headers = {})
-      request(:post, url, headers, file: filename)
-    end
-
-    # Uploads the contents of `filename` to the specified `url` using an HTTP POST,
-    # in combination with given form fields passed in `data`.
-    #
-    # @param url[String] the URL to fetch
-    # @param data[Hash] hash of the form fields
-    # @param filename[String] path to the file to be uploaded
-    # @param headers[Hash] the hash of header keys to values
-    # @return [Patron::Response]
-    def post_multipart(url, data, filename, headers = {})
-      request(:post, url, headers, data: data, file: filename, multipart: true)
-    end
-
-    # @!group WebDAV methods
-    # Sends a WebDAV COPY request to the specified +url+.
-    #
-    # @param url[String] the URL to copy
-    # @param dest[String] the URL of the COPY destination
-    # @param headers[Hash] the hash of header keys to values
-    # @return [Patron::Response]
-    def copy(url, dest, headers = {})
-      request(:copy, url, headers.merge('Destination' => dest))
-    end
-    # @!endgroup
 
     # @!group Streaming
     # Performs a request and yields its response as a ResponseStream as soon as the head of the
@@ -372,52 +282,35 @@ module Patron
       run_stream(build_request(action, url, headers, **options), &block).__send__(:receipt)
     end
 
-    # Same as #stream with a GET
-    #
-    # @param url[String] the URL to fetch
-    # @param headers[Hash] the hash of header keys to values
-    # @param options[Hash] the same options as #request takes
-    # @yieldparam stream [Patron::ResponseStream]
-    # @return [Patron::TransferStats]
-    def get_stream(url, headers = {}, **options, &block)
-      stream(:get, url, headers, **options, &block)
-    end
+    # @!endgroup
 
-    # Same as #stream with a PUT, sending `data` like #put does
+    # @!group Parallel requests
+    # Returns a Patron::Multi: a pack of requests that go out together on this Session's connection
+    # cache. It has the same verb methods as the Session; each one starts its request right away and
+    # returns a Patron::Transfer to join and read the Response from. With a block, yields the pack,
+    # waits for all of it with Multi#join_all, closes it, and returns it.
     #
-    # @param url[String] the URL for the request
-    # @param data[#to_s, #to_path, #read] the request body, see #put
-    # @param headers[Hash] the hash of header keys to values
-    # @param options[Hash] the same options as #request takes
-    # @yieldparam stream [Patron::ResponseStream]
-    # @return [Patron::TransferStats]
-    def put_stream(url, data, headers = {}, **options, &block)
-      stream(:put, url, headers, **options, data: data, &block)
-    end
-
-    # Same as #stream with a POST, sending `data` like #post does: a Hash is form-encoded
+    # @example
+    #   multi = session.multi
+    #   account = multi.get("/accounts/1")
+    #   orders  = multi.get("/accounts/1/orders")
+    #   account.join.response.body
+    #   orders.join.response.body
     #
-    # @param url[String] the URL for the request
-    # @param data[Hash, #to_s, #to_path, #read] the request body, see #post
-    # @param headers[Hash] the hash of header keys to values
-    # @param options[Hash] the same options as #request takes
-    # @yieldparam stream [Patron::ResponseStream]
-    # @return [Patron::TransferStats]
-    def post_stream(url, data, headers = {}, **options, &block)
-      data, headers = form_encode(data, headers)
-      stream(:post, url, headers, **options, data: data, &block)
-    end
-
-    # Same as #stream with a PATCH, sending `data` like #patch does
-    #
-    # @param url[String] the URL for the request
-    # @param data[#to_s, #to_path, #read] the request body, see #patch
-    # @param headers[Hash] the hash of header keys to values
-    # @param options[Hash] the same options as #request takes
-    # @yieldparam stream [Patron::ResponseStream]
-    # @return [Patron::TransferStats]
-    def patch_stream(url, data, headers = {}, **options, &block)
-      stream(:patch, url, headers, **options, data: data, &block)
+    # @param max_connections [Integer, nil] the most connections the pack may open (CURLMOPT_MAX_TOTAL_CONNECTIONS),
+    #   nil for libcurl's default. An HTTP/2 server multiplexes the pack over one connection regardless
+    # @yieldparam multi [Patron::Multi]
+    # @return [Patron::Multi]
+    def multi(max_connections: nil)
+      pack = Multi.new(self, max_connections: max_connections)
+      return pack unless block_given?
+      begin
+        yield pack
+        pack.join_all
+      ensure
+        pack.close
+      end
+      pack
     end
     # @!endgroup
 
@@ -487,7 +380,8 @@ module Patron
       automatic_content_encoding timeout connect_timeout dns_cache_timeout low_speed_time low_speed_limit
       force_ipv4 max_redirects username password proxy proxy_type auth_type insecure ssl_version http_version
       cacert ssl_cert ssl_cert_type ssl_key ssl_key_password ignore_content_length buffer_size
-      download_byte_limit progress_callback read_timeout
+      download_byte_limit progress_callback read_timeout max_connection_age max_connection_lifetime
+      tcp_keepalive resolve
     ].freeze
     private_constant :REQUEST_ATTRIBUTES_FROM_SESSION
 
@@ -520,12 +414,6 @@ module Patron
                            header_data: stream.__send__(:header_data), body: nil,
                            default_charset: default_response_charset, timings: stats.timings)
       end
-    end
-
-    def form_encode(data, headers)
-      return [data, headers] unless data.is_a?(Hash)
-      encoded = data.map { |k, v| urlencode(k.to_s) + '=' + urlencode(v.to_s) }.join('&')
-      [encoded, headers.merge('Content-Type' => 'application/x-www-form-urlencoded')]
     end
 
     def build_url(url, query)

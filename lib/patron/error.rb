@@ -8,6 +8,11 @@ module Patron
     attr_reader :curl_code
   end
 
+  # Raised by Transfer#response and Transfer#stats when the transfer is not done yet: nobody has
+  # joined it or its pack. Not a Patron::Error on purpose: it marks a mistake in the program, not a
+  # failed request, and `rescue Patron::Error` must not swallow it.
+  class InFlight < StandardError; end
+
   # Gets raised when the URL passed to Patron used a protocol that it does not support.
   # This most likely the result of a misspelled protocol string.
   class UnsupportedProtocol < Error; end

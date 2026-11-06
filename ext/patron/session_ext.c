@@ -6,6 +6,10 @@
  * and TLS sessions across requests. The multi handle owns the connection cache, which
  * is what gives a Session connection reuse between requests.
  *
+ * Every request in flight is a struct patron_transfer: its easy handle, its buffers and
+ * everything libcurl's callbacks touch. The Session keeps the list of them and is the GC
+ * parent of every Ruby object they hold. A plain request has one transfer on the list.
+ *
  * A request is driven by curl_multi_perform() while holding the GVL, so every libcurl
  * callback (write, header, progress, debug) is ordinary Ruby-safe code, and by
  * curl_multi_poll() with the GVL released. Ruby interrupts the poll through the
@@ -86,7 +90,8 @@ static VALUE hHTTPVersions;
   X(insecure) X(ssl_version) X(http_version) X(ssl_cert) X(ssl_cert_type) \
   X(ssl_key) X(ssl_key_password) X(cacert) X(buffer_size) X(download_byte_limit) \
   X(progress_callback) X(automatic_content_encoding) X(force_ipv4) \
-  X(upload_data) X(file_name) X(multipart) X(read_timeout)
+  X(upload_data) X(file_name) X(multipart) X(read_timeout) \
+  X(max_connection_age) X(max_connection_lifetime) X(tcp_keepalive) X(resolve)
 
 #define DECLARE_ID(name) static ID id_##name;
 REQUEST_ATTRIBUTES(DECLARE_ID)
@@ -96,24 +101,25 @@ static ID id_to_path, id_to_s, id_response_class, id_default_response_charset;
 static ID id_read, id_readpartial, id_size, id_pos, id_seek, id_rewind;
 static ID id_get, id_post, id_put, id_patch, id_delete, id_head;
 static ID id_ivar_curl_code, id_raise;
+static VALUE sym_pending;
 static ID id_url_kw, id_status_kw, id_redirect_count_kw, id_header_data_kw, id_body_kw,
-          id_default_charset_kw, id_timings_kw;
+          id_default_charset_kw, id_timings_kw, id_connection_kw;
+static ID id_http_version_kw, id_ip_kw, id_port_kw, id_new_connections_kw;
 
-struct patron_session {
-  /* Lives as long as the Session object */
-  VALUE self;                         /* back-pointer for write barriers, never marked */
-  CURLM *multi;
-  CURL *base;                         /* template; every request is a curl_easy_duphandle() of it */
-  CURLSH *share;
-  pthread_mutex_t share_locks[CURL_LOCK_DATA_LAST];
-  pid_t pid;                          /* handles must not be reused across fork() */
-  VALUE debug_io;                     /* IO receiving CURLOPT_VERBOSE output, or nil */
-  VALUE socket_ios;                   /* fd => IO wrapping one of libcurl's sockets, for the Fiber scheduler */
+struct patron_session;
 
-  /* Per request, torn down in cleanup() */
+/* One request in flight. Allocated by begin_transfer(), released by cleanup(). Every libcurl
+ * callback gets a pointer to one of these as its userdata, and the easy handle carries the same
+ * pointer as CURLOPT_PRIVATE so that a CURLMSG_DONE can be routed back to it. */
+struct patron_transfer {
+  struct patron_session *session;     /* its Session, whose object is the GC parent of every VALUE here */
+  struct patron_transfer *next;
+  int slot;                           /* position in the Session's list, in order of starting */
+
   CURL *easy;
   curl_mime *mime;
   struct curl_slist *headers;
+  struct curl_slist *resolve;         /* CURLOPT_RESOLVE entries, "host:port:address" */
   FILE *request_body_file;
   curl_off_t request_content_length;  /* from a Content-Length request header, or -1 */
   int request_transfer_encoding;      /* whether the request headers carry a Transfer-Encoding */
@@ -124,11 +130,11 @@ struct patron_session {
   VALUE progress_proc;
   VALUE upload_data;                  /* pinned while libcurl reads it through CURLOPT_POSTFIELDS */
   VALUE header_buf;                   /* binary String receiving the raw headers */
-  VALUE body_buf;                     /* binary String receiving the body, or nil when downloading to a file */
+  VALUE body_buf;                     /* binary String receiving the body, or nil when streaming */
   VALUE upload_io;                    /* object responding to #read the body is streamed from, or nil */
   VALUE upload_buf;                   /* String upload_io reads into, copied into libcurl's buffer */
 
-  /* Per request, the state the drive loop and the streaming primitives share */
+  /* The state the drive loop and the streaming primitives share */
   int streaming;                      /* the body goes to read_buf instead of body_buf */
   int paused;                         /* body_write_cb answered CURL_WRITEFUNC_PAUSE */
   int head_complete;                  /* the final response head is in header_buf */
@@ -138,12 +144,14 @@ struct patron_session {
   long head_length;                   /* header_buf bytes up to head-complete; trailers follow */
   size_t redeliver_skip;              /* bytes at the start of the next delivery already handed out */
   long read_limit;                    /* length read_buf may grow to, -1 for unbounded */
+  long read_keep;                     /* read_buf length that does not count as new data */
   double read_timeout;                /* seconds allowed between two deliveries, 0 for none */
   double last_activity;               /* monotonic seconds of the last delivery */
   VALUE read_buf;                     /* the caller's String, set only during transfer_read */
-  VALUE owner;                        /* the Fiber that started the transfer */
-  VALUE owner_thread;                 /* and its Thread */
-  int in_scheduler_wait;              /* the owner is parked in the Fiber scheduler by wait_with_scheduler() */
+
+  /* In a pack, what the Ruby side has been told so far, so that multi_drive reports once */
+  int head_reported;
+  int done_reported;
 
   /* A callback may not let a Ruby exception unwind through libcurl's frames. The tag and
    * errinfo are parked here, the transfer is aborted, and perform() re-raises afterwards. */
@@ -151,28 +159,73 @@ struct patron_session {
   VALUE pending_errinfo;
 
   volatile sig_atomic_t interrupt;
+};
+
+struct patron_session {
+  VALUE self;                         /* back-pointer for write barriers, never marked */
+  CURLM *multi;
+  CURL *base;                         /* template; every request is a curl_easy_duphandle() of it */
+  CURLSH *share;
+  pthread_mutex_t share_locks[CURL_LOCK_DATA_LAST];
+  pid_t pid;                          /* handles must not be reused across fork() */
+  VALUE debug_io;                     /* IO receiving CURLOPT_VERBOSE output, or nil */
+  VALUE socket_ios;                   /* fd => IO wrapping one of libcurl's sockets, for the Fiber scheduler */
+
+  struct patron_transfer *transfers;  /* in flight, in slot order; one for a plain request */
+  int next_slot;
+  int pack;                           /* a Patron::Multi is open: many transfers, driven from Ruby */
+
+  /* Who is driving the transfers */
+  VALUE owner;                        /* the Fiber that started them */
+  VALUE owner_thread;                 /* and its Thread */
+  int in_scheduler_wait;              /* the owner is parked in the Fiber scheduler by wait_with_scheduler() */
   volatile sig_atomic_t busy;
 };
 
 /*----------------------------------------------------------------------------*/
 /* TypedData                                                                  */
 
+/* Releases a transfer's libcurl side. No Ruby may run from here on when called from dfree. */
+static void transfer_release(struct patron_session *s, struct patron_transfer *t) {
+  if (t->easy) {
+    curl_easy_setopt(t->easy, CURLOPT_VERBOSE, 0L);
+    curl_easy_setopt(t->easy, CURLOPT_NOPROGRESS, 1L);
+    if (s->multi) curl_multi_remove_handle(s->multi, t->easy);
+    curl_easy_cleanup(t->easy);
+    t->easy = NULL;
+  }
+  if (t->mime) {
+    curl_mime_free(t->mime);
+    t->mime = NULL;
+  }
+  if (t->headers) {
+    curl_slist_free_all(t->headers);
+    t->headers = NULL;
+  }
+  if (t->resolve) {
+    curl_slist_free_all(t->resolve);
+    t->resolve = NULL;
+  }
+  if (t->request_body_file) {
+    fclose(t->request_body_file);
+    t->request_body_file = NULL;
+  }
+}
+
 static void session_free(void *ptr) {
   struct patron_session *s = ptr;
+  struct patron_transfer *t, *next;
   int i;
 
   /* A stream abandoned with its Fiber is still in flight here. No Ruby may run from this
    * point on, and debug_cb would write to an IO that may have been collected already. */
   s->debug_io = Qnil;
-  if (s->easy) {
-    curl_easy_setopt(s->easy, CURLOPT_VERBOSE, 0L);
-    curl_easy_setopt(s->easy, CURLOPT_NOPROGRESS, 1L);
-    if (s->multi) curl_multi_remove_handle(s->multi, s->easy);
-    curl_easy_cleanup(s->easy);
+  for (t = s->transfers; t; t = next) {
+    next = t->next;
+    transfer_release(s, t);
+    ruby_xfree(t);
   }
-  if (s->mime) curl_mime_free(s->mime);
-  if (s->headers) curl_slist_free_all(s->headers);
-  if (s->request_body_file) fclose(s->request_body_file);
+  s->transfers = NULL;
   if (s->multi) curl_multi_cleanup(s->multi);
   if (s->base) curl_easy_cleanup(s->base);
   if (s->share) curl_share_cleanup(s->share);
@@ -182,47 +235,58 @@ static void session_free(void *ptr) {
 
 static void session_mark(void *ptr) {
   struct patron_session *s = ptr;
+  struct patron_transfer *t;
 
   rb_gc_mark_movable(s->debug_io);
   rb_gc_mark_movable(s->socket_ios);
-  rb_gc_mark_movable(s->progress_proc);
-  rb_gc_mark_movable(s->header_buf);
-  rb_gc_mark_movable(s->body_buf);
-  rb_gc_mark_movable(s->upload_io);
-  rb_gc_mark_movable(s->upload_buf);
-  rb_gc_mark_movable(s->pending_errinfo);
-  rb_gc_mark_movable(s->read_buf);
   rb_gc_mark_movable(s->owner);
   rb_gc_mark_movable(s->owner_thread);
-  /* libcurl holds RSTRING_PTR() of this one for the whole transfer, and an embedded
-   * String keeps its bytes inside the object slot, so it must not be moved. */
-  rb_gc_mark(s->upload_data);
+  for (t = s->transfers; t; t = t->next) {
+    rb_gc_mark_movable(t->progress_proc);
+    rb_gc_mark_movable(t->header_buf);
+    rb_gc_mark_movable(t->body_buf);
+    rb_gc_mark_movable(t->upload_io);
+    rb_gc_mark_movable(t->upload_buf);
+    rb_gc_mark_movable(t->pending_errinfo);
+    rb_gc_mark_movable(t->read_buf);
+    /* libcurl holds RSTRING_PTR() of this one for the whole transfer, and an embedded
+     * String keeps its bytes inside the object slot, so it must not be moved. */
+    rb_gc_mark(t->upload_data);
+  }
 }
 
 static void session_compact(void *ptr) {
   struct patron_session *s = ptr;
+  struct patron_transfer *t;
 
   s->debug_io = rb_gc_location(s->debug_io);
   s->socket_ios = rb_gc_location(s->socket_ios);
-  s->progress_proc = rb_gc_location(s->progress_proc);
-  s->header_buf = rb_gc_location(s->header_buf);
-  s->body_buf = rb_gc_location(s->body_buf);
-  s->upload_io = rb_gc_location(s->upload_io);
-  s->upload_buf = rb_gc_location(s->upload_buf);
-  s->pending_errinfo = rb_gc_location(s->pending_errinfo);
-  s->read_buf = rb_gc_location(s->read_buf);
   s->owner = rb_gc_location(s->owner);
   s->owner_thread = rb_gc_location(s->owner_thread);
+  for (t = s->transfers; t; t = t->next) {
+    t->progress_proc = rb_gc_location(t->progress_proc);
+    t->header_buf = rb_gc_location(t->header_buf);
+    t->body_buf = rb_gc_location(t->body_buf);
+    t->upload_io = rb_gc_location(t->upload_io);
+    t->upload_buf = rb_gc_location(t->upload_buf);
+    t->pending_errinfo = rb_gc_location(t->pending_errinfo);
+    t->read_buf = rb_gc_location(t->read_buf);
+  }
 }
 
 static size_t session_memsize(const void *ptr) {
+  const struct patron_session *s = ptr;
+  const struct patron_transfer *t;
+  size_t size = sizeof(struct patron_session);
+
   /* The Strings account for themselves; libcurl's own allocations are not visible. */
-  return sizeof(struct patron_session);
+  for (t = s->transfers; t; t = t->next) size += sizeof(struct patron_transfer);
+  return size;
 }
 
-/* RUBY_TYPED_EMBEDDABLE is deliberately not used: libcurl keeps pointers into this struct
- * (CURLOPT_XFERINFODATA, CURLOPT_ERRORBUFFER, CURLOPT_DEBUGDATA, the write/header userdata)
- * and an embedded struct moves under compaction. */
+/* RUBY_TYPED_EMBEDDABLE is deliberately not used: libcurl keeps a pointer to this struct
+ * (CURLSHOPT_USERDATA) and an embedded struct moves under compaction. The transfers are
+ * separate heap allocations for the same reason: libcurl keeps pointers into them. */
 static const rb_data_type_t patron_session_data_type = {
   .wrap_struct_name = "Patron::Session",
   .function = {
@@ -250,6 +314,49 @@ static struct patron_session *get_session(VALUE self) {
 }
 
 #define SESSION_WRITE(s, field, value) RB_OBJ_WRITE((s)->self, &(s)->field, (value))
+/* The transfer's VALUEs are reached through the Session's mark function, so the Session is
+ * the object the write barrier has to know about. */
+#define TRANSFER_WRITE(t, field, value) RB_OBJ_WRITE((t)->session->self, &(t)->field, (value))
+
+/* Appends a fresh transfer to the Session's list. Its libcurl side is set up by begin_transfer(). */
+static struct patron_transfer *transfer_new(struct patron_session *s) {
+  struct patron_transfer *t = ruby_xcalloc(1, sizeof(struct patron_transfer));
+  struct patron_transfer **tail;
+
+  t->session = s;
+  t->slot = s->next_slot++;
+  t->progress_proc = Qnil;
+  t->upload_data = Qnil;
+  t->header_buf = Qnil;
+  t->body_buf = Qnil;
+  t->upload_io = Qnil;
+  t->upload_buf = Qnil;
+  t->pending_errinfo = Qnil;
+  t->read_buf = Qnil;
+  t->request_content_length = -1;
+  t->read_limit = -1;
+  for (tail = &s->transfers; *tail; tail = &(*tail)->next);
+  *tail = t;
+  return t;
+}
+
+/* Unlinks and frees a transfer, Ruby references included. Only with the GVL held. */
+static void transfer_free(struct patron_session *s, struct patron_transfer *t) {
+  struct patron_transfer **link;
+
+  transfer_release(s, t);
+  TRANSFER_WRITE(t, progress_proc, Qnil);
+  TRANSFER_WRITE(t, upload_data, Qnil);
+  TRANSFER_WRITE(t, header_buf, Qnil);
+  TRANSFER_WRITE(t, body_buf, Qnil);
+  TRANSFER_WRITE(t, upload_io, Qnil);
+  TRANSFER_WRITE(t, upload_buf, Qnil);
+  TRANSFER_WRITE(t, read_buf, Qnil);
+  TRANSFER_WRITE(t, pending_errinfo, Qnil);
+  for (link = &s->transfers; *link && *link != t; link = &(*link)->next);
+  if (*link) *link = t->next;
+  ruby_xfree(t);
+}
 
 /*----------------------------------------------------------------------------*/
 /* Errors                                                                     */
@@ -293,23 +400,23 @@ static void raise_curl_error(VALUE klass, CURLcode code, const char *message) {
 /*----------------------------------------------------------------------------*/
 /* Deferred exceptions from inside libcurl callbacks                          */
 
-static void park_exception(struct patron_session *s, int tag) {
-  if (s->pending_tag) return;
-  s->pending_tag = tag;
-  SESSION_WRITE(s, pending_errinfo, rb_errinfo());
-  s->interrupt = INTERRUPT_ABORT;
+static void park_exception(struct patron_transfer *t, int tag) {
+  if (t->pending_tag) return;
+  t->pending_tag = tag;
+  TRANSFER_WRITE(t, pending_errinfo, rb_errinfo());
+  t->interrupt = INTERRUPT_ABORT;
 }
 
 /* A raise can be re-raised as such. A throw or a Thread#kill leaves a non-exception in
  * errinfo, which rb_set_errinfo refuses, so those jump by tag and rely on errinfo being
  * untouched since the callback parked it (nothing in between rescues). */
-NORETURN(static void reraise_parked(struct patron_session *s));
-static void reraise_parked(struct patron_session *s) {
-  int tag = s->pending_tag;
-  VALUE errinfo = s->pending_errinfo;
+NORETURN(static void reraise_parked(struct patron_transfer *t));
+static void reraise_parked(struct patron_transfer *t) {
+  int tag = t->pending_tag;
+  VALUE errinfo = t->pending_errinfo;
 
-  s->pending_tag = 0;
-  SESSION_WRITE(s, pending_errinfo, Qnil);
+  t->pending_tag = 0;
+  TRANSFER_WRITE(t, pending_errinfo, Qnil);
   if (RB_TYPE_P(errinfo, T_OBJECT) && rb_obj_is_kind_of(errinfo, rb_eException)) rb_exc_raise(errinfo);
   rb_jump_tag(tag);
 }
@@ -329,13 +436,13 @@ static VALUE append_protected(VALUE arg) {
   return Qnil;
 }
 
-static size_t append_to_string(struct patron_session *s, VALUE str, const char *ptr, size_t len) {
+static size_t append_to_string(struct patron_transfer *t, VALUE str, const char *ptr, size_t len) {
   struct append_args args = { str, ptr, len };
   int tag = 0;
 
   rb_protect(append_protected, (VALUE)&args, &tag);
   if (tag) {
-    park_exception(s, tag);
+    park_exception(t, tag);
     return 0;
   }
   return len;
@@ -347,10 +454,10 @@ static double monotonic_now(void) {
   return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
 }
 
-static void mark_head_complete(struct patron_session *s) {
-  if (s->head_complete) return;
-  s->head_complete = 1;
-  s->head_length = NIL_P(s->header_buf) ? 0 : RSTRING_LEN(s->header_buf);
+static void mark_head_complete(struct patron_transfer *t) {
+  if (t->head_complete) return;
+  t->head_complete = 1;
+  t->head_length = NIL_P(t->header_buf) ? 0 : RSTRING_LEN(t->header_buf);
 }
 
 /* libcurl drops the bodies of the redirects it follows and 1xx responses have none, so the
@@ -362,45 +469,45 @@ static void mark_head_complete(struct patron_session *s) {
  * already. Outside of transfer_read there is no String to write to, so the transfer pauses
  * without taking anything. */
 static size_t body_write_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
-  struct patron_session *s = userdata;
+  struct patron_transfer *t = userdata;
   size_t len = size * nmemb;
   size_t taken = 0, room, n;
   long cur;
 
-  mark_head_complete(s);
-  s->last_activity = monotonic_now();
-  if (!s->streaming) return append_to_string(s, s->body_buf, ptr, len);
+  mark_head_complete(t);
+  t->last_activity = monotonic_now();
+  if (!t->streaming) return append_to_string(t, t->body_buf, ptr, len);
 
-  if (s->redeliver_skip) {
-    if (s->redeliver_skip >= len) {
-      s->redeliver_skip -= len;
+  if (t->redeliver_skip) {
+    if (t->redeliver_skip >= len) {
+      t->redeliver_skip -= len;
       return len;
     }
-    taken = s->redeliver_skip;
-    s->redeliver_skip = 0;
+    taken = t->redeliver_skip;
+    t->redeliver_skip = 0;
   }
 
-  if (NIL_P(s->read_buf)) {
-    s->redeliver_skip = taken;
-    s->paused = 1;
+  if (NIL_P(t->read_buf)) {
+    t->redeliver_skip = taken;
+    t->paused = 1;
     return CURL_WRITEFUNC_PAUSE;
   }
 
-  if (s->read_limit < 0) {
-    if (append_to_string(s, s->read_buf, ptr + taken, len - taken) != len - taken) return 0;
+  if (t->read_limit < 0) {
+    if (append_to_string(t, t->read_buf, ptr + taken, len - taken) != len - taken) return 0;
     return len;
   }
 
-  cur = RSTRING_LEN(s->read_buf);
-  room = s->read_limit > cur ? (size_t)(s->read_limit - cur) : 0;
+  cur = RSTRING_LEN(t->read_buf);
+  room = t->read_limit > cur ? (size_t)(t->read_limit - cur) : 0;
   n = len - taken < room ? len - taken : room;
   if (n) {
-    memcpy(RSTRING_PTR(s->read_buf) + cur, ptr + taken, n);
-    rb_str_set_len(s->read_buf, cur + (long)n);
+    memcpy(RSTRING_PTR(t->read_buf) + cur, ptr + taken, n);
+    rb_str_set_len(t->read_buf, cur + (long)n);
   }
   if (taken + n < len) {
-    s->redeliver_skip = taken + n;
-    s->paused = 1;
+    t->redeliver_skip = taken + n;
+    t->paused = 1;
     return CURL_WRITEFUNC_PAUSE;
   }
   return len;
@@ -410,43 +517,43 @@ static size_t body_write_cb(char *ptr, size_t size, size_t nmemb, void *userdata
  * or retried, so nothing else can come before its body, and a long-poll or an event stream
  * gets its head before the first event. 3xx, 401 and 407 wait for the first body byte. */
 static size_t header_write_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
-  struct patron_session *s = userdata;
+  struct patron_transfer *t = userdata;
   size_t len = size * nmemb;
-  size_t written = append_to_string(s, s->header_buf, ptr, len);
+  size_t written = append_to_string(t, t->header_buf, ptr, len);
 
-  s->last_activity = monotonic_now();
-  if (!s->head_complete && ((len == 2 && ptr[0] == '\r' && ptr[1] == '\n') || (len == 1 && ptr[0] == '\n'))) {
+  t->last_activity = monotonic_now();
+  if (!t->head_complete && ((len == 2 && ptr[0] == '\r' && ptr[1] == '\n') || (len == 1 && ptr[0] == '\n'))) {
     long code = 0;
-    curl_easy_getinfo(s->easy, CURLINFO_RESPONSE_CODE, &code);
-    if (code >= 200 && code < 300) mark_head_complete(s);
+    curl_easy_getinfo(t->easy, CURLINFO_RESPONSE_CODE, &code);
+    if (code >= 200 && code < 300) mark_head_complete(t);
   }
   return written;
 }
 
 static size_t file_read_cb(char *buffer, size_t size, size_t nitems, void *userdata) {
-  struct patron_session *s = userdata;
-  if (s->interrupt) return CURL_READFUNC_ABORT;
-  return fread(buffer, 1, size * nitems, s->request_body_file);
+  struct patron_transfer *t = userdata;
+  if (t->interrupt) return CURL_READFUNC_ABORT;
+  return fread(buffer, 1, size * nitems, t->request_body_file);
 }
 
 /* Same as io_seek_cb(): a failed rewind has to fail the request, not empty the body */
 static int file_seek_cb(void *userdata, curl_off_t offset, int origin) {
-  struct patron_session *s = userdata;
+  struct patron_transfer *t = userdata;
 
-  if (fseeko(s->request_body_file, (off_t)offset, origin) == 0) return CURL_SEEKFUNC_OK;
-  s->interrupt = INTERRUPT_REWIND_FAILED;
+  if (fseeko(t->request_body_file, (off_t)offset, origin) == 0) return CURL_SEEKFUNC_OK;
+  t->interrupt = INTERRUPT_REWIND_FAILED;
   return CURL_SEEKFUNC_FAIL;
 }
 
 struct io_read_args {
-  struct patron_session *s;
+  struct patron_transfer *t;
   size_t len;
 };
 
 static VALUE io_readpartial(VALUE arg) {
   struct io_read_args *a = (struct io_read_args *)arg;
-  VALUE argv[2] = { SIZET2NUM(a->len), a->s->upload_buf };
-  return rb_funcallv(a->s->upload_io, id_readpartial, 2, argv);
+  VALUE argv[2] = { SIZET2NUM(a->len), a->t->upload_buf };
+  return rb_funcallv(a->t->upload_io, id_readpartial, 2, argv);
 }
 
 static VALUE io_readpartial_eof(VALUE arg, VALUE err) {
@@ -455,14 +562,14 @@ static VALUE io_readpartial_eof(VALUE arg, VALUE err) {
 
 static VALUE io_read_protected(VALUE arg) {
   struct io_read_args *a = (struct io_read_args *)arg;
-  struct patron_session *s = a->s;
-  VALUE argv[2] = { SIZET2NUM(a->len), s->upload_buf };
+  struct patron_transfer *t = a->t;
+  VALUE argv[2] = { SIZET2NUM(a->len), t->upload_buf };
   VALUE chunk;
 
-  if (s->upload_io_partial) {
+  if (t->upload_io_partial) {
     chunk = rb_rescue2(io_readpartial, arg, io_readpartial_eof, Qnil, rb_eEOFError, (VALUE)0);
   } else {
-    chunk = rb_funcallv(s->upload_io, id_read, 2, argv);
+    chunk = rb_funcallv(t->upload_io, id_read, 2, argv);
   }
 
   if (NIL_P(chunk)) return Qnil;
@@ -481,15 +588,15 @@ static VALUE io_read_protected(VALUE arg) {
  * with an EOFError rather than nil. Under a Fiber scheduler a blocking read yields to it like
  * any other IO in the fiber. */
 static size_t io_read_cb(char *buffer, size_t size, size_t nitems, void *userdata) {
-  struct patron_session *s = userdata;
-  struct io_read_args args = { s, size * nitems };
+  struct patron_transfer *t = userdata;
+  struct io_read_args args = { t, size * nitems };
   int tag = 0;
   VALUE chunk;
 
-  if (s->interrupt) return CURL_READFUNC_ABORT;
+  if (t->interrupt) return CURL_READFUNC_ABORT;
   chunk = rb_protect(io_read_protected, (VALUE)&args, &tag);
   if (tag) {
-    park_exception(s, tag);
+    park_exception(t, tag);
     return CURL_READFUNC_ABORT;
   }
   if (NIL_P(chunk)) return 0;
@@ -498,7 +605,7 @@ static size_t io_read_cb(char *buffer, size_t size, size_t nitems, void *userdat
 }
 
 struct io_seek_args {
-  struct patron_session *s;
+  struct patron_transfer *t;
   curl_off_t offset;
   int origin;
 };
@@ -506,7 +613,7 @@ struct io_seek_args {
 /* IO::SEEK_SET and friends are the C SEEK_* values, so origin passes through as-is */
 static VALUE io_seek_protected(VALUE arg) {
   struct io_seek_args *a = (struct io_seek_args *)arg;
-  VALUE io = a->s->upload_io;
+  VALUE io = a->t->upload_io;
 
   if (rb_respond_to(io, id_seek)) {
     VALUE argv[2] = { OFFT2NUM(a->offset), INT2FIX(a->origin) };
@@ -526,12 +633,12 @@ static VALUE io_seek_protected(VALUE arg) {
  * libcurl 8.7 logs a failed rewind and then follows the redirect with an empty body
  * anyway, so we abort the transfer ourselves rather than trust it to. */
 static int io_seek_cb(void *userdata, curl_off_t offset, int origin) {
-  struct patron_session *s = userdata;
-  struct io_seek_args args = { s, offset, origin };
+  struct patron_transfer *t = userdata;
+  struct io_seek_args args = { t, offset, origin };
   int tag = 0;
   VALUE seeked;
 
-  if (origin == SEEK_SET) args.offset += s->upload_io_origin;
+  if (origin == SEEK_SET) args.offset += t->upload_io_origin;
   seeked = rb_protect(io_seek_protected, (VALUE)&args, &tag);
   if (tag) {
     VALUE err = rb_errinfo();
@@ -539,49 +646,49 @@ static int io_seek_cb(void *userdata, curl_off_t offset, int origin) {
       rb_set_errinfo(Qnil);
       seeked = Qfalse;
     } else {
-      park_exception(s, tag);
+      park_exception(t, tag);
       return CURL_SEEKFUNC_FAIL;
     }
   }
   if (RTEST(seeked)) return CURL_SEEKFUNC_OK;
-  s->interrupt = INTERRUPT_REWIND_FAILED;
+  t->interrupt = INTERRUPT_REWIND_FAILED;
   return CURL_SEEKFUNC_CANTSEEK;
 }
 
 struct progress_args {
-  struct patron_session *s;
+  struct patron_transfer *t;
   curl_off_t dltotal, dlnow, ultotal, ulnow;
 };
 
 static VALUE progress_protected(VALUE arg) {
   struct progress_args *a = (struct progress_args *)arg;
   VALUE argv[4] = { LL2NUM(a->dltotal), LL2NUM(a->dlnow), LL2NUM(a->ultotal), LL2NUM(a->ulnow) };
-  return rb_proc_call_with_block(a->s->progress_proc, 4, argv, Qnil);
+  return rb_proc_call_with_block(a->t->progress_proc, 4, argv, Qnil);
 }
 
 /* Non-zero return aborts the transfer with CURLE_ABORTED_BY_CALLBACK. */
 static int xferinfo_cb(void *userdata, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow) {
-  struct patron_session *s = userdata;
+  struct patron_transfer *t = userdata;
 
-  if (s->interrupt) return 1;
+  if (t->interrupt) return 1;
 
-  if (s->download_byte_limit > 0 && (dltotal > s->download_byte_limit || dlnow > s->download_byte_limit)) {
-    s->interrupt = INTERRUPT_DOWNLOAD_OVERFLOW;
+  if (t->download_byte_limit > 0 && (dltotal > t->download_byte_limit || dlnow > t->download_byte_limit)) {
+    t->interrupt = INTERRUPT_DOWNLOAD_OVERFLOW;
     return 1;
   }
 
-  if (!NIL_P(s->progress_proc)) {
-    struct progress_args args = { s, dltotal, dlnow, ultotal, ulnow };
+  if (!NIL_P(t->progress_proc)) {
+    struct progress_args args = { t, dltotal, dlnow, ultotal, ulnow };
     int tag = 0;
     VALUE result = rb_protect(progress_protected, (VALUE)&args, &tag);
 
     if (tag) {
-      park_exception(s, tag);
+      park_exception(t, tag);
       return 1;
     }
     /* Only an explicit false aborts; a callback that happens to end in nil keeps going. */
     if (result == Qfalse) {
-      s->interrupt = INTERRUPT_ABORT;
+      t->interrupt = INTERRUPT_ABORT;
       return 1;
     }
   }
@@ -607,12 +714,12 @@ static VALUE debug_protected(VALUE arg) {
 /* Mirrors what libcurl itself prints with CURLOPT_VERBOSE: informational text and the
  * headers in both directions, never the payload. */
 static int debug_cb(CURL *handle, curl_infotype type, char *data, size_t len, void *userdata) {
-  struct patron_session *s = userdata;
+  struct patron_transfer *t = userdata;
   const char *prefix;
   struct debug_args args;
   int tag = 0;
 
-  if (NIL_P(s->debug_io)) return 0;
+  if (NIL_P(t->session->debug_io)) return 0;
 
   switch (type) {
     case CURLINFO_TEXT:       prefix = "* "; break;
@@ -621,12 +728,12 @@ static int debug_cb(CURL *handle, curl_infotype type, char *data, size_t len, vo
     default:                  return 0;
   }
 
-  args.io = s->debug_io;
+  args.io = t->session->debug_io;
   args.prefix = prefix;
   args.data = data;
   args.len = len;
   rb_protect(debug_protected, (VALUE)&args, &tag);
-  if (tag) park_exception(s, tag);
+  if (tag) park_exception(t, tag);
   return 0;
 }
 
@@ -672,18 +779,15 @@ static void init_handles(struct patron_session *s) {
    * transfer at a time and is ready for concurrent transfers later. */
   curl_multi_setopt(s->multi, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);
 
+  /* The callbacks are set on the template; their userdata is the transfer, which every
+   * request handle gets pointed at right after curl_easy_duphandle(). */
   curl_easy_setopt(s->base, CURLOPT_SHARE, s->share);
   curl_easy_setopt(s->base, CURLOPT_WRITEFUNCTION, body_write_cb);
-  curl_easy_setopt(s->base, CURLOPT_WRITEDATA, s);
   curl_easy_setopt(s->base, CURLOPT_HEADERFUNCTION, header_write_cb);
-  curl_easy_setopt(s->base, CURLOPT_HEADERDATA, s);
   curl_easy_setopt(s->base, CURLOPT_NOSIGNAL, 1L);
   curl_easy_setopt(s->base, CURLOPT_NOPROGRESS, 0L);
   curl_easy_setopt(s->base, CURLOPT_XFERINFOFUNCTION, xferinfo_cb);
-  curl_easy_setopt(s->base, CURLOPT_XFERINFODATA, s);
   curl_easy_setopt(s->base, CURLOPT_DEBUGFUNCTION, debug_cb);
-  curl_easy_setopt(s->base, CURLOPT_DEBUGDATA, s);
-  curl_easy_setopt(s->base, CURLOPT_ERRORBUFFER, s->error_buf);
 
   /* Never let a URL or a redirect take us to gopher, smtp, file and friends. */
 #if LIBCURL_VERSION_NUM >= 0x075500
@@ -715,18 +819,9 @@ static VALUE session_alloc(VALUE klass) {
   s->self = obj;
   s->debug_io = Qnil;
   s->socket_ios = Qnil;
-  s->progress_proc = Qnil;
-  s->upload_data = Qnil;
-  s->header_buf = Qnil;
-  s->body_buf = Qnil;
-  s->upload_io = Qnil;
-  s->upload_buf = Qnil;
-  s->request_content_length = -1;
-  s->pending_errinfo = Qnil;
-  s->read_buf = Qnil;
   s->owner = Qnil;
   s->owner_thread = Qnil;
-  s->read_limit = -1;
+  s->transfers = NULL;
   init_handles(s);
   return obj;
 }
@@ -855,14 +950,15 @@ static int string_contains(VALUE str, const char *needle) {
   return 0;
 }
 
-static int each_http_header(VALUE key, VALUE value, VALUE self) {
-  struct patron_session *s = get_session(self);
+/* The rb_hash_foreach() argument is the transfer, cast; the Hash is pinned by the caller */
+static int each_http_header(VALUE key, VALUE value, VALUE arg) {
+  struct patron_transfer *t = (struct patron_transfer *)arg;
   VALUE name = rb_obj_as_string(key);
   VALUE line;
 
   /* "Accept-Encoding: gzip" also asks libcurl to inflate the response for us. */
   if (header_name_is(name, "Accept-Encoding") && string_contains(rb_obj_as_string(value), "gzip")) {
-    setopt_or_raise(s->easy, CURLOPT_ACCEPT_ENCODING, "gzip");
+    setopt_or_raise(t->easy, CURLOPT_ACCEPT_ENCODING, "gzip");
   }
 
   /* A streamed body of unknown size goes by these, see set_request_body_from_io() */
@@ -870,40 +966,48 @@ static int each_http_header(VALUE key, VALUE value, VALUE self) {
     VALUE length = rb_obj_as_string(value);
     char *end = NULL;
     long long parsed = strtoll(StringValueCStr(length), &end, 10);
-    if (end && *end == '\0' && parsed >= 0 && RSTRING_LEN(length) > 0) s->request_content_length = (curl_off_t)parsed;
+    if (end && *end == '\0' && parsed >= 0 && RSTRING_LEN(length) > 0) t->request_content_length = (curl_off_t)parsed;
   }
-  if (header_name_is(name, "Transfer-Encoding")) s->request_transfer_encoding = 1;
+  if (header_name_is(name, "Transfer-Encoding")) t->request_transfer_encoding = 1;
 
   line = rb_sprintf("%"PRIsVALUE": %"PRIsVALUE, name, value);
-  s->headers = curl_slist_append(s->headers, StringValueCStr(line));
+  t->headers = curl_slist_append(t->headers, StringValueCStr(line));
   return ST_CONTINUE;
 }
 
-static curl_mimepart *add_mime_part(struct patron_session *s, VALUE key) {
+/* "host:port" => "address" becomes libcurl's "host:port:address" */
+static int each_resolve_entry(VALUE key, VALUE value, VALUE arg) {
+  struct patron_transfer *t = (struct patron_transfer *)arg;
+  VALUE line = rb_sprintf("%"PRIsVALUE":%"PRIsVALUE, rb_obj_as_string(key), rb_obj_as_string(value));
+  t->resolve = curl_slist_append(t->resolve, StringValueCStr(line));
+  return ST_CONTINUE;
+}
+
+static curl_mimepart *add_mime_part(struct patron_transfer *t, VALUE key) {
   curl_mimepart *part;
   VALUE name = rb_obj_as_string(key);
 
-  if (!s->mime) s->mime = curl_mime_init(s->easy);
-  part = curl_mime_addpart(s->mime);
+  if (!t->mime) t->mime = curl_mime_init(t->easy);
+  part = curl_mime_addpart(t->mime);
   if (!part) rb_memerror();
   curl_mime_name(part, StringValueCStr(name));
   return part;
 }
 
-static int each_mime_value(VALUE key, VALUE value, VALUE self) {
-  struct patron_session *s = get_session(self);
+static int each_mime_value(VALUE key, VALUE value, VALUE arg) {
+  struct patron_transfer *t = (struct patron_transfer *)arg;
   VALUE str = rb_obj_as_string(value);
-  curl_mimepart *part = add_mime_part(s, key);
+  curl_mimepart *part = add_mime_part(t, key);
 
   /* curl_mime_data() copies, so the String may be collected right after this call. */
   curl_mime_data(part, RSTRING_PTR(str), (size_t)RSTRING_LEN(str));
   return ST_CONTINUE;
 }
 
-static int each_mime_file(VALUE key, VALUE value, VALUE self) {
-  struct patron_session *s = get_session(self);
+static int each_mime_file(VALUE key, VALUE value, VALUE arg) {
+  struct patron_transfer *t = (struct patron_transfer *)arg;
   VALUE path = rb_obj_as_string(value);
-  curl_mimepart *part = add_mime_part(s, key);
+  curl_mimepart *part = add_mime_part(t, key);
 
   FilePathValue(path);
   if (curl_mime_filedata(part, StringValueCStr(path)) != CURLE_OK) {
@@ -921,70 +1025,70 @@ static FILE *open_file(VALUE filename, const char *mode) {
   return handle;
 }
 
-static void set_request_body_from_file(struct patron_session *s, VALUE path) {
+static void set_request_body_from_file(struct patron_transfer *t, VALUE path) {
   struct stat st;
 
-  s->request_body_file = open_file(path, "rb");
-  if (fstat(fileno(s->request_body_file), &st) != 0) rb_sys_fail_str(path);
+  t->request_body_file = open_file(path, "rb");
+  if (fstat(fileno(t->request_body_file), &st) != 0) rb_sys_fail_str(path);
 
-  setopt_or_raise(s->easy, CURLOPT_UPLOAD, 1L);
-  setopt_or_raise(s->easy, CURLOPT_READFUNCTION, file_read_cb);
-  setopt_or_raise(s->easy, CURLOPT_READDATA, s);
-  setopt_or_raise(s->easy, CURLOPT_SEEKFUNCTION, file_seek_cb);
-  setopt_or_raise(s->easy, CURLOPT_SEEKDATA, s);
-  setopt_or_raise(s->easy, CURLOPT_INFILESIZE_LARGE, (curl_off_t)st.st_size);
+  setopt_or_raise(t->easy, CURLOPT_UPLOAD, 1L);
+  setopt_or_raise(t->easy, CURLOPT_READFUNCTION, file_read_cb);
+  setopt_or_raise(t->easy, CURLOPT_READDATA, t);
+  setopt_or_raise(t->easy, CURLOPT_SEEKFUNCTION, file_seek_cb);
+  setopt_or_raise(t->easy, CURLOPT_SEEKDATA, t);
+  setopt_or_raise(t->easy, CURLOPT_INFILESIZE_LARGE, (curl_off_t)st.st_size);
 }
 
 /* Size comes from #size when there is one (minus #pos, for a half-read StringIO), then from
  * a Content-Length header, and failing both the body goes out chunked. libcurl would pick
  * chunked by itself too, but it would then send it alongside an app-supplied Content-Length. */
-static void set_request_body_from_io(struct patron_session *s, VALUE io) {
+static void set_request_body_from_io(struct patron_transfer *t, VALUE io) {
   curl_off_t size = -1;
 
-  SESSION_WRITE(s, upload_io, io);
-  SESSION_WRITE(s, upload_buf, rb_str_buf_new(0));
-  s->upload_io_origin = 0;
-  s->upload_io_partial = rb_respond_to(io, id_readpartial);
+  TRANSFER_WRITE(t, upload_io, io);
+  TRANSFER_WRITE(t, upload_buf, rb_str_buf_new(0));
+  t->upload_io_origin = 0;
+  t->upload_io_partial = rb_respond_to(io, id_readpartial);
 
   if (rb_respond_to(io, id_size)) {
     VALUE value = rb_funcallv(io, id_size, 0, NULL);
     if (!NIL_P(value)) {
       size = NUM2OFFT(value);
       if (rb_respond_to(io, id_pos)) {
-        s->upload_io_origin = NUM2OFFT(rb_funcallv(io, id_pos, 0, NULL));
-        size = size > s->upload_io_origin ? size - s->upload_io_origin : 0;
+        t->upload_io_origin = NUM2OFFT(rb_funcallv(io, id_pos, 0, NULL));
+        size = size > t->upload_io_origin ? size - t->upload_io_origin : 0;
       }
     }
   }
-  if (size < 0) size = s->request_content_length;
-  if (size < 0 && !s->request_transfer_encoding) {
-    s->headers = curl_slist_append(s->headers, "Transfer-Encoding: chunked");
+  if (size < 0) size = t->request_content_length;
+  if (size < 0 && !t->request_transfer_encoding) {
+    t->headers = curl_slist_append(t->headers, "Transfer-Encoding: chunked");
   }
 
-  setopt_or_raise(s->easy, CURLOPT_UPLOAD, 1L);
-  setopt_or_raise(s->easy, CURLOPT_READFUNCTION, io_read_cb);
-  setopt_or_raise(s->easy, CURLOPT_READDATA, s);
-  setopt_or_raise(s->easy, CURLOPT_SEEKFUNCTION, io_seek_cb);
-  setopt_or_raise(s->easy, CURLOPT_SEEKDATA, s);
-  if (size >= 0) setopt_or_raise(s->easy, CURLOPT_INFILESIZE_LARGE, size);
+  setopt_or_raise(t->easy, CURLOPT_UPLOAD, 1L);
+  setopt_or_raise(t->easy, CURLOPT_READFUNCTION, io_read_cb);
+  setopt_or_raise(t->easy, CURLOPT_READDATA, t);
+  setopt_or_raise(t->easy, CURLOPT_SEEKFUNCTION, io_seek_cb);
+  setopt_or_raise(t->easy, CURLOPT_SEEKDATA, t);
+  if (size >= 0) setopt_or_raise(t->easy, CURLOPT_INFILESIZE_LARGE, size);
 }
 
 /* #to_path wins over #read so that a File keeps going through fread(). Every IO has a
  * #to_path since Ruby 3.2, which is nil for a pipe or a socket. */
-static void set_request_body(struct patron_session *s, VALUE stringable_or_file) {
+static void set_request_body(struct patron_transfer *t, VALUE stringable_or_file) {
   VALUE path = Qnil;
 
   if (rb_respond_to(stringable_or_file, id_to_path)) path = rb_funcallv(stringable_or_file, id_to_path, 0, NULL);
 
   if (!NIL_P(path)) {
-    set_request_body_from_file(s, rb_obj_as_string(path));
+    set_request_body_from_file(t, rb_obj_as_string(path));
   } else if (rb_respond_to(stringable_or_file, id_read)) {
-    set_request_body_from_io(s, stringable_or_file);
+    set_request_body_from_io(t, stringable_or_file);
   } else {
     VALUE data = rb_obj_as_string(stringable_or_file);
-    SESSION_WRITE(s, upload_data, data);
-    setopt_or_raise(s->easy, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)RSTRING_LEN(data));
-    setopt_or_raise(s->easy, CURLOPT_POSTFIELDS, RSTRING_PTR(data));
+    TRANSFER_WRITE(t, upload_data, data);
+    setopt_or_raise(t->easy, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)RSTRING_LEN(data));
+    setopt_or_raise(t->easy, CURLOPT_POSTFIELDS, RSTRING_PTR(data));
   }
 }
 
@@ -1000,14 +1104,14 @@ static long lookup_version(VALUE table, VALUE requested, VALUE error_class, cons
   return NUM2LONG(found);
 }
 
-static void set_string_option(struct patron_session *s, CURLoption option, VALUE value, int is_path) {
+static void set_string_option(struct patron_transfer *t, CURLoption option, VALUE value, int is_path) {
   VALUE str = is_path ? rb_funcallv(value, id_to_s, 0, NULL) : rb_obj_as_string(value);
   if (is_path) FilePathValue(str);
-  setopt_or_raise(s->easy, option, StringValueCStr(str));
+  setopt_or_raise(t->easy, option, StringValueCStr(str));
 }
 
-static void set_options_from_request(struct patron_session *s, VALUE request) {
-  VALUE self = s->self;
+static void set_options_from_request(struct patron_transfer *t, VALUE request) {
+  struct patron_session *s = t->session;
   CURL *easy;
   VALUE action_name, headers, url, value, upload_data, file_name;
   ID action;
@@ -1015,21 +1119,27 @@ static void set_options_from_request(struct patron_session *s, VALUE request) {
   easy = curl_easy_duphandle(s->base);
   if (!easy) rb_memerror();
   /* Assigned before anything can raise so that cleanup() releases it. */
-  s->easy = easy;
+  t->easy = easy;
   /* duphandle() hands back a handle "as if CURLOPT_SHARE was unset" (its man page), so the
    * share with the cookies and TLS sessions must be attached to every request handle anew. */
   curl_easy_setopt(easy, CURLOPT_SHARE, s->share);
+  curl_easy_setopt(easy, CURLOPT_PRIVATE, t);
+  curl_easy_setopt(easy, CURLOPT_WRITEDATA, t);
+  curl_easy_setopt(easy, CURLOPT_HEADERDATA, t);
+  curl_easy_setopt(easy, CURLOPT_XFERINFODATA, t);
+  curl_easy_setopt(easy, CURLOPT_DEBUGDATA, t);
+  curl_easy_setopt(easy, CURLOPT_ERRORBUFFER, t->error_buf);
 
   value = request_attr(request, id_download_byte_limit);
-  s->download_byte_limit = RTEST(value) ? NUM2OFFT(value) : 0;
+  t->download_byte_limit = RTEST(value) ? NUM2OFFT(value) : 0;
 
   value = request_attr(request, id_progress_callback);
-  SESSION_WRITE(s, progress_proc, rb_obj_is_proc(value) ? value : Qnil);
+  TRANSFER_WRITE(t, progress_proc, rb_obj_is_proc(value) ? value : Qnil);
 
   headers = request_attr(request, id_headers);
   if (RTEST(headers)) {
     Check_Type(headers, T_HASH);
-    rb_hash_foreach(headers, each_http_header, self);
+    rb_hash_foreach(headers, each_http_header, (VALUE)t);
   }
 
   if (RTEST(request_attr(request, id_force_ipv4))) {
@@ -1044,7 +1154,7 @@ static void set_options_from_request(struct patron_session *s, VALUE request) {
   if (action == id_get) {
     setopt_or_raise(easy, CURLOPT_HTTPGET, 1L);
     if (RTEST(upload_data)) {
-      set_request_body(s, upload_data);
+      set_request_body(t, upload_data);
       setopt_or_raise(easy, CURLOPT_CUSTOMREQUEST, "GET");
     }
     /* Downloads go through Session#get_file, which streams into the file from Ruby */
@@ -1058,27 +1168,27 @@ static void set_options_from_request(struct patron_session *s, VALUE request) {
     if (RTEST(multipart)) {
       if (RTEST(upload_data)) {
         Check_Type(upload_data, T_HASH);
-        rb_hash_foreach(upload_data, each_mime_value, self);
+        rb_hash_foreach(upload_data, each_mime_value, (VALUE)t);
       }
       if (RTEST(file_name)) {
         Check_Type(file_name, T_HASH);
-        rb_hash_foreach(file_name, each_mime_file, self);
+        rb_hash_foreach(file_name, each_mime_file, (VALUE)t);
       }
-      if (!s->mime) s->mime = curl_mime_init(easy);
-      setopt_or_raise(easy, CURLOPT_MIMEPOST, s->mime);
+      if (!t->mime) t->mime = curl_mime_init(easy);
+      setopt_or_raise(easy, CURLOPT_MIMEPOST, t->mime);
     } else if (RTEST(upload_data)) {
       if (action == id_post) setopt_or_raise(easy, CURLOPT_POST, 1L);
-      set_request_body(s, upload_data);
+      set_request_body(t, upload_data);
     } else if (RTEST(file_name)) {
-      s->headers = curl_slist_append(s->headers, "Transfer-Encoding: chunked");
-      set_request_body_from_file(s, rb_obj_as_string(file_name));
+      t->headers = curl_slist_append(t->headers, "Transfer-Encoding: chunked");
+      set_request_body_from_file(t, rb_obj_as_string(file_name));
     } else {
       rb_raise(rb_eArgError, "Must provide either data or a filename when doing a PUT, POST or PATCH");
     }
   } else if (action == id_delete) {
     if (RTEST(upload_data)) {
       setopt_or_raise(easy, CURLOPT_POST, 1L);
-      set_request_body(s, upload_data);
+      set_request_body(t, upload_data);
     }
     setopt_or_raise(easy, CURLOPT_CUSTOMREQUEST, "DELETE");
   } else if (action == id_head) {
@@ -1088,7 +1198,7 @@ static void set_options_from_request(struct patron_session *s, VALUE request) {
     setopt_or_raise(easy, CURLOPT_CUSTOMREQUEST, StringValueCStr(verb));
   }
 
-  setopt_or_raise(easy, CURLOPT_HTTPHEADER, s->headers);
+  setopt_or_raise(easy, CURLOPT_HTTPHEADER, t->headers);
 
   if (RTEST(request_attr(request, id_automatic_content_encoding))) {
     setopt_or_raise(easy, CURLOPT_ACCEPT_ENCODING, "");
@@ -1096,7 +1206,7 @@ static void set_options_from_request(struct patron_session *s, VALUE request) {
 
   url = request_attr(request, id_url);
   if (!RTEST(url)) rb_raise(rb_eArgError, "Must provide a URL");
-  set_string_option(s, CURLOPT_URL, url, 0);
+  set_string_option(t, CURLOPT_URL, url, 0);
 
   value = request_attr(request, id_timeout);
   if (RTEST(value)) setopt_or_raise(easy, CURLOPT_TIMEOUT_MS, seconds_to_milliseconds(value));
@@ -1121,7 +1231,7 @@ static void set_options_from_request(struct patron_session *s, VALUE request) {
   }
 
   value = request_attr(request, id_proxy);
-  if (RTEST(value)) set_string_option(s, CURLOPT_PROXY, value, 0);
+  if (RTEST(value)) set_string_option(t, CURLOPT_PROXY, value, 0);
 
   value = request_attr(request, id_proxy_type);
   if (RTEST(value)) setopt_or_raise(easy, CURLOPT_PROXYTYPE, NUM2LONG(value));
@@ -1129,7 +1239,7 @@ static void set_options_from_request(struct patron_session *s, VALUE request) {
   value = request_attr(request, id_credentials);
   if (RTEST(value)) {
     setopt_or_raise(easy, CURLOPT_HTTPAUTH, NUM2LONG(request_attr(request, id_auth_type)));
-    set_string_option(s, CURLOPT_USERPWD, value, 0);
+    set_string_option(t, CURLOPT_USERPWD, value, 0);
   }
 
   if (RTEST(request_attr(request, id_ignore_content_length))) {
@@ -1152,25 +1262,73 @@ static void set_options_from_request(struct patron_session *s, VALUE request) {
   }
 
   value = request_attr(request, id_ssl_cert);
-  if (RTEST(value)) set_string_option(s, CURLOPT_SSLCERT, value, 1);
+  if (RTEST(value)) set_string_option(t, CURLOPT_SSLCERT, value, 1);
 
   value = request_attr(request, id_ssl_cert_type);
-  if (RTEST(value)) set_string_option(s, CURLOPT_SSLCERTTYPE, value, 0);
+  if (RTEST(value)) set_string_option(t, CURLOPT_SSLCERTTYPE, value, 0);
 
   value = request_attr(request, id_ssl_key);
-  if (RTEST(value)) set_string_option(s, CURLOPT_SSLKEY, value, 1);
+  if (RTEST(value)) set_string_option(t, CURLOPT_SSLKEY, value, 1);
 
   value = request_attr(request, id_ssl_key_password);
-  if (RTEST(value)) set_string_option(s, CURLOPT_KEYPASSWD, value, 0);
+  if (RTEST(value)) set_string_option(t, CURLOPT_KEYPASSWD, value, 0);
 
   value = request_attr(request, id_cacert);
-  if (RTEST(value)) set_string_option(s, CURLOPT_CAINFO, value, 1);
+  if (RTEST(value)) set_string_option(t, CURLOPT_CAINFO, value, 1);
 
   value = request_attr(request, id_buffer_size);
   if (RTEST(value)) setopt_or_raise(easy, CURLOPT_BUFFERSIZE, NUM2LONG(value));
 
   value = request_attr(request, id_read_timeout);
-  s->read_timeout = RTEST(value) ? NUM2DBL(value) : 0.0;
+  t->read_timeout = RTEST(value) ? NUM2DBL(value) : 0.0;
+
+  /* libcurl drops a cached connection idle for 118 s unless told otherwise, which is what
+   * turns a warmed-up pool cold between two bursts of traffic */
+  value = request_attr(request, id_max_connection_age);
+  if (RTEST(value)) setopt_or_raise(easy, CURLOPT_MAXAGE_CONN, NUM2LONG(value));
+
+  value = request_attr(request, id_max_connection_lifetime);
+  if (RTEST(value)) setopt_or_raise(easy, CURLOPT_MAXLIFETIME_CONN, NUM2LONG(value));
+
+  value = request_attr(request, id_tcp_keepalive);
+  if (RTEST(value)) {
+    setopt_or_raise(easy, CURLOPT_TCP_KEEPALIVE, 1L);
+    setopt_or_raise(easy, CURLOPT_TCP_KEEPIDLE, NUM2LONG(value));
+    setopt_or_raise(easy, CURLOPT_TCP_KEEPINTVL, NUM2LONG(value));
+  }
+
+  value = request_attr(request, id_resolve);
+  if (RTEST(value)) {
+    Check_Type(value, T_HASH);
+    rb_hash_foreach(value, each_resolve_entry, (VALUE)t);
+    setopt_or_raise(easy, CURLOPT_RESOLVE, t->resolve);
+  }
+}
+
+/* What libcurl knows about the connection the response came over, for Response#connection */
+static VALUE create_connection_info(CURL *easy) {
+  VALUE info = rb_hash_new();
+  long version = 0, port = 0, connects = 0;
+  char *ip = NULL;
+  const char *name = NULL;
+
+  curl_easy_getinfo(easy, CURLINFO_HTTP_VERSION, &version);
+  curl_easy_getinfo(easy, CURLINFO_PRIMARY_IP, &ip);
+  curl_easy_getinfo(easy, CURLINFO_PRIMARY_PORT, &port);
+  curl_easy_getinfo(easy, CURLINFO_NUM_CONNECTS, &connects);
+
+  switch (version) {
+    case CURL_HTTP_VERSION_1_0: name = "HTTP/1.0"; break;
+    case CURL_HTTP_VERSION_1_1: name = "HTTP/1.1"; break;
+    case CURL_HTTP_VERSION_2_0: name = "HTTP/2"; break;
+    case CURL_HTTP_VERSION_3:   name = "HTTP/3"; break;
+    default: break;
+  }
+  rb_hash_aset(info, ID2SYM(id_http_version_kw), name ? rb_usascii_str_new_cstr(name) : Qnil);
+  rb_hash_aset(info, ID2SYM(id_ip_kw), ip && *ip ? rb_usascii_str_new_cstr(ip) : Qnil);
+  rb_hash_aset(info, ID2SYM(id_port_kw), LONG2NUM(port));
+  rb_hash_aset(info, ID2SYM(id_new_connections_kw), LONG2NUM(connects));
+  return info;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -1197,9 +1355,9 @@ static VALUE create_timings(CURL *easy) {
   return timings;
 }
 
-static VALUE create_response(struct patron_session *s) {
-  VALUE self = s->self;
-  CURL *easy = s->easy;
+static VALUE create_response(struct patron_transfer *t) {
+  VALUE self = t->session->self;
+  CURL *easy = t->easy;
   VALUE kwargs = rb_hash_new();
   char *effective_url = NULL;
   long code = 0;
@@ -1213,10 +1371,11 @@ static VALUE create_response(struct patron_session *s) {
   rb_hash_aset(kwargs, ID2SYM(id_url_kw), effective_url ? rb_usascii_str_new_cstr(effective_url) : Qnil);
   rb_hash_aset(kwargs, ID2SYM(id_status_kw), LONG2NUM(code));
   rb_hash_aset(kwargs, ID2SYM(id_redirect_count_kw), LONG2NUM(redirect_count));
-  rb_hash_aset(kwargs, ID2SYM(id_header_data_kw), s->header_buf);
-  rb_hash_aset(kwargs, ID2SYM(id_body_kw), s->body_buf);
+  rb_hash_aset(kwargs, ID2SYM(id_header_data_kw), t->header_buf);
+  rb_hash_aset(kwargs, ID2SYM(id_body_kw), t->body_buf);
   rb_hash_aset(kwargs, ID2SYM(id_default_charset_kw), rb_funcallv(self, id_default_response_charset, 0, NULL));
   rb_hash_aset(kwargs, ID2SYM(id_timings_kw), create_timings(easy));
+  rb_hash_aset(kwargs, ID2SYM(id_connection_kw), create_connection_info(easy));
 
   klass = rb_funcallv(self, id_response_class, 0, NULL);
   return rb_class_new_instance_kw(1, &kwargs, klass, RB_PASS_KEYWORDS);
@@ -1355,22 +1514,26 @@ enum drive_until {
   UNTIL_DATA,   /* some bytes landed in read_buf, or it is full */
 };
 
+/* Routes every CURLMSG_DONE to its transfer through CURLOPT_PRIVATE */
 static void collect_done(struct patron_session *s) {
   CURLMsg *msg;
   int remaining = 0;
 
   while ((msg = curl_multi_info_read(s->multi, &remaining))) {
-    if (msg->msg == CURLMSG_DONE && msg->easy_handle == s->easy) {
-      s->done = 1;
-      s->result = msg->data.result;
-    }
+    struct patron_transfer *t = NULL;
+
+    if (msg->msg != CURLMSG_DONE) continue;
+    curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, (char **)&t);
+    if (!t) continue;
+    t->done = 1;
+    t->result = msg->data.result;
   }
 }
 
-static int drive_should_stop(struct patron_session *s, enum drive_until until, long read_from) {
+static int drive_should_stop(struct patron_transfer *t, enum drive_until until, long read_from) {
   switch (until) {
-    case UNTIL_HEAD: return s->head_complete;
-    case UNTIL_DATA: return s->paused || RSTRING_LEN(s->read_buf) > read_from;
+    case UNTIL_HEAD: return t->head_complete;
+    case UNTIL_DATA: return t->paused || RSTRING_LEN(t->read_buf) > read_from;
     default:         return 0;
   }
 }
@@ -1378,7 +1541,8 @@ static int drive_should_stop(struct patron_session *s, enum drive_until until, l
 /* Drives the transfer until it is done or `until` holds. read_timeout is a deadline counted
  * from the last delivery, so the waits are capped at what is left of it. `read_from` is the
  * read_buf length that does not count as new data. */
-static void drive_transfer(struct patron_session *s, enum drive_until until, long read_from) {
+static void drive_transfer(struct patron_transfer *t, enum drive_until until, long read_from) {
+  struct patron_session *s = t->session;
   int running = 1;
   CURLMcode mc;
   /* Set per thread; a Session inside Async { } yields to it instead of blocking the thread */
@@ -1390,14 +1554,14 @@ static void drive_transfer(struct patron_session *s, enum drive_until until, lon
     mc = curl_multi_perform(s->multi, &running);
     if (mc != CURLM_OK) rb_raise(ePatronError, "%s", curl_multi_strerror(mc));
     collect_done(s);
-    if (s->pending_tag || s->interrupt) break;
-    if (!running) s->done = 1;
-    if (s->done || drive_should_stop(s, until, read_from)) break;
+    if (t->pending_tag || t->interrupt) break;
+    if (!running) t->done = 1;
+    if (t->done || drive_should_stop(t, until, read_from)) break;
 
-    if (s->read_timeout > 0) {
-      double left = s->last_activity + s->read_timeout - monotonic_now();
+    if (t->read_timeout > 0) {
+      double left = t->last_activity + t->read_timeout - monotonic_now();
       if (left <= 0) {
-        s->read_timed_out = 1;
+        t->read_timed_out = 1;
         break;
       }
       if (left * 1000.0 < (double)wait_ms) wait_ms = (long)(left * 1000.0) + 1;
@@ -1408,64 +1572,56 @@ static void drive_transfer(struct patron_session *s, enum drive_until until, lon
     } else {
       wait_with_scheduler(s, scheduler, wait_ms);
     }
-    if (s->interrupt) break;
+    if (t->interrupt) break;
   }
-  if (s->done) mark_head_complete(s);
+  if (t->done) mark_head_complete(t);
 }
 
 /* Raises whatever ended the transfer early, and the transfer's own failure when
  * `include_result` is set and it is done. */
-static void raise_if_failed(struct patron_session *s, int include_result) {
-  if (s->pending_tag) reraise_parked(s);
+static void raise_if_failed(struct patron_transfer *t, int include_result) {
+  if (t->pending_tag) reraise_parked(t);
 
-  if (s->interrupt == INTERRUPT_DOWNLOAD_OVERFLOW) {
+  if (t->interrupt == INTERRUPT_DOWNLOAD_OVERFLOW) {
     raise_curl_error(eDownloadLimitExceeded, CURLE_ABORTED_BY_CALLBACK, "Download byte limit exceeded");
   }
-  if (s->interrupt == INTERRUPT_REWIND_FAILED) {
+  if (t->interrupt == INTERRUPT_REWIND_FAILED) {
     raise_curl_error(ePatronError, CURLE_SEND_FAIL_REWIND, "The request body has to be sent again, but it cannot be rewound");
   }
-  if (s->interrupt) {
+  if (t->interrupt) {
     raise_curl_error(eAborted, CURLE_ABORTED_BY_CALLBACK, "Request interrupted");
   }
-  if (s->read_timed_out) {
+  if (t->read_timed_out) {
     char message[128];
-    snprintf(message, sizeof(message), "Read timeout: no data received for %.3g seconds", s->read_timeout);
+    snprintf(message, sizeof(message), "Read timeout: no data received for %.3g seconds", t->read_timeout);
     raise_curl_error(eTimeoutError, CURLE_OPERATION_TIMEDOUT, message);
   }
-  if (include_result && s->done && s->result != CURLE_OK) {
-    raise_curl_error(error_class_for(s->result), s->result, s->error_buf);
+  if (include_result && t->done && t->result != CURLE_OK) {
+    raise_curl_error(error_class_for(t->result), t->result, t->error_buf);
   }
 }
 
-/* Today's request setup plus curl_multi_add_handle(). Everything it allocates is released
- * by cleanup(), which the caller must make sure runs. */
-static void begin_transfer(struct patron_session *s, VALUE request, int streaming) {
+/* A fresh transfer, set up from the request and handed to libcurl. Everything it allocates
+ * is released by cleanup(), which the caller must make sure runs. */
+static struct patron_transfer *begin_transfer(struct patron_session *s, VALUE request, int streaming) {
+  struct patron_transfer *t = transfer_new(s);
   CURLMcode mc;
 
-  s->interrupt = 0;
   s->in_scheduler_wait = 0;
-  s->pending_tag = 0;
-  s->error_buf[0] = '\0';
-  s->streaming = streaming;
-  s->paused = 0;
-  s->head_complete = 0;
-  s->head_length = 0;
-  s->done = 0;
-  s->result = CURLE_OK;
-  s->read_timed_out = 0;
-  s->redeliver_skip = 0;
-  s->read_limit = -1;
-  SESSION_WRITE(s, header_buf, rb_str_buf_new(HEADER_BUFFER_INITIAL_CAPACITY));
-  SESSION_WRITE(s, body_buf, streaming ? Qnil : rb_str_buf_new(BODY_BUFFER_INITIAL_CAPACITY));
+  t->error_buf[0] = '\0';
+  t->streaming = streaming;
+  TRANSFER_WRITE(t, header_buf, rb_str_buf_new(HEADER_BUFFER_INITIAL_CAPACITY));
+  TRANSFER_WRITE(t, body_buf, streaming ? Qnil : rb_str_buf_new(BODY_BUFFER_INITIAL_CAPACITY));
 
-  set_options_from_request(s, request);
+  set_options_from_request(t, request);
   /* A proxy's "200 Connection established" would otherwise trip the early head trigger;
    * HeaderParser keeps only the last response anyway */
-  if (streaming) setopt_or_raise(s->easy, CURLOPT_SUPPRESS_CONNECT_HEADERS, 1L);
+  if (streaming) setopt_or_raise(t->easy, CURLOPT_SUPPRESS_CONNECT_HEADERS, 1L);
 
-  s->last_activity = monotonic_now();
-  mc = curl_multi_add_handle(s->multi, s->easy);
+  t->last_activity = monotonic_now();
+  mc = curl_multi_add_handle(s->multi, t->easy);
   if (mc != CURLM_OK) rb_raise(ePatronError, "%s", curl_multi_strerror(mc));
+  return t;
 }
 
 struct perform_args {
@@ -1475,61 +1631,32 @@ struct perform_args {
 
 static VALUE perform(VALUE ptr) {
   struct perform_args *args = (struct perform_args *)ptr;
-  struct patron_session *s = args->s;
+  struct patron_transfer *t;
 
-  begin_transfer(s, args->request, 0);
-  drive_transfer(s, UNTIL_DONE, 0);
-  raise_if_failed(s, 1);
+  t = begin_transfer(args->s, args->request, 0);
+  drive_transfer(t, UNTIL_DONE, 0);
+  raise_if_failed(t, 1);
 
   /* Write the cookies accumulated in the share out to the jar, if one is configured */
-  curl_easy_setopt(s->easy, CURLOPT_COOKIELIST, "FLUSH");
+  curl_easy_setopt(t->easy, CURLOPT_COOKIELIST, "FLUSH");
 
-  return create_response(s);
+  return create_response(t);
 }
 
 /* Runs under rb_ensure after every request, whether it finished, raised or was interrupted. */
 static VALUE cleanup(VALUE self) {
   struct patron_session *s = get_session(self);
 
-  if (s->easy) {
-    curl_multi_remove_handle(s->multi, s->easy);
-    curl_easy_cleanup(s->easy);
-    s->easy = NULL;
-  }
-  if (s->mime) {
-    curl_mime_free(s->mime);
-    s->mime = NULL;
-  }
-  if (s->headers) {
-    curl_slist_free_all(s->headers);
-    s->headers = NULL;
-  }
-  if (s->request_body_file) {
-    fclose(s->request_body_file);
-    s->request_body_file = NULL;
-  }
+  while (s->transfers) transfer_free(s, s->transfers);
 
-  SESSION_WRITE(s, progress_proc, Qnil);
-  SESSION_WRITE(s, upload_data, Qnil);
-  SESSION_WRITE(s, header_buf, Qnil);
-  SESSION_WRITE(s, body_buf, Qnil);
-  SESSION_WRITE(s, upload_io, Qnil);
-  SESSION_WRITE(s, upload_buf, Qnil);
-  SESSION_WRITE(s, read_buf, Qnil);
   SESSION_WRITE(s, owner, Qnil);
   SESSION_WRITE(s, owner_thread, Qnil);
   s->in_scheduler_wait = 0;
   /* An aborted transfer closes its socket, and the next one tends to get the same number. Handed
    * the same IO again, io-event's epoll selector takes it for still registered and never wakes. */
   if (!NIL_P(s->socket_ios)) rb_hash_clear(s->socket_ios);
-  s->upload_io_origin = 0;
-  s->upload_io_partial = 0;
-  s->request_content_length = -1;
-  s->request_transfer_encoding = 0;
-  s->download_byte_limit = 0;
-  s->streaming = 0;
-  s->paused = 0;
-  s->read_timeout = 0.0;
+  if (s->pack && s->multi) curl_multi_setopt(s->multi, CURLMOPT_MAX_TOTAL_CONNECTIONS, 0L);
+  s->pack = 0;
   s->busy = 0;
   return Qnil;
 }
@@ -1567,18 +1694,11 @@ static VALUE session_handle_request(VALUE self, VALUE request) {
 /* Streaming primitives. Session#stream calls them in order inside one begin/ensure:
  * transfer_start, any number of transfer_read, transfer_finish. */
 
-static VALUE start_stream(VALUE ptr) {
-  struct perform_args *args = (struct perform_args *)ptr;
-  struct patron_session *s = args->s;
-  CURL *easy;
+static VALUE head_of(struct patron_transfer *t) {
+  CURL *easy = t->easy;
   char *effective_url = NULL;
   long code = 0, redirect_count = 0;
 
-  begin_transfer(s, args->request, 1);
-  drive_transfer(s, UNTIL_HEAD, 0);
-  raise_if_failed(s, 1);
-
-  easy = s->easy;
   curl_easy_getinfo(easy, CURLINFO_EFFECTIVE_URL, &effective_url);
   curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &code);
   curl_easy_getinfo(easy, CURLINFO_REDIRECT_COUNT, &redirect_count);
@@ -1586,7 +1706,17 @@ static VALUE start_stream(VALUE ptr) {
     LONG2NUM(code),
     effective_url ? rb_usascii_str_new_cstr(effective_url) : Qnil,
     LONG2NUM(redirect_count),
-    rb_str_subseq(s->header_buf, 0, s->head_length));
+    rb_str_subseq(t->header_buf, 0, t->head_length));
+}
+
+static VALUE start_stream(VALUE ptr) {
+  struct perform_args *args = (struct perform_args *)ptr;
+  struct patron_transfer *t;
+
+  t = begin_transfer(args->s, args->request, 1);
+  drive_transfer(t, UNTIL_HEAD, 0);
+  raise_if_failed(t, 1);
+  return head_of(t);
 }
 
 /*
@@ -1614,16 +1744,17 @@ static VALUE session_transfer_start(VALUE self, VALUE request) {
   return head;
 }
 
-static struct patron_session *open_stream(VALUE self) {
+static struct patron_transfer *open_stream(VALUE self) {
   struct patron_session *s = get_session(self);
+  struct patron_transfer *t = s->transfers;
 
-  if (!s->easy || !s->streaming) rb_raise(ePatronError, "No streamed transfer is open on this Session");
+  if (!t || !t->easy || !t->streaming || s->pack) rb_raise(ePatronError, "No streamed transfer is open on this Session");
   if (s->owner != rb_fiber_current()) rb_raise(ePatronError, "The streamed transfer belongs to another thread or fiber");
-  return s;
+  return t;
 }
 
 struct read_args {
-  struct patron_session *s;
+  struct patron_transfer *t;
   long maxlen;  /* -1 for whatever the next deliveries bring */
   long keep;    /* bytes at the start of buf to leave alone */
   VALUE buf;
@@ -1631,36 +1762,53 @@ struct read_args {
 
 static VALUE read_into_buf(VALUE ptr) {
   struct read_args *a = (struct read_args *)ptr;
-  struct patron_session *s = a->s;
+  struct patron_transfer *t = a->t;
   long placed;
 
-  if (s->paused) {
+  if (t->paused) {
     CURLcode rc;
-    s->paused = 0;
-    s->last_activity = monotonic_now();
+    t->paused = 0;
+    t->last_activity = monotonic_now();
     /* This may deliver the paused bytes right here, before any curl_multi_perform() */
-    rc = curl_easy_pause(s->easy, CURLPAUSE_CONT);
-    if (rc != CURLE_OK) raise_curl_error(error_class_for(rc), rc, s->error_buf);
+    rc = curl_easy_pause(t->easy, CURLPAUSE_CONT);
+    if (rc != CURLE_OK) raise_curl_error(error_class_for(rc), rc, t->error_buf);
   }
 
-  if (!s->paused && RSTRING_LEN(a->buf) == a->keep && !s->done) {
-    s->last_activity = monotonic_now();
-    drive_transfer(s, UNTIL_DATA, a->keep);
+  if (!t->paused && RSTRING_LEN(a->buf) == a->keep && !t->done) {
+    t->last_activity = monotonic_now();
+    drive_transfer(t, UNTIL_DATA, a->keep);
   }
 
   placed = RSTRING_LEN(a->buf) - a->keep;
-  raise_if_failed(s, placed == 0);
-  if (placed == 0 && s->done) return Qnil;
+  raise_if_failed(t, placed == 0);
+  if (placed == 0 && t->done) return Qnil;
   return LONG2NUM(placed);
 }
 
 static VALUE read_done(VALUE ptr) {
   struct read_args *a = (struct read_args *)ptr;
-  SESSION_WRITE(a->s, read_buf, Qnil);
+  TRANSFER_WRITE(a->t, read_buf, Qnil);
   /* An exception out of the scheduler wait leaves it set, and the stream's own
    * ensure blocks run before transfer_finish gets to cleanup() */
-  a->s->in_scheduler_wait = 0;
+  a->t->session->in_scheduler_wait = 0;
   return Qnil;
+}
+
+/* Validates and prepares the caller's String for libcurl to write into */
+static void prepare_read_buf(struct patron_transfer *t, struct read_args *args, VALUE maxlen, VALUE buf, VALUE keep) {
+  StringValue(buf);
+  args->t = t;
+  args->buf = buf;
+  args->maxlen = NIL_P(maxlen) ? -1 : NUM2LONG(maxlen);
+  args->keep = NIL_P(keep) ? 0 : NUM2LONG(keep);
+  if (args->maxlen < -1) rb_raise(rb_eArgError, "negative length %ld given", args->maxlen);
+  if (args->keep < 0 || args->keep > RSTRING_LEN(buf)) rb_raise(rb_eArgError, "keep out of range");
+
+  /* A frozen or shared String raises or gets its own copy here, rather than being scribbled on */
+  rb_str_modify(buf);
+  rb_str_set_len(buf, args->keep);
+  if (ENCODING_GET(buf) != rb_ascii8bit_encindex()) rb_enc_associate_index(buf, rb_ascii8bit_encindex());
+  if (args->maxlen > 0) rb_str_modify_expand(buf, args->maxlen);
 }
 
 /*
@@ -1675,48 +1823,36 @@ static VALUE read_done(VALUE ptr) {
  * @return [Integer, nil] the bytes placed, nil at the end of the body
  */
 static VALUE session_transfer_read(int argc, VALUE *argv, VALUE self) {
-  struct patron_session *s = open_stream(self);
+  struct patron_transfer *t = open_stream(self);
   VALUE maxlen, buf, keep;
   struct read_args args;
 
   rb_scan_args(argc, argv, "21", &maxlen, &buf, &keep);
-  StringValue(buf);
-  args.s = s;
-  args.buf = buf;
-  args.maxlen = NIL_P(maxlen) ? -1 : NUM2LONG(maxlen);
-  args.keep = NIL_P(keep) ? 0 : NUM2LONG(keep);
-  if (args.maxlen < -1) rb_raise(rb_eArgError, "negative length %ld given", args.maxlen);
-  if (args.keep < 0 || args.keep > RSTRING_LEN(buf)) rb_raise(rb_eArgError, "keep out of range");
-
-  /* A frozen or shared String raises or gets its own copy here, rather than being scribbled on */
-  rb_str_modify(buf);
-  rb_str_set_len(buf, args.keep);
-  if (ENCODING_GET(buf) != rb_ascii8bit_encindex()) rb_enc_associate_index(buf, rb_ascii8bit_encindex());
+  prepare_read_buf(t, &args, maxlen, buf, keep);
   if (args.maxlen == 0) return INT2FIX(0);
-  if (args.maxlen > 0) rb_str_modify_expand(buf, args.maxlen);
 
-  s->read_limit = args.maxlen < 0 ? -1 : args.keep + args.maxlen;
-  SESSION_WRITE(s, read_buf, buf);
+  t->read_limit = args.maxlen < 0 ? -1 : args.keep + args.maxlen;
+  TRANSFER_WRITE(t, read_buf, buf);
   return rb_ensure(read_into_buf, (VALUE)&args, read_done, (VALUE)&args);
 }
 
 static VALUE finish_stream(VALUE ptr) {
-  struct patron_session *s = (struct patron_session *)ptr;
+  struct patron_transfer *t = (struct patron_transfer *)ptr;
   curl_off_t downloaded = 0, uploaded = 0;
-  int complete = s->done && s->result == CURLE_OK && !s->interrupt && !s->pending_tag;
+  int complete = t->done && t->result == CURLE_OK && !t->interrupt && !t->pending_tag;
   VALUE trailer_data;
 
-  curl_easy_getinfo(s->easy, CURLINFO_SIZE_DOWNLOAD_T, &downloaded);
-  curl_easy_getinfo(s->easy, CURLINFO_SIZE_UPLOAD_T, &uploaded);
-  if (complete && RSTRING_LEN(s->header_buf) > s->head_length) {
-    trailer_data = rb_str_subseq(s->header_buf, s->head_length, RSTRING_LEN(s->header_buf) - s->head_length);
+  curl_easy_getinfo(t->easy, CURLINFO_SIZE_DOWNLOAD_T, &downloaded);
+  curl_easy_getinfo(t->easy, CURLINFO_SIZE_UPLOAD_T, &uploaded);
+  if (complete && RSTRING_LEN(t->header_buf) > t->head_length) {
+    trailer_data = rb_str_subseq(t->header_buf, t->head_length, RSTRING_LEN(t->header_buf) - t->head_length);
   } else {
     trailer_data = rb_str_new(NULL, 0);
   }
-  curl_easy_setopt(s->easy, CURLOPT_COOKIELIST, "FLUSH");
+  curl_easy_setopt(t->easy, CURLOPT_COOKIELIST, "FLUSH");
 
-  return rb_ary_new_from_args(5, LL2NUM(downloaded), LL2NUM(uploaded), create_timings(s->easy),
-                              complete ? Qtrue : Qfalse, trailer_data);
+  return rb_ary_new_from_args(6, LL2NUM(downloaded), LL2NUM(uploaded), create_timings(t->easy),
+                              complete ? Qtrue : Qfalse, trailer_data, create_connection_info(t->easy));
 }
 
 /*
@@ -1725,13 +1861,326 @@ static VALUE finish_stream(VALUE ptr) {
  *
  * @api private
  * @return [Array, nil] downloaded bytes, uploaded bytes, timings, whether the transfer completed,
- *   and the raw trailer lines
+ *   the raw trailer lines and the connection info
  */
 static VALUE session_transfer_finish(VALUE self) {
   struct patron_session *s = get_session(self);
+  struct patron_transfer *t = s->transfers;
 
-  if (!s->easy || !s->streaming || s->owner != rb_fiber_current()) return Qnil;
-  return rb_ensure(finish_stream, (VALUE)s, cleanup, self);
+  if (!t || !t->easy || !t->streaming || s->pack || s->owner != rb_fiber_current()) return Qnil;
+  return rb_ensure(finish_stream, (VALUE)t, cleanup, self);
+}
+
+/*----------------------------------------------------------------------------*/
+/* Pack primitives. Patron::Multi keeps the transfers' Ruby side and calls these: multi_open once,
+ * multi_add per request, multi_drive in a loop, multi_head/multi_read for streams, multi_collect
+ * for every transfer that is done, multi_close when it is over. The loop stays in Ruby because
+ * between two drives it resumes the stream blocks' fibers, and those are Ruby. */
+
+static struct patron_session *open_pack(VALUE self) {
+  struct patron_session *s = get_session(self);
+
+  if (!s->pack) rb_raise(ePatronError, "No pack is open on this Session");
+  if (s->owner_thread != rb_thread_current()) rb_raise(ePatronError, "The pack belongs to another thread");
+  return s;
+}
+
+static struct patron_transfer *slot_transfer(struct patron_session *s, VALUE slot) {
+  int wanted = NUM2INT(slot);
+  struct patron_transfer *t;
+
+  for (t = s->transfers; t; t = t->next) {
+    if (t->slot == wanted) return t;
+  }
+  rb_raise(ePatronError, "No transfer %d in this pack", wanted);
+}
+
+/*
+ * Claims the Session for a pack of transfers.
+ *
+ * @api private
+ * @param max_connections [Integer, nil] CURLMOPT_MAX_TOTAL_CONNECTIONS for the pack, nil for libcurl's default
+ * @return nil
+ */
+static VALUE session_multi_open(VALUE self, VALUE max_connections) {
+  struct patron_session *s = get_session(self);
+
+  raise_if_busy(s);
+  ensure_handles_for_this_process(s);
+  claim(s);
+  s->pack = 1;
+  curl_multi_setopt(s->multi, CURLMOPT_MAX_TOTAL_CONNECTIONS, NIL_P(max_connections) ? 0L : NUM2LONG(max_connections));
+  return Qnil;
+}
+
+struct add_args {
+  struct patron_session *s;
+  VALUE request;
+  int streaming;
+  struct patron_transfer *t;
+};
+
+static VALUE add_protected(VALUE ptr) {
+  struct add_args *a = (struct add_args *)ptr;
+  int running = 0;
+  CURLMcode mc;
+
+  a->t = begin_transfer(a->s, a->request, a->streaming);
+  /* Gets the transfer going (DNS, connect) without waiting for anything */
+  mc = curl_multi_perform(a->s->multi, &running);
+  if (mc != CURLM_OK) rb_raise(ePatronError, "%s", curl_multi_strerror(mc));
+  collect_done(a->s);
+  return INT2NUM(a->t->slot);
+}
+
+/*
+ * Starts one more transfer in the pack and returns its slot.
+ *
+ * @api private
+ * @param request [Patron::Request]
+ * @param streaming [Boolean] whether the body is read through multi_read rather than buffered
+ * @return [Integer] the slot the Ruby side refers to the transfer by
+ */
+static VALUE session_multi_add(VALUE self, VALUE request, VALUE streaming) {
+  struct patron_session *s = open_pack(self);
+  struct add_args args = { s, request, RTEST(streaming), NULL };
+  int state = 0;
+  VALUE slot;
+
+  slot = rb_protect(add_protected, (VALUE)&args, &state);
+  if (state) {
+    /* A request that could not be set up leaves nothing behind */
+    struct patron_transfer *t;
+    for (t = s->transfers; t && t->next; t = t->next);
+    if (t && (!args.t || t == args.t)) transfer_free(s, t);
+    rb_jump_tag(state);
+  }
+  return slot;
+}
+
+/* Ends a transfer that the driver, not libcurl, decided is over */
+static void end_transfer_early(struct patron_session *s, struct patron_transfer *t) {
+  if (t->done) return;
+  curl_multi_remove_handle(s->multi, t->easy);
+  t->done = 1;
+  if (!t->interrupt && !t->read_timed_out) t->result = CURLE_ABORTED_BY_CALLBACK;
+}
+
+/* What the Ruby side needs to hear about: a transfer is done, a stream's head is in, or a
+ * stream's pending read has something to return */
+static int transfer_ready(struct patron_transfer *t) {
+  if (t->streaming) {
+    if (t->head_complete && !t->head_reported) return 1;
+    if (!NIL_P(t->read_buf)) {
+      return RSTRING_LEN(t->read_buf) > t->read_keep || t->done || t->interrupt || t->pending_tag || t->read_timed_out;
+    }
+    return 0;
+  }
+  return t->done && !t->done_reported;
+}
+
+/*
+ * One turn of the drive loop: lets libcurl work, ends the transfers that were interrupted or
+ * ran out of read_timeout, and returns the slots with news for the Ruby side. When there is
+ * no news it waits for the network first, for at most +max_wait+ seconds, and returns empty.
+ *
+ * @api private
+ * @param max_wait [Numeric, nil] seconds to wait for the network at most, nil for the usual cap
+ * @return [Array<Integer>] slots that are done, have their head, or have bytes for a pending read
+ */
+static VALUE session_multi_drive(VALUE self, VALUE max_wait) {
+  struct patron_session *s = open_pack(self);
+  struct patron_transfer *t;
+  VALUE ready = rb_ary_new();
+  VALUE scheduler;
+  int running = 0, in_flight = 0;
+  long wait_ms = POLL_TIMEOUT_MS;
+  double now;
+  CURLMcode mc;
+
+  if (!s->transfers) return ready;
+
+  mc = curl_multi_perform(s->multi, &running);
+  if (mc != CURLM_OK) rb_raise(ePatronError, "%s", curl_multi_strerror(mc));
+  collect_done(s);
+
+  now = monotonic_now();
+  for (t = s->transfers; t; t = t->next) {
+    if (!t->done && t->interrupt) end_transfer_early(s, t);
+    if (!t->done && t->read_timeout > 0 && now > t->last_activity + t->read_timeout) {
+      t->read_timed_out = 1;
+      end_transfer_early(s, t);
+    }
+    if (t->done) mark_head_complete(t);
+  }
+
+  for (t = s->transfers; t; t = t->next) {
+    if (!t->done) {
+      in_flight++;
+      if (t->read_timeout > 0) {
+        double left = t->last_activity + t->read_timeout - now;
+        long left_ms = left <= 0 ? 1 : (long)(left * 1000.0) + 1;
+        if (left_ms < wait_ms) wait_ms = left_ms;
+      }
+    }
+    if (transfer_ready(t)) {
+      if (!t->streaming) t->done_reported = 1;
+      rb_ary_push(ready, INT2NUM(t->slot));
+    }
+  }
+  if (RARRAY_LEN(ready) > 0 || !in_flight) return ready;
+
+  if (!NIL_P(max_wait)) {
+    long cap = (long)(NUM2DBL(max_wait) * 1000.0);
+    if (cap < 0) cap = 0;
+    if (cap < wait_ms) wait_ms = cap;
+  }
+  if (wait_ms == 0) return ready;
+
+  scheduler = rb_fiber_scheduler_current();
+  if (NIL_P(scheduler)) {
+    wait_without_scheduler(s, wait_ms);
+  } else {
+    wait_with_scheduler(s, scheduler, wait_ms);
+  }
+  return ready;
+}
+
+/*
+ * The head of a streamed transfer in the pack, once multi_drive has reported it. Raises
+ * the transfer's error when it failed before the head arrived.
+ *
+ * @api private
+ * @return [Array] status, effective URL, redirect count and the raw header data
+ */
+static VALUE session_multi_head(VALUE self, VALUE slot) {
+  struct patron_session *s = open_pack(self);
+  struct patron_transfer *t = slot_transfer(s, slot);
+
+  if (!t->streaming) rb_raise(ePatronError, "Transfer %d is not streamed", t->slot);
+  if (!t->head_complete) rb_raise(ePatronError, "The head of transfer %d has not arrived yet", t->slot);
+  t->head_reported = 1;
+  raise_if_failed(t, 1);
+  return head_of(t);
+}
+
+/*
+ * The pack's counterpart of transfer_read. Called from the stream block's fiber; when nothing
+ * has arrived yet it leaves +buf+ registered for libcurl to write into, returns :pending, and the
+ * fiber yields to the drive loop. The same call with the same +buf+ then picks the bytes up.
+ *
+ * @api private
+ * @return [Integer, nil, :pending] bytes placed, nil at the end of the body, or :pending
+ */
+static VALUE session_multi_read(VALUE self, VALUE slot, VALUE maxlen, VALUE buf, VALUE keep) {
+  struct patron_session *s = open_pack(self);
+  struct patron_transfer *t = slot_transfer(s, slot);
+  struct read_args args;
+  long placed;
+
+  if (!t->streaming) rb_raise(ePatronError, "Transfer %d is not streamed", t->slot);
+
+  if (t->read_buf != buf) {
+    prepare_read_buf(t, &args, maxlen, buf, keep);
+    if (args.maxlen == 0) return INT2FIX(0);
+    t->read_limit = args.maxlen < 0 ? -1 : args.keep + args.maxlen;
+    t->read_keep = args.keep;
+    TRANSFER_WRITE(t, read_buf, buf);
+
+    if (t->paused) {
+      CURLcode rc;
+      t->paused = 0;
+      t->last_activity = monotonic_now();
+      /* This may deliver the paused bytes right here, before any curl_multi_perform() */
+      rc = curl_easy_pause(t->easy, CURLPAUSE_CONT);
+      if (rc != CURLE_OK) {
+        TRANSFER_WRITE(t, read_buf, Qnil);
+        raise_curl_error(error_class_for(rc), rc, t->error_buf);
+      }
+    }
+  }
+
+  placed = RSTRING_LEN(t->read_buf) - t->read_keep;
+  if (placed > 0) {
+    TRANSFER_WRITE(t, read_buf, Qnil);
+    return LONG2NUM(placed);
+  }
+  if (t->pending_tag || t->interrupt || t->read_timed_out || (t->done && t->result != CURLE_OK)) {
+    TRANSFER_WRITE(t, read_buf, Qnil);
+    raise_if_failed(t, 1);
+  }
+  if (t->done) {
+    TRANSFER_WRITE(t, read_buf, Qnil);
+    return Qnil;
+  }
+  return sym_pending;
+}
+
+struct collect_args {
+  struct patron_transfer *t;
+  VALUE result;
+};
+
+static VALUE collect_protected(VALUE ptr) {
+  struct collect_args *a = (struct collect_args *)ptr;
+  struct patron_transfer *t = a->t;
+
+  if (t->streaming) {
+    a->result = finish_stream((VALUE)t);
+  } else {
+    raise_if_failed(t, 1);
+    curl_easy_setopt(t->easy, CURLOPT_COOKIELIST, "FLUSH");
+    a->result = create_response(t);
+  }
+  return Qnil;
+}
+
+/*
+ * Takes a finished transfer out of the pack. A buffered one yields its Response, or raises its
+ * error; a streamed one yields what transfer_finish does, whether or not its body was read to
+ * the end. Either way the transfer is released.
+ *
+ * @api private
+ * @return [Patron::Response, Array]
+ */
+static VALUE session_multi_collect(VALUE self, VALUE slot) {
+  struct patron_session *s = open_pack(self);
+  struct collect_args args = { slot_transfer(s, slot), Qnil };
+  int state = 0;
+
+  rb_protect(collect_protected, (VALUE)&args, &state);
+  transfer_free(s, args.t);
+  if (state) rb_jump_tag(state);
+  return args.result;
+}
+
+/*
+ * Aborts one transfer of the pack; multi_collect then raises Patron::Aborted for it.
+ *
+ * @api private
+ * @return nil
+ */
+static VALUE session_multi_abort(VALUE self, VALUE slot) {
+  struct patron_session *s = open_pack(self);
+  struct patron_transfer *t = slot_transfer(s, slot);
+
+  if (!t->interrupt) t->interrupt = INTERRUPT_ABORT;
+  end_transfer_early(s, t);
+  return Qnil;
+}
+
+/*
+ * Ends the pack: every transfer still in flight is dropped, and the Session is free again.
+ *
+ * @api private
+ * @return nil
+ */
+static VALUE session_multi_close(VALUE self) {
+  struct patron_session *s = get_session(self);
+
+  if (!s->pack) return Qnil;
+  if (s->owner_thread != rb_thread_current()) rb_raise(ePatronError, "The pack belongs to another thread");
+  return cleanup(self);
 }
 
 struct scheduler_raise_args {
@@ -1782,8 +2231,13 @@ static void raise_into_waiting_owner(struct patron_session *s) {
  */
 static VALUE session_interrupt(VALUE self) {
   struct patron_session *s = get_session(self);
+  struct patron_transfer *t;
 
-  s->interrupt = INTERRUPT_ABORT;
+  /* The list only changes with the GVL held, which this method holds too, so walking it from
+   * another thread is safe; the owner is at most inside curl_multi_poll() without it. */
+  for (t = s->transfers; t; t = t->next) {
+    if (!t->interrupt) t->interrupt = INTERRUPT_ABORT;
+  }
   if (s->multi) curl_multi_wakeup(s->multi);
   raise_into_waiting_owner(s);
   return self;
@@ -1854,6 +2308,7 @@ void Init_session_ext(void) {
   id_head = rb_intern_const("head");
   id_ivar_curl_code = rb_intern_const("@curl_code");
   id_raise = rb_intern_const("raise");
+  sym_pending = ID2SYM(rb_intern_const("pending"));
   id_url_kw = rb_intern_const("url");
   id_status_kw = rb_intern_const("status");
   id_redirect_count_kw = rb_intern_const("redirect_count");
@@ -1861,6 +2316,11 @@ void Init_session_ext(void) {
   id_body_kw = rb_intern_const("body");
   id_default_charset_kw = rb_intern_const("default_charset");
   id_timings_kw = rb_intern_const("timings");
+  id_connection_kw = rb_intern_const("connection");
+  id_http_version_kw = rb_intern_const("http_version");
+  id_ip_kw = rb_intern_const("ip");
+  id_port_kw = rb_intern_const("port");
+  id_new_connections_kw = rb_intern_const("new_connections");
 
   mPatron = rb_define_module("Patron");
 
@@ -1920,6 +2380,14 @@ void Init_session_ext(void) {
   rb_define_private_method(cSession, "transfer_start", session_transfer_start, 1);
   rb_define_private_method(cSession, "transfer_read", session_transfer_read, -1);
   rb_define_private_method(cSession, "transfer_finish", session_transfer_finish, 0);
+  rb_define_private_method(cSession, "multi_open", session_multi_open, 1);
+  rb_define_private_method(cSession, "multi_add", session_multi_add, 2);
+  rb_define_private_method(cSession, "multi_drive", session_multi_drive, 1);
+  rb_define_private_method(cSession, "multi_head", session_multi_head, 1);
+  rb_define_private_method(cSession, "multi_read", session_multi_read, 4);
+  rb_define_private_method(cSession, "multi_collect", session_multi_collect, 1);
+  rb_define_private_method(cSession, "multi_abort", session_multi_abort, 1);
+  rb_define_private_method(cSession, "multi_close", session_multi_close, 0);
   rb_define_private_method(cSession, "set_cookie_file", session_set_cookie_file, 1);
   rb_define_private_method(cSession, "set_debug_io", session_set_debug_io, 1);
   rb_define_method(cSession, "interrupt", session_interrupt, 0);

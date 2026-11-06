@@ -16,6 +16,7 @@ module Patron
       ignore_content_length buffer_size download_byte_limit progress_callback
       automatic_content_encoding force_ipv4 low_speed_time low_speed_limit
       upload_data file_name multipart read_timeout
+      max_connection_age max_connection_lifetime tcp_keepalive resolve
     ].freeze
 
     # Any HTTP token works as a verb; the ones libcurl does not know natively are sent as custom requests
@@ -28,7 +29,7 @@ module Patron
                   :low_speed_limit, :progress_callback, :ssl_cert, :ssl_cert_type, :ssl_key, :ssl_key_password
 
     attr_reader :action, :headers, :timeout, :connect_timeout, :max_redirects, :auth_type, :buffer_size, :upload_data,
-                :read_timeout
+                :read_timeout, :max_connection_age, :max_connection_lifetime, :tcp_keepalive, :resolve
 
     # Defaults to a GET with no timeouts and unlimited redirects. Attributes may be given as
     # keywords; `action` and `multipart` are applied first since `upload_data=` depends on them.
@@ -116,6 +117,46 @@ module Patron
       @read_timeout = seconds.to_f
     end
 
+    # Sets how long a cached connection may sit idle and still be reused. libcurl's default is
+    # 118 seconds, after which a "warm" connection is quietly closed and the next request pays
+    # for a new one.
+    #
+    # @param seconds [Integer, nil] whole seconds, 0 for libcurl's default, nil to leave it alone
+    def max_connection_age=(seconds)
+      @max_connection_age = validate_whole_seconds(seconds, "Max connection age")
+    end
+
+    # Sets how long a connection may be reused at all, counted from when it was made, regardless
+    # of how busy it is.
+    #
+    # @param seconds [Integer, nil] whole seconds, 0 for no limit, nil to leave it alone
+    def max_connection_lifetime=(seconds)
+      @max_connection_lifetime = validate_whole_seconds(seconds, "Max connection lifetime")
+    end
+
+    # Turns on TCP keepalive probes on the connection, every so many seconds of idleness, so that
+    # a NAT or a load balancer does not drop a quiet connection the pool is counting on.
+    #
+    # @param seconds [Integer, true, nil] the probe interval in whole seconds, true for 60, nil for off
+    def tcp_keepalive=(seconds)
+      @tcp_keepalive = case seconds
+      when nil, false then nil
+      when true then 60
+      else
+        raise ArgumentError, "TCP keepalive must be a positive number of seconds, true or nil" unless seconds.to_i.positive?
+        seconds.to_i
+      end
+    end
+
+    # Pins host names to addresses, bypassing DNS: `{ "api.example.com:443" => "203.0.113.7" }`.
+    # The keys are "host:port", the values an IPv4 or IPv6 address, as libcurl's CURLOPT_RESOLVE takes them.
+    #
+    # @param entries [Hash{String => String}, nil]
+    def resolve=(entries)
+      raise ArgumentError, "Resolve entries must be a Hash of \"host:port\" => address, or nil" unless entries.nil? || entries.is_a?(Hash)
+      @resolve = entries
+    end
+
     # @param count [Integer] -1 for unlimited, 0 to not follow redirects
     def max_redirects=(count)
       raise ArgumentError, "Max redirects must be a positive integer, 0 or -1" if count.to_i < -1
@@ -164,6 +205,12 @@ module Patron
     end
 
     private
+
+    def validate_whole_seconds(seconds, what)
+      return nil if seconds.nil?
+      raise ArgumentError, "#{what} must be a non-negative number of seconds or nil" if seconds.to_i.negative?
+      seconds.to_i
+    end
 
     def validate_timeout(seconds)
       return nil if seconds.nil?
