@@ -90,7 +90,8 @@ static VALUE hHTTPVersions;
   X(insecure) X(ssl_version) X(http_version) X(ssl_cert) X(ssl_cert_type) \
   X(ssl_key) X(ssl_key_password) X(cacert) X(buffer_size) X(download_byte_limit) \
   X(progress_callback) X(automatic_content_encoding) X(force_ipv4) \
-  X(upload_data) X(file_name) X(multipart) X(read_timeout)
+  X(upload_data) X(file_name) X(multipart) X(read_timeout) \
+  X(max_connection_age) X(max_connection_lifetime) X(tcp_keepalive) X(resolve)
 
 #define DECLARE_ID(name) static ID id_##name;
 REQUEST_ATTRIBUTES(DECLARE_ID)
@@ -102,7 +103,8 @@ static ID id_get, id_post, id_put, id_patch, id_delete, id_head;
 static ID id_ivar_curl_code, id_raise;
 static VALUE sym_pending;
 static ID id_url_kw, id_status_kw, id_redirect_count_kw, id_header_data_kw, id_body_kw,
-          id_default_charset_kw, id_timings_kw;
+          id_default_charset_kw, id_timings_kw, id_connection_kw;
+static ID id_http_version_kw, id_ip_kw, id_port_kw, id_new_connections_kw;
 
 struct patron_session;
 
@@ -117,6 +119,7 @@ struct patron_transfer {
   CURL *easy;
   curl_mime *mime;
   struct curl_slist *headers;
+  struct curl_slist *resolve;         /* CURLOPT_RESOLVE entries, "host:port:address" */
   FILE *request_body_file;
   curl_off_t request_content_length;  /* from a Content-Length request header, or -1 */
   int request_transfer_encoding;      /* whether the request headers carry a Transfer-Encoding */
@@ -198,6 +201,10 @@ static void transfer_release(struct patron_session *s, struct patron_transfer *t
   if (t->headers) {
     curl_slist_free_all(t->headers);
     t->headers = NULL;
+  }
+  if (t->resolve) {
+    curl_slist_free_all(t->resolve);
+    t->resolve = NULL;
   }
   if (t->request_body_file) {
     fclose(t->request_body_file);
@@ -968,6 +975,14 @@ static int each_http_header(VALUE key, VALUE value, VALUE arg) {
   return ST_CONTINUE;
 }
 
+/* "host:port" => "address" becomes libcurl's "host:port:address" */
+static int each_resolve_entry(VALUE key, VALUE value, VALUE arg) {
+  struct patron_transfer *t = (struct patron_transfer *)arg;
+  VALUE line = rb_sprintf("%"PRIsVALUE":%"PRIsVALUE, rb_obj_as_string(key), rb_obj_as_string(value));
+  t->resolve = curl_slist_append(t->resolve, StringValueCStr(line));
+  return ST_CONTINUE;
+}
+
 static curl_mimepart *add_mime_part(struct patron_transfer *t, VALUE key) {
   curl_mimepart *part;
   VALUE name = rb_obj_as_string(key);
@@ -1266,6 +1281,54 @@ static void set_options_from_request(struct patron_transfer *t, VALUE request) {
 
   value = request_attr(request, id_read_timeout);
   t->read_timeout = RTEST(value) ? NUM2DBL(value) : 0.0;
+
+  /* libcurl drops a cached connection idle for 118 s unless told otherwise, which is what
+   * turns a warmed-up pool cold between two bursts of traffic */
+  value = request_attr(request, id_max_connection_age);
+  if (RTEST(value)) setopt_or_raise(easy, CURLOPT_MAXAGE_CONN, NUM2LONG(value));
+
+  value = request_attr(request, id_max_connection_lifetime);
+  if (RTEST(value)) setopt_or_raise(easy, CURLOPT_MAXLIFETIME_CONN, NUM2LONG(value));
+
+  value = request_attr(request, id_tcp_keepalive);
+  if (RTEST(value)) {
+    setopt_or_raise(easy, CURLOPT_TCP_KEEPALIVE, 1L);
+    setopt_or_raise(easy, CURLOPT_TCP_KEEPIDLE, NUM2LONG(value));
+    setopt_or_raise(easy, CURLOPT_TCP_KEEPINTVL, NUM2LONG(value));
+  }
+
+  value = request_attr(request, id_resolve);
+  if (RTEST(value)) {
+    Check_Type(value, T_HASH);
+    rb_hash_foreach(value, each_resolve_entry, (VALUE)t);
+    setopt_or_raise(easy, CURLOPT_RESOLVE, t->resolve);
+  }
+}
+
+/* What libcurl knows about the connection the response came over, for Response#connection */
+static VALUE create_connection_info(CURL *easy) {
+  VALUE info = rb_hash_new();
+  long version = 0, port = 0, connects = 0;
+  char *ip = NULL;
+  const char *name = NULL;
+
+  curl_easy_getinfo(easy, CURLINFO_HTTP_VERSION, &version);
+  curl_easy_getinfo(easy, CURLINFO_PRIMARY_IP, &ip);
+  curl_easy_getinfo(easy, CURLINFO_PRIMARY_PORT, &port);
+  curl_easy_getinfo(easy, CURLINFO_NUM_CONNECTS, &connects);
+
+  switch (version) {
+    case CURL_HTTP_VERSION_1_0: name = "HTTP/1.0"; break;
+    case CURL_HTTP_VERSION_1_1: name = "HTTP/1.1"; break;
+    case CURL_HTTP_VERSION_2_0: name = "HTTP/2"; break;
+    case CURL_HTTP_VERSION_3:   name = "HTTP/3"; break;
+    default: break;
+  }
+  rb_hash_aset(info, ID2SYM(id_http_version_kw), name ? rb_usascii_str_new_cstr(name) : Qnil);
+  rb_hash_aset(info, ID2SYM(id_ip_kw), ip && *ip ? rb_usascii_str_new_cstr(ip) : Qnil);
+  rb_hash_aset(info, ID2SYM(id_port_kw), LONG2NUM(port));
+  rb_hash_aset(info, ID2SYM(id_new_connections_kw), LONG2NUM(connects));
+  return info;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -1312,6 +1375,7 @@ static VALUE create_response(struct patron_transfer *t) {
   rb_hash_aset(kwargs, ID2SYM(id_body_kw), t->body_buf);
   rb_hash_aset(kwargs, ID2SYM(id_default_charset_kw), rb_funcallv(self, id_default_response_charset, 0, NULL));
   rb_hash_aset(kwargs, ID2SYM(id_timings_kw), create_timings(easy));
+  rb_hash_aset(kwargs, ID2SYM(id_connection_kw), create_connection_info(easy));
 
   klass = rb_funcallv(self, id_response_class, 0, NULL);
   return rb_class_new_instance_kw(1, &kwargs, klass, RB_PASS_KEYWORDS);
@@ -1787,8 +1851,8 @@ static VALUE finish_stream(VALUE ptr) {
   }
   curl_easy_setopt(t->easy, CURLOPT_COOKIELIST, "FLUSH");
 
-  return rb_ary_new_from_args(5, LL2NUM(downloaded), LL2NUM(uploaded), create_timings(t->easy),
-                              complete ? Qtrue : Qfalse, trailer_data);
+  return rb_ary_new_from_args(6, LL2NUM(downloaded), LL2NUM(uploaded), create_timings(t->easy),
+                              complete ? Qtrue : Qfalse, trailer_data, create_connection_info(t->easy));
 }
 
 /*
@@ -1797,7 +1861,7 @@ static VALUE finish_stream(VALUE ptr) {
  *
  * @api private
  * @return [Array, nil] downloaded bytes, uploaded bytes, timings, whether the transfer completed,
- *   and the raw trailer lines
+ *   the raw trailer lines and the connection info
  */
 static VALUE session_transfer_finish(VALUE self) {
   struct patron_session *s = get_session(self);
@@ -2252,6 +2316,11 @@ void Init_session_ext(void) {
   id_body_kw = rb_intern_const("body");
   id_default_charset_kw = rb_intern_const("default_charset");
   id_timings_kw = rb_intern_const("timings");
+  id_connection_kw = rb_intern_const("connection");
+  id_http_version_kw = rb_intern_const("http_version");
+  id_ip_kw = rb_intern_const("ip");
+  id_port_kw = rb_intern_const("port");
+  id_new_connections_kw = rb_intern_const("new_connections");
 
   mPatron = rb_define_module("Patron");
 

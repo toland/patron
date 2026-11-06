@@ -204,20 +204,26 @@ end
 
 ## Threading
 
-A `Patron::Session` performs one request at a time and must not be shared between threads: each `Session`
-owns its own libcurl handles and buffers, and using it from two threads at once raises `Patron::Error`.
-Patron releases the GVL (the global VM lock) whenever it waits for the network, so using one `Session`
-per thread gives you real parallelism.
-For sharing a pool of sessions between threads we recommend the excellent [connection_pool](https://rubygems.org/gems/connection_pool) gem by Mike Perham.
+A `Patron::Session` performs one request at a time and must not be used from two threads at once: each `Session`
+owns its own libcurl handles and buffers, and doing so raises `Patron::Error`. It may move between threads,
+though, as long as two never use it at the same time, and Patron releases the GVL (the global VM lock) whenever
+it waits for the network, so a `Session` per thread gives you real parallelism. `Patron::Pool` hands Sessions
+to threads one at a time:
 
 ```ruby
-patron_pool = ConnectionPool.new(size: 5, timeout: 5) { Patron::Session.new }
-patron_pool.with do |session|
-  session.get(...)
+PROVIDER = Patron::Pool.new(size: 8, timeout: 2) do
+  Patron::Session.new(base_url: "https://api.provider.com", timeout: 5)
+end
+
+PROVIDER.with do |session|
+  session.get("/accounts/1")
 end
 ```
 
-Sharing Session objects between requests will also allow you to benefit from persistent connections (connection reuse), see below.
+`with` checks a Session out for the block and back in afterwards, and raises `Patron::Pool::Timeout` when no
+Session comes free within `timeout` seconds. Members are built by the block, lazily, up to `size`. The
+[connection_pool](https://rubygems.org/gems/connection_pool) gem works just as well for this if you already
+use it. Either way, a Session that lives on between requests keeps its connections open, see below.
 
 A checked-out Session can run several requests at once as a pack, see [Parallel requests](#parallel-requests).
 
@@ -227,6 +233,64 @@ Every `Session` owns a libcurl multi handle with its own connection cache, plus 
 cookies, DNS entries and TLS sessions. If you create the Session once and use it for multiple requests
 to the same hostname/port/protocol, the connection gets reused, following libcurl's rules on
 [connection reuse.](https://everything.curl.dev/libcurl/connectionreuse.html)
+
+### Keeping connections warm
+
+A pool of Sessions is a pool of connections, and a connection that is already open saves the DNS lookup, the
+TCP handshake and the TLS handshake on the next request: often most of the request's time. Three things
+stand between you and connections that are actually warm when you need them, and Patron has a knob for each.
+
+libcurl closes a cached connection that has been idle for more than 118 seconds, so a pool that was warm
+before a lull is cold after it. `max_connection_age` raises that limit; `max_connection_lifetime` caps how long
+a connection is reused at all; `tcp_keepalive` has the kernel probe an idle connection every so many seconds,
+so that a NAT or a load balancer does not drop it as dead. `resolve` pins a host name to an address and skips
+DNS entirely. All four are Session defaults and `Request` attributes, like `timeout`:
+
+```ruby
+session = Patron::Session.new(
+  base_url: "https://api.provider.com",
+  max_connection_age: 3600,        # seconds; libcurl's default is 118
+  max_connection_lifetime: 86_400, # seconds since the connection was made
+  tcp_keepalive: 30,               # probe interval in seconds, or true for 60
+  resolve: { "api.provider.com:443" => "203.0.113.7" }
+)
+```
+
+`warm_up` opens the connection before the first real request, with a HEAD whose response is thrown away, and
+`Response#connection` tells you afterwards what happened:
+
+```ruby
+session.warm_up("/health")
+response = session.get("/accounts/1")
+response.connection.http_version    # => "HTTP/2"
+response.connection.ip              # => "203.0.113.7"
+response.connection.new_connections # => 0, the warmed-up connection served it
+response.connection_reused?         # => true
+```
+
+`Response#connection` is a frozen `Patron::ConnectionInfo` with `http_version`, `ip`, `port`, `new_connections`
+and `reused?`; `TransferStats` has the same. It is `nil` on a Response that did not come from libcurl, such as a
+webmock stub. `Response#timings` shows the same thing in seconds: `connect` and `appconnect` are zero on a
+reused connection.
+
+A `Patron::Pool` warms all its members at once, and can keep them warm. A load balancer's idle timeout is
+often shorter than your lulls (60 seconds on an AWS ALB by default), and no libcurl option reaches across it;
+`keep_warm` starts a thread that HEADs the members that have sat idle for `every` seconds:
+
+```ruby
+PROVIDER = Patron::Pool.new(size: 8) do
+  Patron::Session.new(base_url: "https://api.provider.com", max_connection_age: 3600, tcp_keepalive: 30)
+end
+PROVIDER.warm_up("/health")                 # makes all 8 members and connects each of them
+PROVIDER.keep_warm(every: 50, path: "/health")
+
+PROVIDER.stats                              # => { size: 8, created: 8, available: 8, waiting: 0 }
+PROVIDER.shutdown                           # ends the keeper, drops the members as they come back
+```
+
+Members that are checked out while `warm_up` or the keeper runs are left alone. Sessions already survive a
+`fork`, so a pool made before Puma forks its workers needs no hook: each worker opens its own connections on
+first use, or on its own `warm_up`.
 
 ## Parallel requests
 
