@@ -58,6 +58,7 @@ module Patron
     def checkout
       raise Timeout, "The pool has been shut down" if @shutdown
       session = @available.pop(timeout: 0) || build_member || @available.pop(timeout: @timeout)
+      raise Timeout, "The pool has been shut down" if @shutdown
       raise Timeout, "No Session came free in #{@timeout} seconds (#{@size} in the pool)" unless session
       @idle_since.delete(session)
       session
@@ -72,6 +73,8 @@ module Patron
       @idle_since[session] = monotonic
       @available.push(session)
       nil
+    rescue ClosedQueueError
+      nil # shut down between the check and the push
     end
 
     # Makes every member the pool does not have yet and opens every member's connection with a
@@ -110,7 +113,8 @@ module Patron
       { size: @size, created: @created, available: @available.size, waiting: @available.num_waiting }
     end
 
-    # Ends the keeper thread and drops the members as they are checked in. Checkouts after this raise.
+    # Ends the keeper thread and drops the members as they are checked in. Checkouts after this
+    # raise, and so do the checkouts waiting for a member right now.
     #
     # @return nil
     def shutdown
@@ -118,6 +122,7 @@ module Patron
       @keeper&.kill
       @keeper = nil
       @available.clear
+      @available.close
       nil
     end
 
@@ -137,26 +142,43 @@ module Patron
       raise
     end
 
-    # Takes the idle members out, yields them one by one, and puts them all back. The pop never
-    # waits, so members in use by others are left alone. With `force`, the members not made yet
-    # are made now.
+    # Goes once round the idle members: pops one, yields it, puts it back, until a member comes
+    # round for the second time. The pool is never short by more than one member, and the pop never
+    # waits, so members in use by others are left alone. A member the block did not get keeps its
+    # idle clock. With `force`, the members not made yet are made now.
     def each_idle_member(idle_for: 0, force: false)
-      taken = []
+      seen = {}.compare_by_identity
+      now = monotonic
       while (session = @available.pop(timeout: 0))
-        taken << session
-      end
-      if force
-        while (session = build_member)
-          taken << session
+        if seen[session]
+          requeue(session)
+          break
+        end
+        seen[session] = true
+        if force || now - @idle_since.fetch(session, now) >= idle_for
+          begin
+            yield session
+          ensure
+            checkin(session)
+          end
+        else
+          requeue(session)
         end
       end
-      now = monotonic
-      taken.each do |session|
-        idle = now - @idle_since.fetch(session, now)
-        yield session if force || idle >= idle_for
+      return unless force
+      while (session = build_member)
+        begin
+          yield session
+        ensure
+          checkin(session)
+        end
       end
-    ensure
-      taken&.each { |session| checkin(session) }
+    end
+
+    def requeue(session)
+      @available.push(session)
+    rescue ClosedQueueError
+      nil
     end
   end
 end

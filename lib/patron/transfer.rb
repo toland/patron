@@ -169,7 +169,8 @@ module Patron
     end
 
     # The pack is being closed with this transfer still running: unwind its block so that
-    # ensure clauses run, then record the abort. The C side has already dropped the transfer.
+    # ensure clauses run, then record the abort. A `stream.close` in one of those clauses collects
+    # the transfer on the C side; otherwise multi_close drops it right after
     def abandon
       @finished = true
       if @fiber&.alive?

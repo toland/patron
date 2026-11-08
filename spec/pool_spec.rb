@@ -64,19 +64,50 @@ describe Patron::Pool, :session do
   it "re-warms members that sat idle for long enough, with keep_warm" do
     pool = build_pool
     pool.warm_up("/test")
-    counts = Hash.new(0)
+    logs = {}.compare_by_identity
+    members = 3.times.map { pool.checkout }
+    members.each { |session| session.enable_debug(logs[session] = StringIO.new) }
+    members.each { |session| pool.checkin(session) }
+
     keeper = pool.keep_warm(every: 0.4, path: "/test")
     expect(keeper).to be_a(Thread)
     sleep 1.5
-    # keeper runs every 0.2 s and warms members idle for >= 0.4 s; each warm_up resets the idle clock
-    log = StringIO.new
-    members = 3.times.map { pool.checkout }
-    members.each { |session| session.enable_debug(log); counts[session] = session.get("/test").connection_reused? }
-    expect(counts.values).to all(be(true))
-    members.each { |session| pool.checkin(session) }
     pool.shutdown
     expect(keeper.join(2)).to equal(keeper)
     expect(keeper.alive?).to be(false)
+
+    # the keeper looks every 0.2 s and HEADs a member once it sat idle for 0.4 s, so in 1.5 s
+    # every member is warmed about three times, over the connection it already had
+    logs.each_value do |log|
+      expect(log.string.scan(/^> HEAD \/test HTTP/).size).to be_between(2, 4)
+      expect(log.string).not_to include("Trying")
+    end
+  end
+
+  it "warms the idle members one at a time, so that a checkout meanwhile still finds one" do
+    pool = build_pool(timeout: 0.2)
+    pool.warm_up("/test")
+    warming = Thread.new { pool.warm_up("/timeout?millis=300") }
+    sleep 0.1
+    started = monotonic
+    pool.with { |session| expect(session).to be_a(Patron::Session) }
+    expect(monotonic - started).to be < 0.2 # two of the three were in the queue the whole time
+    warming.join
+    expect(pool.stats[:available]).to eq(3)
+  end
+
+  it "wakes a checkout that is waiting when the pool is shut down" do
+    pool = build_pool(timeout: 5)
+    held = 3.times.map { pool.checkout }
+    errors = Queue.new
+    waiter = Thread.new { pool.checkout rescue errors << $! }
+    sleep 0.1
+    started = monotonic
+    pool.shutdown
+    waiter.join
+    expect(errors.pop.message).to match(/shut down/)
+    expect(monotonic - started).to be < 1
+    held.each { |session| pool.checkin(session) } # dropped, not raised about
   end
 
   it "shuts down: no more checkouts, members dropped as they come back" do
