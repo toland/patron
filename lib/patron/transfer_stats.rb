@@ -21,6 +21,9 @@ module Patron
     #   #headers. Empty when there were none, or when the block left before the end of the body.
     attr_reader :trailers
 
+    # @return [Patron::ConnectionInfo, nil] the connection the response came over
+    attr_reader :connection
+
     # @param url [String] the effective URL after redirects
     # @param status [Integer] the HTTP status code
     # @param redirect_count [Integer] how many redirects were followed
@@ -31,8 +34,9 @@ module Patron
     # @param complete [Boolean] whether the body was received to its end
     # @param trailer_data [String] the raw trailer lines
     # @param default_charset [String, nil] the charset to assume when the Content-Type header names none
+    # @param connection [Patron::ConnectionInfo, Hash, nil] see #connection
     def initialize(url:, status:, redirect_count:, header_data:, downloaded_bytes:, uploaded_bytes:, timings:,
-                   complete:, trailer_data: "", default_charset: nil)
+                   complete:, trailer_data: "", default_charset: nil, connection: nil)
       @url = url
       @status = status
       @redirect_count = redirect_count
@@ -40,6 +44,7 @@ module Patron
       @uploaded_bytes = uploaded_bytes
       @timings = timings
       @complete = complete
+      @connection = ConnectionInfo.coerce(connection)
       parse_head(header_data, default_charset)
       @trailers = ResponseHead.headers_from_lines(trailer_lines(trailer_data))
       Ractor.make_shareable(self)
@@ -48,6 +53,9 @@ module Patron
     # @return [Boolean] whether the body was received to its end. False when the block left
     #   early, raised, or the transfer failed.
     def complete? = @complete
+
+    # @return [Boolean, nil] whether the response came over a connection the Session already had open
+    def connection_reused? = @connection&.reused?
 
     def inspect
       "#<Patron::TransferStats @status_line='#{@status_line}' complete=#{@complete} downloaded_bytes=#{@downloaded_bytes}>"

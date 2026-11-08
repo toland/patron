@@ -1,5 +1,33 @@
 ### Unreleased
 
+* `Session#multi` returns a `Patron::Multi`, a pack of requests that go out together on the Session's
+  connection cache, in the time of the slowest one and over one connection to an HTTP/2 server. It has the
+  Session's verb methods; each call starts the request and returns a `Patron::Transfer`, which can be asked
+  `done?`, `succeeded?` and `failed?`, joined with `join` and `join(limit)` like a Thread, interrupted alone,
+  and gives up its `response` (raising the request's error if it failed, or `Patron::InFlight` if nobody has
+  joined yet). `Multi#join_all` joins every transfer and raises for none, `Multi#each` yields transfers in
+  completion order, and `Session#multi(max_connections:)` caps the connections a pack may open
+* The streaming verbs work on a pack as well: the block runs in a fiber of its own as the bytes arrive, so
+  several streams are consumed interleaved alongside the buffered requests of the same pack, and the
+  transfer's `stats` is the `TransferStats` receipt once the block has returned
+* The verb methods moved from `Session` into the `Patron::Verbs` module, which `Session` includes; nothing
+  changes for callers, and `Session#request` stays where instrumentation wraps it
+* `Session#warm_up(path)` opens the connection ahead of the first real request with a HEAD whose response
+  is thrown away, so that the first request reuses it
+* `max_connection_age`, `max_connection_lifetime`, `tcp_keepalive` and `resolve` are Session defaults and
+  `Request` attributes. libcurl closes a cached connection after 118 idle seconds unless `max_connection_age`
+  says otherwise, which is what made warmed-up connections go cold; `tcp_keepalive` keeps middleboxes from
+  dropping a quiet one, and `resolve` pins a host name to an address and skips DNS
+* `Response#connection` and `TransferStats#connection` are a frozen `Patron::ConnectionInfo` with the negotiated
+  `http_version`, the server's `ip` and `port`, `new_connections` and `reused?`; `connection_reused?` is on both
+  as a shortcut. `nil` on a Response built by hand, as webmock builds them
+* A custom `Session#response_class` is now also passed `connection:` (a Hash); one that spells out its keywords
+  needs to accept it
+* `Patron::Pool` hands Sessions to threads one at a time: `with`, `checkout`/`checkin`, `warm_up` for every
+  member at once, `keep_warm(every:)` for a thread that re-warms members that sat idle, `stats` and
+  `shutdown`. Raises `Patron::Pool::Timeout` when no Session comes free in time. Built on `Thread::Queue`,
+  so a checkout inside a Fiber scheduler yields to it
+
 ### 1.1.0
 
 * `Session#stream(action, url, headers, **options) { |stream| }` and the `get_stream`, `put_stream`,
