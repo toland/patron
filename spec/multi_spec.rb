@@ -421,6 +421,33 @@ describe "Patron::Multi", :session do
       expect(session.get("/test").status).to eq(200)
     end
 
+    it "keeps what an ensure clause raised while the pack was closed under the block" do
+      multi = session.multi
+      transfer = multi.get_stream("/slow-chunks?count=100&size=8&delay=0.5") do |s|
+        begin
+          s.read
+        ensure
+          raise "the cleanup failed too"
+        end
+      end
+      multi.join_all(0.3)
+      multi.close
+      expect(transfer.failed?).to be(true)
+      expect(transfer.error).to be_a(RuntimeError)
+      expect(transfer.error.message).to eq("the cleanup failed too")
+      expect(transfer.error.cause).to be_a(Patron::Aborted)
+    end
+
+    it "hands out the very exception object the block raised, from the join and from the transfer" do
+      multi = session.multi
+      boom = RuntimeError.new("the one and only")
+      transfer = multi.get_stream("/test") { |_| raise boom }
+      expect { multi.join_all }.to raise_error { |e| expect(e).to equal(boom) }
+      expect(transfer.error).to equal(boom)
+      expect { transfer.join }.to raise_error { |e| expect(e).to equal(boom) }
+      expect { transfer.stats }.to raise_error { |e| expect(e).to equal(boom) }
+    end
+
     it "refuses to join from inside a block" do
       multi = session.multi
       other = multi.get("/timeout?millis=5000") # still in flight when the block runs, even on a slow runner

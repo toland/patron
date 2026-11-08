@@ -173,15 +173,18 @@ module Patron
     # the transfer on the C side; otherwise multi_close drops it right after
     def abandon
       @finished = true
+      error = Patron::Aborted.new("The pack was closed")
       if @fiber&.alive?
         begin
-          @fiber.raise(Patron::Aborted.new("The pack was closed"))
-        rescue Exception
-          nil
+          @fiber.raise(error)
+        rescue Exception => unwound
+          # Our own Aborted coming back out means the block unwound cleanly; anything else
+          # is what one of its ensure clauses raised, and that is what the transfer failed with
+          error = unwound unless unwound.equal?(error)
         end
       end
       @stream&.instance_variable_set(:@closed, true)
-      settle(:failed, Patron::Aborted.new("The pack was closed")) unless done?
+      settle(:failed, error) unless done?
     end
 
     # ResponseStream reads through these, as it does through Session's transfer_read and
