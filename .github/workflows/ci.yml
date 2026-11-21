@@ -34,6 +34,10 @@ jobs:
       run: |
         brew install curl
         echo "BUNDLE_BUILD__PATRON=--with-curl-dir=$(brew --prefix curl)" >> "$GITHUB_ENV"
+        # rake compile does not read the bundler build config, so point extconf's pkg-config
+        # and curl-config lookups at the keg as well
+        echo "PKG_CONFIG_PATH=$(brew --prefix curl)/lib/pkgconfig" >> "$GITHUB_ENV"
+        echo "$(brew --prefix curl)/bin" >> "$GITHUB_PATH"
     - uses: ruby/setup-ruby@v1
       with:
         ruby-version: ${{ matrix.ruby }}
