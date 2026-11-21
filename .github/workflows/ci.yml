@@ -80,16 +80,23 @@ jobs:
     - run: bundle exec rake
 
   alpine:
-    name: Specs - Alpine (musl)
+    name: Specs - Alpine (musl), Ruby 4.0
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    container: ruby:3.3-alpine
+    # musl and Alpine's libcurl packaging break native gems more often than anything else does,
+    # so this follows the newest Alpine and the newest Ruby rather than pinning either
+    container: ruby:4.0-alpine
     steps:
     - uses: actions/checkout@v7
     - name: Install build tools and libcurl
       run: apk add --no-cache build-base curl-dev git
     - run: bundle install
     - run: bundle exec rake
+    - name: Build and install the gem
+      run: |
+        gem build patron.gemspec
+        gem install ./patron-*.gem
+        cd / && ruby -rpatron -e 'puts Patron.libcurl_version'
 
   gc-stress:
     name: Specs under GC stress and compaction
