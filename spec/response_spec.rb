@@ -70,11 +70,31 @@ describe Patron::Response, :session do
     headers = "HTTP/1.1 200 OK\r\ncontent-type: Text/HTML; charset=utf-8\r\nContent-Length: 42\r\n"
     response = Patron::Response.new(url: "url", status: 200, header_data: headers, body: "")
     expect(response.content_length).to eq(42)
+    expect(response.sized?).to be(true)
     expect(response.content_type).to eq("text/html")
 
     response = Patron::Response.new(url: "url", status: 200, header_data: "HTTP/1.1 200 OK\r\nContent-Length: lots\r\n", body: "")
     expect(response.content_length).to be_nil
+    expect(response.sized?).to be(false)
     expect(response.content_type).to be_nil
+  end
+
+  it "is not sized? when the response is chunked, since there is no Content-Length then" do
+    headers = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n"
+    response = Patron::Response.new(url: "url", status: 200, header_data: headers, body: "abc")
+    expect(response.content_length).to be_nil
+    expect(response.sized?).to be(false)
+  end
+
+  it "looks headers up regardless of the case the server used" do
+    headers = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nx-powered-by: hamsters\r\n"
+    response = Patron::Response.new(url: "url", status: 200, header_data: headers, body: "")
+    expect(response.headers).to be_a(Patron::Headers)
+    expect(response.headers["content-type"]).to eq("text/plain")
+    expect(response.headers["X-Powered-By"]).to eq("hamsters")
+    expect(response.headers).to have_key("CONTENT-TYPE")
+    expect(response.headers.fetch("x-POWERED-by")).to eq("hamsters")
+    expect(response.headers.keys).to eq(["Content-Type", "x-powered-by"]) # as they came in
   end
 
   it "should strip extra spaces from header values" do

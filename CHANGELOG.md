@@ -1,5 +1,14 @@
 ### Unreleased
 
+* `Response#headers`, and the headers and trailers of `ResponseStream` and `TransferStats`, are a
+  `Patron::Headers` - a Hash whose lookups (`[]`, `fetch`, `key?`, `dig`, `values_at`, `assoc`, `slice`,
+  `except`, `[]=`, `delete`) ignore the case of the header name, since HTTP/2, HTTP/3 and Puma 8 send
+  header names lowercase where most other servers capitalize them. The keys stay as they were received,
+  and a header received more than once collects into an Array even if the casing differed between the
+  repeats
+* `Response#sized?`, also on `ResponseStream` and `TransferStats`, tells whether the response announced
+  the length of its body - which is what makes `content_length` an Integer instead of nil
+
 ### 1.1.0
 
 * `Session#stream(action, url, headers, **options) { |stream| }` and the `get_stream`, `put_stream`,
