@@ -69,7 +69,11 @@ resp.headers.keys            # => ["content-type", "x-request-id"], however the 
 ```
 
 A header that arrived more than once (`Set-Cookie`, typically) comes back as an Array of its values in
-order, even when the server varied the casing between them.
+order, even when the server varied the casing between them. The casing is kept rather than folded away
+because it can be data and not just a debugging aid - a signing scheme that covers header names signs the
+names it was handed. Only one header per name is kept, whatever the casing it gets written under, and
+everything that builds a new collection out of the headers (`merge`, `select`, `slice`, ...) hands back
+another case-insensitive `Patron::Headers`, while `to_h` is the way out to a plain Hash.
 
 The GET, HEAD, PUT, PATCH, POST and DELETE operations have their own methods, and any other
 HTTP verb can be sent through `request`:

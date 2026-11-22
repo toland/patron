@@ -63,6 +63,65 @@ describe Patron::Headers do
     expect(headers["set-cookie"]).to eq(["a=1", "b=2", "c=3"])
   end
 
+  it "keeps one header per name, whatever the casing it is written under" do
+    expect(Patron::Headers["Content-Type" => "a", "content-type" => "b"].to_h).to eq({"Content-Type" => "b"})
+    expect(Patron::Headers["Content-Type", "a", "CONTENT-TYPE", "b"].to_h).to eq({"Content-Type" => "b"})
+  end
+
+  it "stays Headers across everything that builds a new collection out of it" do
+    %i[dup clone invert compact].each do |method|
+      expect(headers.public_send(method)).to be_a(Patron::Headers)
+    end
+    expect(headers.select { true }["content-length"]).to eq("42")
+    expect(headers.reject { false }["content-length"]).to eq("42")
+    expect(headers.transform_values(&:itself)["content-length"]).to eq("42")
+    expect(headers.transform_keys(&:itself)["content-length"]).to eq("42")
+    expect(headers.slice("CONTENT-LENGTH")["content-length"]).to eq("42")
+    expect(headers.except("x-nope")["content-length"]).to eq("42")
+    expect(headers.merge({})["content-length"]).to eq("42")
+  end
+
+  it "merges onto the header that is already there instead of adding a second casing of it" do
+    merged = headers.merge("content-length" => "43")
+    expect(merged.to_h).to eq({"Content-Length" => "43", "X-Lowercase" => "yes"})
+    expect(merged["Content-Length"]).to eq("43")
+
+    expect(headers.merge("CONTENT-length" => "43") { |name, old, new| "#{name} #{old} #{new}" }.to_h)
+      .to eq({"Content-Length" => "Content-Length 42 43", "X-Lowercase" => "yes"})
+
+    headers.update("content-LENGTH" => "44")
+    expect(headers.to_h).to eq({"Content-Length" => "44", "X-Lowercase" => "yes"})
+  end
+
+  it "replaces and rewrites keys without letting two casings of a name through" do
+    expect(headers.replace("content-length" => "9")).to be_a(Patron::Headers)
+    expect(headers.to_h).to eq({"content-length" => "9"})
+
+    headers.transform_keys!(&:upcase)
+    expect(headers.to_h).to eq({"CONTENT-LENGTH" => "9"})
+    expect(headers["content-length"]).to eq("9")
+  end
+
+  it "hands out a plain Hash from to_h, as the way out" do
+    expect(headers.to_h).to be_instance_of(Hash)
+    expect(headers.to_h["content-length"]).to be_nil # exact match again, by design
+  end
+
+  it "refuses to compare its keys by identity" do
+    expect { headers.compare_by_identity }.to raise_error(TypeError, /cannot compare them by identity/)
+  end
+
+  it "is not what String#% reads, as that looks up Symbols and reads the table directly" do
+    expect { "%{content-length}" % headers }.to raise_error(KeyError)
+    expect { "%{Content-Length}" % headers }.to raise_error(KeyError)
+  end
+
+  it "survives Marshal, which a Response crossing a Ractor boundary does not need but people do" do
+    reloaded = Marshal.load(Marshal.dump(headers))
+    expect(reloaded).to be_a(Patron::Headers)
+    expect(reloaded["content-length"]).to eq("42")
+  end
+
   it "survives freezing, which is what a TransferStats does to it" do
     frozen = Patron::ResponseHead.headers_from_lines(["Content-Length: 42"]).freeze
     expect(frozen["content-length"]).to eq("42")
