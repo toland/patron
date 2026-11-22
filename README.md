@@ -31,9 +31,9 @@ Or the set options in a block:
 
 ```ruby
 sess = Patron::Session.new do |patron|
-    patron.timeout = 10
-    patron.base_url = 'http://myserver.com:9900'
-    patron.headers = {'User-Agent' => 'myapp/1.0'}
+  patron.timeout = 10
+  patron.base_url = 'http://myserver.com:9900'
+  patron.headers = {'User-Agent' => 'myapp/1.0'}
 end
 ```
 
@@ -156,6 +156,8 @@ stats.timings    # the same Hash as Response#timings
 stats.trailers   # chunked or HTTP/2 trailers, {} when none
 ```
 
+> Note that there is also a proper client for SSE, see below.
+
 `read(length, buffer)` and `readpartial(length, buffer)` fill a String you own, so copying a body
 somewhere allocates nothing per chunk. `IO.copy_stream` uses exactly that, into a File or anything
 with `write`:
@@ -197,6 +199,8 @@ client = Patron::SSEClient.new(
   session: nil          # or a configured Patron::Session: TLS, proxy, auth, cookies, base_url
 )
 
+# each_event will start the request and keeps listening as long
+# as the server keeps sending,
 client.each_event do |event|
   event.type  # "message" unless the server sent an event: field
   event.data  # data: lines joined with "\n", UTF-8
