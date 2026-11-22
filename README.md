@@ -200,7 +200,7 @@ client = Patron::SSEClient.new(
 )
 
 # each_event will start the request and keeps listening as long
-# as the server keeps sending,
+# as the server keeps sending
 client.each_event do |event|
   event.type  # "message" unless the server sent an event: field
   event.data  # data: lines joined with "\n", UTF-8
