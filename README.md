@@ -180,6 +180,15 @@ end
 client.last_event_id  # to persist between process runs
 ```
 
+`new` connects to nothing: it only holds on to the settings. `each_event` is what opens the stream, and it is
+a blocking loop rather than a handler you install - it issues the GET, then reads the response and yields
+every event to your block as the bytes arrive, returning only when the block breaks, the server answers 204,
+`close` is called or the reconnects run out. Your block runs inside that read loop, so a slow block slows the
+reading down and the server feels it as backpressure on the connection; nothing is being received while there
+is no block there to receive it, so there is no window in which events pile up or get missed for want of a
+handler. This is the one place where the client is not like a browser's `EventSource`, which connects as soon
+as it is constructed and calls `onmessage` whenever an event turns up afterwards.
+
 A 204 ends `each_event`. Any other status than 200, or another Content-Type, raises
 `Patron::SSEClient::UnexpectedResponse` with the `status`, `headers` and first 4 KB of `body`, since retrying
 a 503 is the application's call. An event that is not valid UTF-8 raises `Patron::SSEClient::InvalidEncoding`
