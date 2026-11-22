@@ -18,6 +18,8 @@ module Patron
     #   received more than once, nil when it was not received at all
     def [](name) = super(key_for(name))
 
+    # The rest of the lookups behave as the Hash ones do, down to the arguments and the
+    # exceptions, and differ only in finding a header whose name the server cased differently
     def fetch(name, *default, &block) = super(key_for(name), *default, &block)
 
     def key?(name) = super(key_for(name))
@@ -35,7 +37,10 @@ module Patron
 
     def except(*names) = super(*names.map { |name| key_for(name) })
 
-    def []=(name, value) = super(key_for(name), value)
+    # Not an endless method, as a setter may not be defined as one
+    def []=(name, value)
+      super(key_for(name), value)
+    end
     alias_method :store, :[]=
 
     def delete(name, &block) = super(key_for(name), &block)
