@@ -20,8 +20,9 @@ module Patron
     # @return [Integer] how many redirects were followed when fulfilling this request
     attr_reader :redirect_count
 
-    # @return [Hash] the response headers. If there were multiple headers received for the same value
-    #   (like "Cookie"), the header values will be within an Array under the key for the header, in order.
+    # @return [Patron::Headers] the response headers, a Hash whose lookups ignore the case of the
+    #   header name. If there were multiple headers received for the same name (like "Set-Cookie"),
+    #   the header values will be within an Array under the key for the header, in order.
     attr_reader :headers
 
     # @return [String] the recognized name of the charset for the response. The name is not checked
@@ -45,6 +46,13 @@ module Patron
       value.to_s.match?(/\A\d+\z/) ? Integer(value, 10) : nil
     end
 
+    # Tells whether the response announced how long its body is, which is what makes
+    # {#content_length} a number instead of nil. A chunked HTTP/1.1 response and a streamed
+    # HTTP/2 one do not, and there is no knowing their size before the body has ended.
+    #
+    # @return [Boolean]
+    def sized? = !content_length.nil?
+
     # @return [String, nil] the media type from the Content-Type header, without its parameters
     #   and in lowercase, e.g. "text/event-stream"
     def content_type
@@ -54,13 +62,15 @@ module Patron
       media_type.empty? ? nil : media_type
     end
 
-    # Builds a header Hash from "Name: value" lines, with repeated names collected into an Array
+    # Builds {Patron::Headers} from "Name: value" lines, with repeated names collected into an
+    # Array - case-insensitively, so a server that sends "Set-Cookie" once and "set-cookie" once
+    # gets both values under the name it used first
     #
     # @api private
     # @param lines [Array<String>]
-    # @return [Hash]
+    # @return [Patron::Headers]
     def self.headers_from_lines(lines)
-      lines.each_with_object({}) do |line, headers|
+      lines.each_with_object(Headers.new) do |line, headers|
         hdr, val = line.split(":", 2)
         val = val&.strip
 
@@ -88,12 +98,9 @@ module Patron
       content_type_header.to_s[CHARSET_CONTENT_TYPE_RE, 1]
     end
 
-    # HTTP/2 servers and Puma 8+ send header names lowercase, and `@headers` keeps them as received
     def content_type_header = header_value("Content-Type")
 
-    def header_value(name)
-      @headers.find { |hdr, _| hdr.casecmp?(name) }&.last
-    end
+    def header_value(name) = @headers[name]
 
     def decode_header_data(str)
       # Headers are ISO-8859-1 by the book, but Content-Disposition routinely arrives as raw UTF-8

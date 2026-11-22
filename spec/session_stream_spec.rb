@@ -66,10 +66,23 @@ describe "Patron::Session#stream", :session do
   it "has content_length on both the stream and the receipt" do
     stats = session.get_stream("/counter?lines=10") do |stream|
       expect(stream.content_length).to eq(80)
+      expect(stream.sized?).to be(true)
       stream.drain!
     end
     expect(stats.content_length).to eq(80)
+    expect(stats.sized?).to be(true)
     expect(stats.downloaded_bytes).to eq(80)
+  end
+
+  it "is not sized? for a chunked response, and reads its headers case-insensitively" do
+    stats = session.get_stream("/slow-chunks?count=2&delay=0") do |stream|
+      expect(stream.headers["Transfer-Encoding"]).to eq("chunked")
+      expect(stream.content_length).to be_nil
+      expect(stream.sized?).to be(false)
+      stream.drain!
+    end
+    expect(stats.sized?).to be(false)
+    expect(stats.downloaded_bytes).to eq(2048)
   end
 
   it "follows redirects and reports the final response" do

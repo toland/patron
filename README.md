@@ -58,6 +58,23 @@ if resp.status < 400
 end
 ```
 
+`resp.headers` is a Hash of the response headers whose lookups ignore the case of the name, since the
+casing is the server's to pick: HTTP/2 and HTTP/3 send header names lowercase, as does Puma 8 over
+HTTP/1.1, while most other servers still capitalize them. The keys themselves stay as they came in, so
+iterating or printing them shows you what was actually on the wire:
+
+```ruby
+resp.headers["Content-Type"] # finds the header the server sent as "content-type" just as well
+resp.headers.keys            # => ["content-type", "x-request-id"], however the server spelled them
+```
+
+A header that arrived more than once (`Set-Cookie`, typically) comes back as an Array of its values in
+order, even when the server varied the casing between them. The casing is kept rather than folded away
+because it can be data and not just a debugging aid - a signing scheme that covers header names signs the
+names it was handed. Only one header per name is kept, whatever the casing it gets written under, and
+everything that builds a new collection out of the headers (`merge`, `select`, `slice`, ...) hands back
+another case-insensitive `Patron::Headers`, while `to_h` is the way out to a plain Hash.
+
 The GET, HEAD, PUT, PATCH, POST and DELETE operations have their own methods, and any other
 HTTP verb can be sent through `request`:
 
@@ -145,9 +162,18 @@ with `write`:
 
 ```ruby
 sess.get_stream("/large.bin") do |stream|
-  raise "Too big" if stream.content_length.to_i > 1024 * 1024 * 1024
+  raise "Too big" if stream.content_length && stream.content_length > 1024 * 1024 * 1024
   File.open("large.bin", "wb") { |file| IO.copy_stream(stream, file) }
 end
+```
+
+`content_length` is already an Integer, or nil when the response did not say how long its body is -
+which is the case for a chunked HTTP/1.1 response and for a streamed HTTP/2 one, so the guard above
+has to let an unknown length through rather than take `nil.to_i` for a zero. `stream.sized?` is that
+question on its own, for when you want to refuse what you cannot measure up front:
+
+```ruby
+raise "Refusing a body of unknown length" unless stream.sized?
 ```
 
 Leaving the block early (`break`, `return`, an exception) aborts the transfer and closes its connection;
